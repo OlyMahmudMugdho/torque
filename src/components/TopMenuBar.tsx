@@ -9,6 +9,7 @@ export interface TopMenuBarProps {
   onNewProject?: () => void;
   onImportZip?: () => void;
   onExportZip?: () => void;
+  onCloseProject?: () => void;
   onCompile?: () => void;
   onToggleSidebar?: () => void;
   onToggleProblems?: () => void;
@@ -40,6 +41,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onNewProject,
   onImportZip,
   onExportZip,
+  onCloseProject,
   onCompile,
   onToggleSidebar,
   onToggleProblems,
@@ -96,6 +98,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
         { label: 'New Project', onClick: onNewProject },
         { label: 'Import Zip', onClick: onImportZip },
         { label: 'Export Zip', onClick: onExportZip },
+        { label: 'Close Project', onClick: onCloseProject },
         { type: 'separator' },
         { label: 'Compile', shortcut: 'Ctrl+B', onClick: onCompile },
         { type: 'separator' },

@@ -103,6 +103,16 @@ describe('TopMenuBar', () => {
       expect(onExportZip).toHaveBeenCalledTimes(1);
       expect(screen.queryByText('Export Zip')).not.toBeInTheDocument();
     });
+
+    it('triggers onCloseProject callback when Close Project is clicked', () => {
+      const onCloseProject = vi.fn();
+      renderTopMenuBar({ onCloseProject });
+
+      fireEvent.click(screen.getByRole('button', { name: 'File' }));
+      fireEvent.click(screen.getByText('Close Project'));
+      expect(onCloseProject).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('Close Project')).not.toBeInTheDocument();
+    });
   });
 
   describe('Edit Menu', () => {

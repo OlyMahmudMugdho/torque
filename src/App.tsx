@@ -9,6 +9,7 @@ import { FileTreeSidebar } from './components/FileTreeSidebar';
 import { MonacoEditorPane } from './editor/MonacoEditorPane';
 import { PdfPreviewPane } from './components/PdfPreviewPane';
 import { DiagnosticsLogPanel } from './components/DiagnosticsLogPanel';
+import { WelcomeHomeScreen } from './components/WelcomeHomeScreen';
 import type { Diagnostic } from './types/workspace';
 import { Folder, Terminal, Settings, GitBranch, CheckCircle2, Sun, Moon } from 'lucide-react';
 
@@ -23,6 +24,7 @@ export const WorkspaceUI: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
 
+  const [isHomeViewOpen, setIsHomeViewOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [previewOpen, setPreviewOpen] = useState(true);
@@ -107,6 +109,35 @@ export const WorkspaceUI: React.FC = () => {
     );
   }
 
+  const showHomeView = isHomeViewOpen || workspace.projects.length === 0 || !workspace.activeProject;
+
+  if (showHomeView) {
+    return (
+      <WelcomeHomeScreen
+        projects={workspace.projects}
+        activeProjectId={workspace.activeProject?.id}
+        onSelectProject={async (projectId) => {
+          await workspace.selectProject(projectId);
+          setIsHomeViewOpen(false);
+        }}
+        onCreateProject={async (name) => {
+          await workspace.createNewProject(name);
+          setIsHomeViewOpen(false);
+        }}
+        onImportZip={async (file) => {
+          await handleImportZip(file);
+          setIsHomeViewOpen(false);
+        }}
+        onDeleteProject={workspace.deleteProjectById}
+        onCloseWelcome={() => {
+          if (workspace.projects.length > 0 && workspace.activeProject) {
+            setIsHomeViewOpen(false);
+          }
+        }}
+      />
+    );
+  }
+
   const diagnostics = workspace.lastResult?.diagnostics ?? [];
   const hasProblems = diagnostics.length > 0 || workspace.compileStatus === 'failed';
   const errorCount = diagnostics.filter((d) => d.severity === 'error').length;
@@ -131,6 +162,7 @@ export const WorkspaceUI: React.FC = () => {
         onExportZip={handleExportZip}
         onImportZip={handleImportZip}
         onCompile={handleCompile}
+        onCloseProject={() => setIsHomeViewOpen(true)}
         onNewFile={handleCreateFile}
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
         onToggleProblems={() => {

@@ -29,6 +29,7 @@ export interface ProjectTopBarProps {
   onExportZip: () => Promise<void>;
   onImportZip: (file: File) => Promise<void>;
   onCompile: () => Promise<void>;
+  onCloseProject?: () => void;
   onNewFile?: () => void;
   onToggleSidebar?: () => void;
   onToggleProblems?: () => void;
@@ -51,6 +52,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
   onExportZip,
   onImportZip,
   onCompile,
+  onCloseProject,
   onNewFile,
   onToggleSidebar,
   onToggleProblems,
@@ -106,7 +108,13 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
       {/* Left: IntelliJ Brand + Top Menu Bar + Project Selector */}
       <div className="flex items-center gap-1.5 min-w-0">
         {/* IntelliJ Style App Icon */}
-        <div className="flex items-center gap-1.5 mr-1 shrink-0">
+        <button
+          type="button"
+          onClick={onCloseProject}
+          title="Return to Welcome Screen"
+          aria-label="Return to Welcome Screen"
+          className="flex items-center gap-1.5 mr-1 shrink-0 cursor-pointer hover:opacity-80 transition text-left"
+        >
           <div className="w-5 h-5 bg-gradient-to-tr from-[#3574f0] via-[#59a869] to-[#e2a53b] rounded flex items-center justify-center shadow-sm">
             <span className="text-[10px] font-black text-black tracking-tighter leading-none">TQ</span>
           </div>
@@ -117,7 +125,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
           >
             Torque
           </span>
-        </div>
+        </button>
 
         {/* Embedded IntelliJ TopMenuBar */}
         <TopMenuBar
@@ -125,6 +133,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
           onNewProject={handleCreateNew}
           onImportZip={() => fileInputRef.current?.click()}
           onExportZip={onExportZip}
+          onCloseProject={onCloseProject}
           onCompile={onCompile}
           onToggleSidebar={onToggleSidebar}
           onToggleProblems={onToggleProblems}

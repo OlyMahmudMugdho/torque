@@ -74,10 +74,10 @@ describe('Workspace UI Components', () => {
       compileStatus: 'spotless',
       lastResult: null,
       actions: { compile: vi.fn() },
-      selectProject: vi.fn(),
-      createNewProject: vi.fn(),
-      renameActiveProject: vi.fn(),
-      deleteProjectById: vi.fn(),
+      selectProject: vi.fn().mockResolvedValue(undefined),
+      createNewProject: vi.fn().mockResolvedValue(sampleProject),
+      renameActiveProject: vi.fn().mockResolvedValue(undefined),
+      deleteProjectById: vi.fn().mockResolvedValue(undefined),
       selectFile: vi.fn(),
       closeTab: vi.fn(),
       createFile: vi.fn(),
@@ -359,5 +359,41 @@ describe('Workspace UI Components', () => {
     const closeBtn = screen.getByRole('button', { name: /close problems panel/i });
     fireEvent.click(closeBtn);
     expect(screen.queryByText('Missing delimiter $')).not.toBeInTheDocument();
+  });
+
+  it('WorkspaceUI: renders WelcomeHomeScreen when no projects exist', () => {
+    mockWorkspaceState.projects = [];
+    mockWorkspaceState.activeProject = null;
+
+    render(
+      <ThemeProvider>
+        <WorkspaceUI />
+      </ThemeProvider>
+    );
+
+    expect(screen.getByText('Welcome to Torque', { selector: 'h1' })).toBeInTheDocument();
+    expect(screen.getByText('No recent projects')).toBeInTheDocument();
+  });
+
+  it('WorkspaceUI: navigates to WelcomeHomeScreen on Close Project or Torque logo click and returns on project select', async () => {
+    render(
+      <ThemeProvider>
+        <WorkspaceUI />
+      </ThemeProvider>
+    );
+
+    // Click Torque logo to return to Welcome screen
+    const torqueBtn = screen.getByRole('button', { name: /return to welcome screen/i });
+    fireEvent.click(torqueBtn);
+
+    expect(screen.getByText('Welcome to Torque', { selector: 'h1' })).toBeInTheDocument();
+    expect(screen.getByText('Relativity Paper')).toBeInTheDocument();
+
+    // Selecting a project in the Welcome screen returns to workspace
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    });
+    expect(mockWorkspaceState.selectProject).toHaveBeenCalledWith('p1');
+    expect(screen.queryByText('Welcome to Torque', { selector: 'h1' })).not.toBeInTheDocument();
   });
 });

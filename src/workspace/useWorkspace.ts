@@ -149,9 +149,9 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
         if (remaining.length > 0) {
           await selectProject(remaining[0].id);
         } else {
-          const fresh = await storeRef.current.createProject('Untitled Project');
-          await refreshProjects();
-          await selectProject(fresh.id);
+          setActiveProject(null);
+          setFiles([]);
+          setOpenTabs([]);
         }
       }
     },

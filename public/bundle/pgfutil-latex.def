@@ -195,7 +195,11 @@
 
 \def\pgfutil@guessdriver{
   \ifx\HCode\@undefined%
-    \edef\pgfsysdriver{pgfsys-\Gin@driver}% should be right
+    \ifx\Gin@driver\@undefined%
+      \def\pgfsysdriver{pgfsys-xetex.def}%
+    \else%
+      \edef\pgfsysdriver{pgfsys-\Gin@driver}%
+    \fi%
   \else%
     \def\pgfsysdriver{pgfsys-tex4ht.def}% should be right
   \fi%

@@ -18,6 +18,7 @@ export interface TopMenuBarProps {
   onRedo?: () => void;
   onShortcuts?: () => void;
   onAbout?: () => void;
+  onOpenPackageManager?: () => void;
   className?: string;
 }
 
@@ -50,6 +51,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onRedo,
   onShortcuts,
   onAbout,
+  onOpenPackageManager,
   className = '',
 }) => {
   const { theme, setTheme } = useThemeSafe();
@@ -134,6 +136,17 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
           label: 'Light Mode',
           checked: theme === 'light',
           onClick: () => setTheme('light'),
+        },
+      ],
+    },
+    {
+      id: 'tools',
+      label: 'Tools',
+      items: [
+        {
+          label: 'LaTeX Package Manager...',
+          shortcut: 'Shift+Alt+P',
+          onClick: onOpenPackageManager,
         },
       ],
     },

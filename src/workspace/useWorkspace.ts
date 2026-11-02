@@ -32,6 +32,7 @@ export interface WorkspaceState {
   selectFile: (path: string) => void;
   closeTab: (path: string) => void;
   createFile: (path: string, content?: string | Uint8Array, isBinary?: boolean) => Promise<void>;
+  updateFileContent: (path: string, content: string) => Promise<void>;
   updateActiveFileContent: (content: string) => Promise<void>;
   renameFilePath: (oldPath: string, newPath: string) => Promise<void>;
   deleteFilePath: (path: string) => Promise<void>;
@@ -186,15 +187,26 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
     [refreshFiles, selectFile]
   );
 
+  const updateFileContent = useCallback(
+    async (path: string, content: string) => {
+      if (!activeProjectRef.current) return;
+      const norm = normalizeFilePath(path);
+      await storeRef.current.putFile(activeProjectRef.current.id, norm, content, false);
+      const updated = filesRef.current.map((f) =>
+        f.path === norm ? { ...f, content, updatedAt: Date.now() } : f
+      );
+      filesRef.current = updated;
+      setFiles(updated);
+    },
+    []
+  );
+
   const updateActiveFileContent = useCallback(
     async (content: string) => {
-      if (!activeProjectRef.current || !activeFilePath) return;
-      await storeRef.current.putFile(activeProjectRef.current.id, activeFilePath, content, false);
-      setFiles((prev) =>
-        prev.map((f) => (f.path === activeFilePath ? { ...f, content, updatedAt: Date.now() } : f))
-      );
+      if (!activeFilePath) return;
+      await updateFileContent(activeFilePath, content);
     },
-    [activeFilePath]
+    [activeFilePath, updateFileContent]
   );
 
   const renameFilePath = useCallback(
@@ -337,6 +349,7 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
     selectFile,
     closeTab,
     createFile,
+    updateFileContent,
     updateActiveFileContent,
     renameFilePath,
     deleteFilePath,

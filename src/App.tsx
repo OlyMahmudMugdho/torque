@@ -10,8 +10,10 @@ import { MonacoEditorPane } from './editor/MonacoEditorPane';
 import { PdfPreviewPane } from './components/PdfPreviewPane';
 import { DiagnosticsLogPanel } from './components/DiagnosticsLogPanel';
 import { WelcomeHomeScreen } from './components/WelcomeHomeScreen';
+import { PackageManagerModal } from './components/PackageManagerModal';
+import { insertPackageDeclaration } from './packages/packageManager';
 import type { Diagnostic } from './types/workspace';
-import { Folder, Terminal, Settings, GitBranch, CheckCircle2, Sun, Moon } from 'lucide-react';
+import { Folder, Terminal, Settings, GitBranch, CheckCircle2, Sun, Moon, Package } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -28,6 +30,23 @@ export const WorkspaceUI: React.FC = () => {
   const [logsOpen, setLogsOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [previewOpen, setPreviewOpen] = useState(true);
+  const [isPackageManagerOpen, setPackageManagerOpen] = useState(false);
+  const [packageManagerSearchQuery, setPackageManagerSearchQuery] = useState('');
+
+  // Keyboard shortcut listener for LaTeX Package Manager (Shift+Alt+P or Ctrl+Alt+P)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        (e.shiftKey && e.altKey && e.key.toLowerCase() === 'p') ||
+        (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'p')
+      ) {
+        e.preventDefault();
+        setPackageManagerOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Expose WorkspaceActions for automation
   useEffect(() => {
@@ -92,6 +111,42 @@ export const WorkspaceUI: React.FC = () => {
     if (d.file) {
       workspace.selectFile(d.file);
     }
+  };
+
+  const handleOpenPackageManager = (query = '') => {
+    setPackageManagerSearchQuery(query);
+    setPackageManagerOpen(true);
+  };
+
+  const handleClosePackageManager = () => {
+    setPackageManagerOpen(false);
+    setPackageManagerSearchQuery('');
+  };
+
+  const handleInsertPackage = async (packageName: string) => {
+    const rootEntry = workspace.activeProject?.rootEntry || 'main.tex';
+    let targetPath = workspace.activeFilePath || rootEntry;
+    if (!targetPath.endsWith('.tex')) {
+      targetPath = rootEntry;
+    }
+
+    const targetFile = workspace.files.find((f) => f.path === targetPath);
+    const currentContent = typeof targetFile?.content === 'string'
+      ? targetFile.content
+      : targetFile?.content
+        ? new TextDecoder().decode(targetFile.content)
+        : '';
+
+    const updatedContent = insertPackageDeclaration(currentContent, packageName);
+    if (workspace.updateFileContent) {
+      await workspace.updateFileContent(targetPath, updatedContent);
+    } else {
+      await workspace.updateActiveFileContent(updatedContent);
+    }
+  };
+
+  const handleQuickFixMissingPackage = (packageName: string) => {
+    handleOpenPackageManager(packageName);
   };
 
   if (!workspace.ready) {
@@ -182,6 +237,7 @@ export const WorkspaceUI: React.FC = () => {
         onAbout={() => {
           alert('Torque LaTeX Editor\nHigh-Performance WebAssembly LaTeX IDE');
         }}
+        onOpenPackageManager={() => handleOpenPackageManager('')}
       />
 
       {/* Main Area: Activity Bar + Resizable Workspace */}
@@ -210,6 +266,24 @@ export const WorkspaceUI: React.FC = () => {
               aria-label="Project Sidebar"
             >
               <Folder className="w-4 h-4" />
+            </button>
+
+            {/* LaTeX Package Manager button */}
+            <button
+              onClick={() => handleOpenPackageManager('')}
+              className={`p-2 rounded transition ${
+                isPackageManagerOpen
+                  ? isDark
+                    ? 'text-[#3574f0] bg-[#1e1f22]'
+                    : 'text-[#3574f0] bg-[#ffffff]'
+                  : isDark
+                    ? 'text-[#868a91] hover:bg-[#393b40]'
+                    : 'text-[#6c707e] hover:bg-[#dfe1e5]'
+              }`}
+              title="LaTeX Packages (Shift+Alt+P)"
+              aria-label="LaTeX Packages"
+            >
+              <Package className="w-4 h-4" />
             </button>
 
             {/* Problems button - only show when diagnostics exist */}
@@ -305,6 +379,7 @@ export const WorkspaceUI: React.FC = () => {
                           onToggle={() => setLogsOpen(false)}
                           onClose={() => setLogsOpen(false)}
                           onSelectDiagnostic={handleSelectDiagnostic}
+                          onQuickFixMissingPackage={handleQuickFixMissingPackage}
                         />
                       </div>
                     )}
@@ -392,6 +467,16 @@ export const WorkspaceUI: React.FC = () => {
           <span>2 spaces</span>
         </div>
       </footer>
+
+      {/* IntelliJ LaTeX Package Manager Modal Dialog */}
+      {isPackageManagerOpen && (
+        <PackageManagerModal
+          isOpen={isPackageManagerOpen}
+          onClose={handleClosePackageManager}
+          onInsertPackage={handleInsertPackage}
+          initialSearchQuery={packageManagerSearchQuery}
+        />
+      )}
     </div>
   );
 };

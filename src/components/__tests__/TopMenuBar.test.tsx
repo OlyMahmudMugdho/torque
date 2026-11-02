@@ -20,12 +20,13 @@ describe('TopMenuBar', () => {
   });
 
   describe('Rendering', () => {
-    it('renders all top-level menus: File, Edit, View, Help', () => {
+    it('renders all top-level menus: File, Edit, View, Tools, Help', () => {
       renderTopMenuBar();
 
       expect(screen.getByRole('button', { name: 'File' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Tools' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Help' })).toBeInTheDocument();
     });
 
@@ -35,6 +36,7 @@ describe('TopMenuBar', () => {
       expect(screen.queryByText('New File')).not.toBeInTheDocument();
       expect(screen.queryByText('Undo')).not.toBeInTheDocument();
       expect(screen.queryByText('Toggle Sidebar')).not.toBeInTheDocument();
+      expect(screen.queryByText('LaTeX Package Manager...')).not.toBeInTheDocument();
       expect(screen.queryByText('About Torque')).not.toBeInTheDocument();
     });
   });
@@ -213,6 +215,28 @@ describe('TopMenuBar', () => {
       expect(document.documentElement.classList.contains('dark')).toBe(true);
       expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
       expect(screen.queryByText('Dark Mode')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Tools Menu', () => {
+    it('opens Tools dropdown when clicking "Tools"', () => {
+      renderTopMenuBar();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Tools' }));
+
+      expect(screen.getByText('LaTeX Package Manager...')).toBeInTheDocument();
+      expect(screen.getByText('Shift+Alt+P')).toBeInTheDocument();
+    });
+
+    it('triggers onOpenPackageManager callback and closes menu', () => {
+      const onOpenPackageManager = vi.fn();
+      renderTopMenuBar({ onOpenPackageManager });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Tools' }));
+      fireEvent.click(screen.getByText('LaTeX Package Manager...'));
+
+      expect(onOpenPackageManager).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('LaTeX Package Manager...')).not.toBeInTheDocument();
     });
   });
 

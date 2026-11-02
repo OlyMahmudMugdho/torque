@@ -38,6 +38,7 @@ export interface ProjectTopBarProps {
   onRedo?: () => void;
   onShortcuts?: () => void;
   onAbout?: () => void;
+  onOpenPackageManager?: () => void;
 }
 
 export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
@@ -61,6 +62,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
   onRedo,
   onShortcuts,
   onAbout,
+  onOpenPackageManager,
 }) => {
   const { theme, toggleTheme } = useThemeSafe();
   const isDark = theme === 'dark';
@@ -142,6 +144,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
           onRedo={onRedo}
           onShortcuts={onShortcuts}
           onAbout={onAbout}
+          onOpenPackageManager={onOpenPackageManager}
           className="border-b-0 h-8 px-0"
         />
 

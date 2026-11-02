@@ -169,4 +169,33 @@ A \\arrow[r, "f"] & B
     expect(pdf![2]).toBe(0x44); // D
     expect(pdf![3]).toBe(0x46); // F
   }, 15000);
+
+  it('compiles documents using pgfsys directly', async () => {
+    const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+    const engine = await TexEngine.load(wasmBuf);
+    const bundleDir = path.resolve('public/bundle');
+    const manifest: string[] = JSON.parse(fs.readFileSync('public/bundle/manifest.json', 'utf8'));
+
+    for (const f of manifest) {
+      const p = path.join(bundleDir, f);
+      if (fs.existsSync(p)) {
+        engine.addFile(f, new Uint8Array(fs.readFileSync(p)));
+      }
+    }
+
+    const doc = `\\documentclass{article}
+\\usepackage{pgfsys}
+\\begin{document}
+Test pgfsys driver
+\\end{document}`;
+
+    engine.addFile('main.tex', doc);
+    const res = engine.compile({ entry: 'main.tex', synctex: false });
+    expect(res.status).toBe('spotless');
+    expect(res.diagnostics.length).toBe(0);
+
+    const pdf = engine.pdf();
+    expect(pdf).toBeDefined();
+    expect(pdf!.length).toBeGreaterThan(100);
+  }, 15000);
 });

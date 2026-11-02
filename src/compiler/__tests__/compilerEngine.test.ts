@@ -197,5 +197,9 @@ Test pgfsys driver
     const pdf = engine.pdf();
     expect(pdf).toBeDefined();
     expect(pdf!.length).toBeGreaterThan(100);
+    expect(pdf![0]).toBe(0x25); // %
+    expect(pdf![1]).toBe(0x50); // P
+    expect(pdf![2]).toBe(0x44); // D
+    expect(pdf![3]).toBe(0x46); // F
   }, 15000);
 });

@@ -36,7 +36,7 @@ const CORE_BUNDLE_FILES = [
   'xetex.def',
   'trig.sty',
 
-  // Layout & tools
+  // Layout, TikZ & tools
   'geometry.sty',
   'keyval.sty',
   'iftex.sty',
@@ -44,6 +44,14 @@ const CORE_BUNDLE_FILES = [
   'multicol.sty',
   'calc.sty',
   'etoolbox.sty',
+  'tikz.sty',
+  'tikz.code.tex',
+  'tikz-cd.sty',
+  'tikzlibrarycd.code.tex',
+  'tikzlibrarymatrix.code.tex',
+  'pgfmodulematrix.code.tex',
+  'tikzlibraryquotes.code.tex',
+  'pgflibraryarrows.meta.code.tex',
 
   // Mappings & OpenType Fonts
   'ckx.map',

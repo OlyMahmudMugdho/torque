@@ -134,4 +134,39 @@ Test math: $E = mc^2$
     expect(pdf![2]).toBe(0x44); // D
     expect(pdf![3]).toBe(0x46); // F
   }, 15000);
+
+  it('compiles commutative diagrams with tikz-cd cleanly', async () => {
+    const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+    const engine = await TexEngine.load(wasmBuf);
+    const bundleDir = path.resolve('public/bundle');
+    const manifest: string[] = JSON.parse(fs.readFileSync('public/bundle/manifest.json', 'utf8'));
+
+    // Mount bundle files
+    for (const f of manifest) {
+      const p = path.join(bundleDir, f);
+      if (fs.existsSync(p)) {
+        engine.addFile(f, new Uint8Array(fs.readFileSync(p)));
+      }
+    }
+
+    const doc = `\\documentclass{article}
+\\usepackage{tikz-cd}
+\\begin{document}
+\\begin{tikzcd}
+A \\arrow[r, "f"] & B
+\\end{tikzcd}
+\\end{document}`;
+
+    engine.addFile('main.tex', doc);
+    const res = engine.compile({ entry: 'main.tex', synctex: false });
+    expect(res.status).toBe('spotless');
+
+    const pdf = engine.pdf();
+    expect(pdf).toBeDefined();
+    expect(pdf!.length).toBeGreaterThan(100);
+    expect(pdf![0]).toBe(0x25); // %
+    expect(pdf![1]).toBe(0x50); // P
+    expect(pdf![2]).toBe(0x44); // D
+    expect(pdf![3]).toBe(0x46); // F
+  }, 15000);
 });

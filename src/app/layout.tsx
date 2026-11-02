@@ -12,8 +12,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="bg-zinc-950 text-zinc-100 overflow-hidden">{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <body className="bg-zinc-950 text-zinc-100 overflow-hidden" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }

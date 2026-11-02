@@ -6,9 +6,55 @@ let enginePromise: Promise<TexEngine> | null = null;
 let bundleManifest: Set<string> | null = null;
 const cachedBundleFiles = new Map<string, Uint8Array>();
 
+const CORE_BUNDLE_FILES = [
+  'latex.fmt',
+  'article.cls',
+  'size10.clo',
+  'l3backend-xetex.def',
+  'lmroman10-regular.otf',
+  'ckx.map',
+  'glyphlist.txt',
+  'kanjix.map',
+  'pdfglyphlist.txt',
+  'pdftex.map',
+  'tex-text.tec',
+  'texglyphlist.txt',
+];
+
+async function fetchBundleFile(name: string): Promise<Uint8Array | null> {
+  if (cachedBundleFiles.has(name)) {
+    return cachedBundleFiles.get(name)!;
+  }
+
+  // Probe lookups with brackets or invalid file tokens are not bundle packages
+  if (name.startsWith('[') || name.endsWith(']') || name.includes(':')) {
+    return null;
+  }
+
+  if (bundleManifest && !bundleManifest.has(name)) {
+    return null;
+  }
+
+  try {
+    const url = `/bundle/${encodeURIComponent(name)}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      console.warn(`[compiler.worker] HTTP ${resp.status} fetching bundle file: ${name}`);
+      return null;
+    }
+    const buf = new Uint8Array(await resp.arrayBuffer());
+    cachedBundleFiles.set(name, buf);
+    return buf;
+  } catch (err) {
+    console.warn(`[compiler.worker] Network error fetching bundle file: ${name}`, err);
+    return null;
+  }
+}
+
 async function getEngine(): Promise<TexEngine> {
   if (!enginePromise) {
     enginePromise = (async () => {
+      console.log('[compiler.worker] Initializing Tectonic WebAssembly...');
       const wasmResp = await fetch('/wasm/tectonic_wasm.wasm');
       const engine = await TexEngine.load(wasmResp);
 
@@ -19,31 +65,24 @@ async function getEngine(): Promise<TexEngine> {
           bundleManifest = new Set(list);
         }
       } catch (err) {
-        console.warn('Could not load bundle manifest:', err);
+        console.warn('[compiler.worker] Could not load bundle manifest:', err);
       }
 
+      // Preload core bundle files so initial compilation is instant
+      await Promise.all(
+        CORE_BUNDLE_FILES.map(async (file) => {
+          const data = await fetchBundleFile(file);
+          if (data) {
+            engine.addFile(file, data);
+          }
+        })
+      );
+
+      console.log('[compiler.worker] Tectonic WebAssembly engine ready!');
       return engine;
     })();
   }
   return enginePromise;
-}
-
-async function fetchBundleFile(name: string): Promise<Uint8Array | null> {
-  if (cachedBundleFiles.has(name)) {
-    return cachedBundleFiles.get(name)!;
-  }
-  if (bundleManifest && !bundleManifest.has(name)) {
-    return null;
-  }
-  try {
-    const resp = await fetch(`/bundle/${encodeURIComponent(name)}`);
-    if (!resp.ok) return null;
-    const buf = new Uint8Array(await resp.arrayBuffer());
-    cachedBundleFiles.set(name, buf);
-    return buf;
-  } catch {
-    return null;
-  }
 }
 
 self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest>) => {
@@ -58,18 +97,12 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
     // Reset files in engine for clean build
     engine.clearFiles();
 
-    // Re-mount cached bundle files so far
+    // Mount all cached bundle files into the virtual filesystem
     for (const [name, data] of cachedBundleFiles.entries()) {
       engine.addFile(name, data);
     }
 
-    // Ensure format file is present
-    if (!cachedBundleFiles.has('latex.fmt')) {
-      const fmt = await fetchBundleFile('latex.fmt');
-      if (fmt) engine.addFile('latex.fmt', fmt);
-    }
-
-    // Mount all project files
+    // Mount all project files (main.tex, chapters, bib, images)
     for (const file of req.files) {
       engine.addFile(file.path, file.content);
     }
@@ -85,10 +118,12 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
       passes++;
       let added = 0;
       for (const missing of compileRes.missingFiles) {
-        const data = await fetchBundleFile(missing);
-        if (data) {
-          engine.addFile(missing, data);
-          added++;
+        if (!cachedBundleFiles.has(missing)) {
+          const data = await fetchBundleFile(missing);
+          if (data) {
+            engine.addFile(missing, data);
+            added++;
+          }
         }
       }
       if (added === 0) break;
@@ -125,10 +160,9 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
     };
 
     if (pdfBytes) {
-      // Transfer the underlying ArrayBuffer for zero-copy performance
       (self as unknown as Worker).postMessage(response, [pdfBytes.buffer as ArrayBuffer]);
     } else {
-      (self as unknown as Worker).postMessage(response);
+      self.postMessage(response);
     }
   } catch (error) {
     const durationMs = Math.round(performance.now() - start);

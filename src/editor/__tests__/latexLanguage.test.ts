@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { diagnosticsToMarkers, applyTextDiff } from '../latexLanguage';
+import { describe, it, expect, vi } from 'vitest';
+import { diagnosticsToMarkers, applyTextDiff, registerLatexLanguage } from '../latexLanguage';
 import type { Diagnostic } from '../../types/workspace';
 
 describe('diagnosticsToMarkers', () => {
@@ -45,3 +45,59 @@ describe('applyTextDiff', () => {
     expect(() => applyTextDiff(doc, 'Nonexistent snippet', 'Replacement')).toThrow(/not found/i);
   });
 });
+
+describe('registerLatexLanguage', () => {
+  it('does nothing when monacoInstance is undefined or missing languages', () => {
+    expect(() => registerLatexLanguage(undefined as any)).not.toThrow();
+    expect(() => registerLatexLanguage({} as any)).not.toThrow();
+  });
+
+  it('defines both intellij-dark and intellij-light themes with correct base and syntax tokens', () => {
+    const definedThemes: Record<string, any> = {};
+    const mockMonaco = {
+      languages: {
+        getLanguages: vi.fn().mockReturnValue([]),
+        register: vi.fn(),
+        setMonarchTokensProvider: vi.fn(),
+        setLanguageConfiguration: vi.fn(),
+      },
+      editor: {
+        defineTheme: vi.fn((name: string, data: any) => {
+          definedThemes[name] = data;
+        }),
+      },
+    };
+
+    registerLatexLanguage(mockMonaco);
+
+    expect(mockMonaco.editor.defineTheme).toHaveBeenCalledWith(
+      'intellij-dark',
+      expect.any(Object)
+    );
+    expect(mockMonaco.editor.defineTheme).toHaveBeenCalledWith(
+      'intellij-light',
+      expect.any(Object)
+    );
+
+    const darkTheme = definedThemes['intellij-dark'];
+    expect(darkTheme).toBeDefined();
+    expect(darkTheme.base).toBe('vs-dark');
+    expect(darkTheme.colors['editor.background']).toBe('#1e1f22');
+
+    const lightTheme = definedThemes['intellij-light'];
+    expect(lightTheme).toBeDefined();
+    expect(lightTheme.base).toBe('vs');
+    expect(lightTheme.colors['editor.background']).toBe('#ffffff');
+
+    // Verify Darcula light syntax tokens
+    const lightRules = lightTheme.rules;
+    const findRule = (token: string) => lightRules.find((r: any) => r.token === token);
+
+    expect(findRule('keyword')?.foreground?.toLowerCase()).toMatch(/0033b3/);
+    expect(findRule('number')?.foreground?.toLowerCase()).toMatch(/1750eb/);
+    expect(findRule('comment')?.foreground?.toLowerCase()).toMatch(/8c8c8c/);
+    const stringRule = findRule('string') || findRule('string.math');
+    expect(stringRule?.foreground?.toLowerCase()).toMatch(/067d17/);
+  });
+});
+

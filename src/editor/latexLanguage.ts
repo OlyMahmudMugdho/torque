@@ -133,4 +133,31 @@ export function registerLatexLanguage(monacoInstance: any): void {
       'editorIndentGuide.activeBackground': '#474b50',
     },
   });
+
+  // Register IntelliJ Light Theme
+  monacoInstance.editor.defineTheme('intellij-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '8c8c8c', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '0033b3', fontStyle: 'bold' },
+      { token: 'string', foreground: '067d17' },
+      { token: 'string.math', foreground: '067d17' },
+      { token: 'delimiter.bracket', foreground: '000000' },
+      { token: 'delimiter.array', foreground: '000000' },
+      { token: 'number', foreground: '1750eb' },
+    ],
+    colors: {
+      'editor.background': '#ffffff',
+      'editor.foreground': '#1f2328',
+      'editorCursor.foreground': '#000000',
+      'editor.lineHighlightBackground': '#f7f8fa',
+      'editorLineNumber.foreground': '#a4a3a8',
+      'editorLineNumber.activeForeground': '#1f2328',
+      'editor.selectionBackground': '#add6ff',
+      'editor.inactiveSelectionBackground': '#e8e8e8',
+      'editorIndentGuide.background': '#ebecf0',
+      'editorIndentGuide.activeBackground': '#c9ccd6',
+    },
+  });
 }

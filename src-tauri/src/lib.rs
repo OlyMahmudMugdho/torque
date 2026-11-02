@@ -1,3 +1,10 @@
+pub mod storage;
+
+use storage::{
+  get_torque_dir, tauri_delete_project, tauri_load_project, tauri_list_projects,
+  tauri_save_project,
+};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -11,6 +18,13 @@ pub fn run() {
       }
       Ok(())
     })
+    .invoke_handler(tauri::generate_handler![
+      get_torque_dir,
+      tauri_list_projects,
+      tauri_save_project,
+      tauri_load_project,
+      tauri_delete_project,
+    ])
     .run(tauri::generate_context!())
     .expect("error while building tauri application");
 }

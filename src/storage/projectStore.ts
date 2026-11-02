@@ -1,4 +1,12 @@
 import type { Project, ProjectFile } from '../types/workspace';
+import { isTauri, TauriStorage } from './tauriStorage';
+
+export { isTauri, TauriStorage };
+
+export interface ProjectStoreOptions {
+  useTauri?: boolean;
+  tauriStorage?: TauriStorage;
+}
 
 export function normalizeFilePath(rawPath: string): string {
   if (!rawPath || typeof rawPath !== 'string') {
@@ -33,12 +41,20 @@ export function normalizeFilePath(rawPath: string): string {
 export class ProjectStore {
   private dbName: string;
   private db: IDBDatabase | null = null;
+  private tauriStorage: TauriStorage | null = null;
 
-  constructor(dbName = 'torque_latex_db') {
+  constructor(dbName = 'torque_latex_db', options?: ProjectStoreOptions) {
     this.dbName = dbName;
+    const shouldUseTauri = options?.useTauri !== undefined ? options.useTauri : isTauri();
+    if (shouldUseTauri) {
+      this.tauriStorage = options?.tauriStorage ?? new TauriStorage();
+    }
   }
 
   async init(): Promise<void> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.init();
+    }
     if (this.db) {
       return;
     }
@@ -72,6 +88,10 @@ export class ProjectStore {
   }
 
   close(): void {
+    if (this.tauriStorage) {
+      this.tauriStorage.close();
+      return;
+    }
     if (this.db) {
       this.db.close();
       this.db = null;
@@ -79,6 +99,9 @@ export class ProjectStore {
   }
 
   async listProjects(): Promise<Project[]> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.listProjects();
+    }
     const db = await this.getDb();
     return new Promise<Project[]>((resolve, reject) => {
       const tx = db.transaction('projects', 'readonly');
@@ -98,6 +121,9 @@ export class ProjectStore {
     initialFiles?: Omit<ProjectFile, 'projectId' | 'updatedAt'>[],
     rootEntry?: string
   ): Promise<Project> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.createProject(name, initialFiles, rootEntry);
+    }
     const db = await this.getDb();
     const id = crypto.randomUUID();
     const now = Date.now();
@@ -173,6 +199,9 @@ Welcome to your LaTeX document!
   }
 
   async renameProject(projectId: string, newName: string): Promise<Project> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.renameProject(projectId, newName);
+    }
     const db = await this.getDb();
     return new Promise<Project>((resolve, reject) => {
       const tx = db.transaction('projects', 'readwrite');
@@ -206,6 +235,9 @@ Welcome to your LaTeX document!
   }
 
   async setRootEntry(projectId: string, rootEntry: string): Promise<Project> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.setRootEntry(projectId, rootEntry);
+    }
     const db = await this.getDb();
     const normRoot = normalizeFilePath(rootEntry);
 
@@ -253,6 +285,9 @@ Welcome to your LaTeX document!
   }
 
   async deleteProject(projectId: string): Promise<void> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.deleteProject(projectId);
+    }
     const db = await this.getDb();
     return new Promise<void>((resolve, reject) => {
       const tx = db.transaction(['projects', 'project_files'], 'readwrite');
@@ -278,6 +313,9 @@ Welcome to your LaTeX document!
   }
 
   async listFiles(projectId: string): Promise<ProjectFile[]> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.listFiles(projectId);
+    }
     const db = await this.getDb();
     return new Promise<ProjectFile[]>((resolve, reject) => {
       const tx = db.transaction('project_files', 'readonly');
@@ -294,6 +332,9 @@ Welcome to your LaTeX document!
   }
 
   async getFile(projectId: string, path: string): Promise<ProjectFile | undefined> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.getFile(projectId, path);
+    }
     const db = await this.getDb();
     const normalizedPath = normalizeFilePath(path);
     return new Promise<ProjectFile | undefined>((resolve, reject) => {
@@ -311,6 +352,9 @@ Welcome to your LaTeX document!
     content: string | Uint8Array,
     isBinary?: boolean
   ): Promise<ProjectFile> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.putFile(projectId, path, content, isBinary);
+    }
     const db = await this.getDb();
     const normalizedPath = normalizeFilePath(path);
     const binaryFlag = isBinary !== undefined ? isBinary : content instanceof Uint8Array;
@@ -351,6 +395,9 @@ Welcome to your LaTeX document!
     oldPath: string,
     newPath: string
   ): Promise<ProjectFile> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.renameFile(projectId, oldPath, newPath);
+    }
     const db = await this.getDb();
     const oldNorm = normalizeFilePath(oldPath);
     const newNorm = normalizeFilePath(newPath);
@@ -417,6 +464,9 @@ Welcome to your LaTeX document!
   }
 
   async deleteFile(projectId: string, path: string): Promise<void> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.deleteFile(projectId, path);
+    }
     const db = await this.getDb();
     const normPath = normalizeFilePath(path);
 

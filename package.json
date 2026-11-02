@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "test": "vitest run"
   },
   "dependencies": {
@@ -15,6 +15,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^1.16.0",
     "monaco-editor": "^0.52.2",
+    "next": "^16.4.4",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

@@ -1,10 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
 import type { ProjectFile, Diagnostic } from '../types/workspace';
+import { useThemeSafe } from '../context/ThemeContext';
 import { registerLatexLanguage, diagnosticsToMarkers } from './latexLanguage';
 import { X, Image, ChevronRight, FileCode } from 'lucide-react';
 
-interface MonacoEditorPaneProps {
+export interface MonacoEditorPaneProps {
   files: ProjectFile[];
   activeFilePath: string;
   rootEntry: string;
@@ -27,14 +28,17 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
   onContentChange,
   onCompileShortcut,
 }) => {
+  const { theme } = useThemeSafe();
+  const isDark = theme === 'dark';
   const monaco = useMonaco();
   const editorRef = useRef<any>(null);
 
   useEffect(() => {
     if (monaco) {
       registerLatexLanguage(monaco);
+      monaco.editor.setTheme(theme === 'dark' ? 'intellij-dark' : 'intellij-light');
     }
-  }, [monaco]);
+  }, [monaco, theme]);
 
   const activeFile = files.find((f) => f.path === activeFilePath);
   const isBinary = activeFile?.isBinary ?? false;
@@ -70,9 +74,17 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
   const pathParts = activeFilePath.split('/');
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#1e1f22]">
+    <div
+      className={`w-full h-full flex flex-col ${
+        isDark ? 'bg-[#1e1f22]' : 'bg-[#ffffff]'
+      }`}
+    >
       {/* IntelliJ Tab Bar */}
-      <div className="h-9 bg-[#2b2d30] border-b border-[#1e1f22] flex items-center overflow-x-auto select-none">
+      <div
+        className={`h-9 border-b flex items-center overflow-x-auto select-none ${
+          isDark ? 'bg-[#2b2d30] border-[#1e1f22]' : 'bg-[#ebecf0] border-[#d1d5db]'
+        }`}
+      >
         {openTabs.map((tabPath) => {
           const isActive = tabPath === activeFilePath;
           const fileName = tabPath.split('/').pop() || tabPath;
@@ -81,10 +93,14 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
             <div
               key={tabPath}
               onClick={() => onSelectTab(tabPath)}
-              className={`h-full flex items-center gap-2 px-3 text-xs border-r border-[#1e1f22] cursor-pointer transition ${
+              className={`h-full flex items-center gap-2 px-3 text-xs border-r cursor-pointer transition ${
                 isActive
-                  ? 'bg-[#1e1f22] text-[#dfe1e5] font-medium border-b-2 border-b-[#3574f0]'
-                  : 'bg-[#2b2d30] text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#313438]'
+                  ? isDark
+                    ? 'bg-[#1e1f22] text-[#dfe1e5] font-medium border-b-2 border-b-[#3574f0] border-r-[#1e1f22]'
+                    : 'bg-[#ffffff] text-[#1f2328] font-medium border-b-2 border-b-[#3574f0] border-r-[#d1d5db]'
+                  : isDark
+                    ? 'bg-[#2b2d30] text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#313438] border-r-[#1e1f22]'
+                    : 'bg-[#ebecf0] text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5] border-r-[#d1d5db]'
               }`}
             >
               <FileCode className="w-3.5 h-3.5 text-[#59a869]" />
@@ -95,7 +111,11 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
                     e.stopPropagation();
                     onCloseTab(tabPath);
                   }}
-                  className="p-0.5 hover:bg-[#393b40] rounded text-[#868a91] hover:text-white"
+                  className={`p-0.5 rounded ${
+                    isDark
+                      ? 'hover:bg-[#393b40] text-[#868a91] hover:text-white'
+                      : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-black'
+                  }`}
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -106,14 +126,36 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
       </div>
 
       {/* IntelliJ Breadcrumbs Bar */}
-      <div className="h-6 bg-[#1e1f22] border-b border-[#2b2d30] px-3 flex items-center text-[11px] text-[#868a91] font-mono select-none">
-        <span className="hover:text-[#dfe1e5] cursor-pointer">project</span>
+      <div
+        className={`h-6 border-b px-3 flex items-center text-[11px] font-mono select-none ${
+          isDark
+            ? 'bg-[#1e1f22] border-[#2b2d30] text-[#868a91]'
+            : 'bg-[#ffffff] border-[#e5e7eb] text-[#6c707e]'
+        }`}
+      >
+        <span
+          className={`cursor-pointer ${
+            isDark ? 'hover:text-[#dfe1e5]' : 'hover:text-[#1f2328]'
+          }`}
+        >
+          project
+        </span>
         {pathParts.map((part, idx) => (
           <React.Fragment key={idx}>
-            <ChevronRight className="w-3 h-3 text-[#5a5d63] mx-1" />
+            <ChevronRight
+              className={`w-3 h-3 mx-1 ${
+                isDark ? 'text-[#5a5d63]' : 'text-[#a1a3a8]'
+              }`}
+            />
             <span
-              className={`hover:text-[#dfe1e5] cursor-pointer ${
-                idx === pathParts.length - 1 ? 'text-[#dfe1e5] font-medium' : ''
+              className={`cursor-pointer ${
+                idx === pathParts.length - 1
+                  ? isDark
+                    ? 'text-[#dfe1e5] font-medium'
+                    : 'text-[#1f2328] font-medium'
+                  : isDark
+                    ? 'hover:text-[#dfe1e5]'
+                    : 'hover:text-[#1f2328]'
               }`}
             >
               {part}
@@ -125,16 +167,28 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
       {/* Editor or Binary Asset View */}
       <div className="flex-1 w-full h-[calc(100%-3.75rem)]">
         {isBinary ? (
-          <div className="w-full h-full flex flex-col items-center justify-center text-[#868a91] gap-2">
-            <Image className="w-12 h-12 text-[#5a5d63]" />
-            <span className="text-sm font-medium text-[#dfe1e5]">Binary asset: {activeFilePath}</span>
-            <span className="text-xs text-[#868a91]">Binary file preview is not supported in the code editor.</span>
+          <div
+            className={`w-full h-full flex flex-col items-center justify-center gap-2 ${
+              isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
+            }`}
+          >
+            <Image className="w-12 h-12 opacity-50" />
+            <span
+              className={`text-sm font-medium ${
+                isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'
+              }`}
+            >
+              Binary asset: {activeFilePath}
+            </span>
+            <span className="text-xs">
+              Binary file preview is not supported in the code editor.
+            </span>
           </div>
         ) : (
           <Editor
             height="100%"
             language={activeFilePath.endsWith('.tex') ? 'latex' : 'plaintext'}
-            theme="intellij-dark"
+            theme={theme === 'dark' ? 'intellij-dark' : 'intellij-light'}
             value={textContent}
             onChange={(val) => onContentChange(val ?? '')}
             onMount={handleEditorDidMount}

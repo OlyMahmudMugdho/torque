@@ -1,8 +1,9 @@
 import React, { useRef } from 'react';
 import type { ProjectFile } from '../types/workspace';
+import { useThemeSafe } from '../context/ThemeContext';
 import { FileText, Image, FilePlus, Upload, Trash2, Edit, CheckCircle, ChevronDown, Folder } from 'lucide-react';
 
-interface FileTreeSidebarProps {
+export interface FileTreeSidebarProps {
   files: ProjectFile[];
   activeFilePath: string;
   rootEntry: string;
@@ -25,6 +26,8 @@ export const FileTreeSidebar: React.FC<FileTreeSidebarProps> = ({
   onDeleteFile,
   onSetRootEntry,
 }) => {
+  const { theme } = useThemeSafe();
+  const isDark = theme === 'dark';
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleCreate = async () => {
@@ -60,7 +63,7 @@ export const FileTreeSidebar: React.FC<FileTreeSidebarProps> = ({
     if (['png', 'jpg', 'jpeg', 'pdf', 'eps', 'svg'].includes(ext ?? '')) {
       return <Image className="w-4 h-4 text-[#3574f0] shrink-0" />;
     }
-    return <FileText className="w-4 h-4 text-[#868a91] shrink-0" />;
+    return <FileText className={`w-4 h-4 shrink-0 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`} />;
   };
 
   const sortedFiles = [...files].sort((a, b) => {
@@ -70,25 +73,41 @@ export const FileTreeSidebar: React.FC<FileTreeSidebarProps> = ({
   });
 
   return (
-    <aside className="w-full h-full bg-[#2b2d30] border-r border-[#1e1f22] flex flex-col select-none text-[13px] text-[#dfe1e5] font-sans">
+    <aside
+      className={`w-full h-full border-r flex flex-col select-none text-[13px] font-sans ${
+        isDark
+          ? 'bg-[#2b2d30] border-[#1e1f22] text-[#dfe1e5]'
+          : 'bg-[#f7f8fa] border-[#d1d5db] text-[#1f2328]'
+      }`}
+    >
       {/* IntelliJ Tool Window Header */}
-      <div className="h-8 px-3 border-b border-[#1e1f22] flex items-center justify-between text-xs text-[#dfe1e5] bg-[#2b2d30]">
-        <div className="flex items-center gap-1.5 font-semibold text-[#dfe1e5]">
+      <div
+        className={`h-8 px-3 border-b flex items-center justify-between text-xs ${
+          isDark
+            ? 'border-[#1e1f22] bg-[#2b2d30] text-[#dfe1e5]'
+            : 'border-[#d1d5db] bg-[#ebecf0] text-[#1f2328]'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 font-semibold">
           <Folder className="w-3.5 h-3.5 text-[#3574f0]" />
           <span>Project</span>
         </div>
 
-        <div className="flex items-center gap-1 text-[#868a91]">
+        <div className={`flex items-center gap-1 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`}>
           <button
             onClick={handleCreate}
-            className="p-1 hover:bg-[#393b40] hover:text-[#dfe1e5] rounded transition"
+            className={`p-1 rounded transition ${
+              isDark ? 'hover:bg-[#393b40] hover:text-[#dfe1e5]' : 'hover:bg-[#dfe1e5] hover:text-[#1f2328]'
+            }`}
             title="New File (Alt+Insert)"
           >
             <FilePlus className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="p-1 hover:bg-[#393b40] hover:text-[#dfe1e5] rounded transition"
+            className={`p-1 rounded transition ${
+              isDark ? 'hover:bg-[#393b40] hover:text-[#dfe1e5]' : 'hover:bg-[#dfe1e5] hover:text-[#1f2328]'
+            }`}
             title="Upload Files"
           >
             <Upload className="w-3.5 h-3.5" />
@@ -106,10 +125,14 @@ export const FileTreeSidebar: React.FC<FileTreeSidebarProps> = ({
       {/* Project Tree Items */}
       <div className="flex-1 overflow-y-auto py-1">
         {/* Root Directory Row */}
-        <div className="px-2 py-1 flex items-center gap-1.5 text-xs text-[#868a91] font-medium">
-          <ChevronDown className="w-3.5 h-3.5 text-[#868a91]" />
+        <div
+          className={`px-2 py-1 flex items-center gap-1.5 text-xs font-medium ${
+            isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
+          }`}
+        >
+          <ChevronDown className="w-3.5 h-3.5" />
           <Folder className="w-3.5 h-3.5 text-[#e2a53b]" />
-          <span className="text-[#dfe1e5]">project-root</span>
+          <span className={isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'}>project-root</span>
         </div>
 
         {/* Files */}
@@ -125,22 +148,36 @@ export const FileTreeSidebar: React.FC<FileTreeSidebarProps> = ({
                 onClick={() => onSelectFile(file.path)}
                 className={`group flex items-center justify-between pl-3 pr-2 py-1 cursor-pointer transition text-xs border-l-2 ${
                   isActive
-                    ? 'bg-[#2e436e]/60 text-white font-medium border-[#3574f0]'
-                    : 'border-transparent text-[#dfe1e5] hover:bg-[#313438]'
+                    ? isDark
+                      ? 'bg-[#2e436e]/60 text-white font-medium border-[#3574f0]'
+                      : 'bg-[#cfe1fd] text-[#1f2328] font-medium border-[#3574f0]'
+                    : isDark
+                      ? 'border-transparent text-[#dfe1e5] hover:bg-[#313438]'
+                      : 'border-transparent text-[#1f2328] hover:bg-[#ebecf0]'
                 }`}
               >
                 <div className="flex items-center gap-2 truncate flex-1">
                   {getFileIcon(file.path)}
                   <span className="truncate">{file.path}</span>
                   {isRoot && (
-                    <span className="text-[9px] uppercase font-bold bg-[#3574f0]/20 text-[#3574f0] px-1 rounded border border-[#3574f0]/40">
+                    <span
+                      className={`text-[9px] uppercase font-bold px-1 rounded border ${
+                        isDark
+                          ? 'bg-[#3574f0]/20 text-[#3574f0] border-[#3574f0]/40'
+                          : 'bg-[#3574f0]/15 text-[#1750eb] border-[#3574f0]/30'
+                      }`}
+                    >
                       ROOT
                     </span>
                   )}
                 </div>
 
                 {/* IntelliJ Quick Actions */}
-                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[#868a91]">
+                <div
+                  className={`opacity-0 group-hover:opacity-100 flex items-center gap-1 ${
+                    isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
+                  }`}
+                >
                   {isTex && !isRoot && (
                     <button
                       onClick={(e) => {
@@ -162,7 +199,7 @@ export const FileTreeSidebar: React.FC<FileTreeSidebarProps> = ({
                         await onRenameFile(file.path, newPath.trim());
                       }
                     }}
-                    className="p-0.5 hover:text-white"
+                    className={`p-0.5 ${isDark ? 'hover:text-white' : 'hover:text-black'}`}
                     title="Rename"
                   >
                     <Edit className="w-3 h-3" />

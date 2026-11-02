@@ -77,3 +77,15 @@ export function useTheme(): ThemeContextType {
   }
   return context;
 }
+
+export function useThemeSafe(): ThemeContextType {
+  const context = useContext(ThemeContext);
+  if (!context) {
+    return {
+      theme: 'dark',
+      toggleTheme: () => {},
+      setTheme: () => {},
+    };
+  }
+  return context;
+}

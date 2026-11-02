@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useTheme } from '../context/ThemeContext';
+import { useThemeSafe } from '../context/ThemeContext';
 import { Check } from 'lucide-react';
 
 export interface TopMenuBarProps {
@@ -50,7 +50,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onAbout,
   className = '',
 }) => {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme } = useThemeSafe();
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuBarRef = useRef<HTMLElement>(null);
 

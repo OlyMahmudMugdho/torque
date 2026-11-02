@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import type { Diagnostic } from '../types/workspace';
-import { AlertCircle, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Terminal } from 'lucide-react';
+import { useThemeSafe } from '../context/ThemeContext';
+import { AlertCircle, AlertTriangle, CheckCircle2, Terminal, X } from 'lucide-react';
 
-interface DiagnosticsLogPanelProps {
+export interface DiagnosticsLogPanelProps {
   diagnostics: Diagnostic[];
   isOpen?: boolean;
   onToggle?: () => void;
+  onClose?: () => void;
   onSelectDiagnostic?: (diagnostic: Diagnostic) => void;
 }
 
@@ -13,25 +15,52 @@ export const DiagnosticsLogPanel: React.FC<DiagnosticsLogPanelProps> = ({
   diagnostics,
   isOpen = true,
   onToggle,
+  onClose,
   onSelectDiagnostic,
 }) => {
   const [activeTab, setActiveTab] = useState<'problems' | 'build'>('problems');
+  const { theme } = useThemeSafe();
+  const isDark = theme === 'dark';
+
+  if (!isOpen) {
+    return null;
+  }
 
   const errors = diagnostics.filter((d) => d.severity === 'error');
   const warnings = diagnostics.filter((d) => d.severity === 'warning');
 
+  const handleClose = () => {
+    if (onClose) {
+      onClose();
+    } else if (onToggle) {
+      onToggle();
+    }
+  };
+
   return (
-    <div className="w-full bg-[#1e1f22] border-t border-[#393b40] flex flex-col text-xs text-[#dfe1e5] font-sans">
+    <div
+      className={`w-full flex flex-col text-xs font-sans border-t ${
+        isDark ? 'bg-[#1e1f22] border-[#393b40] text-[#dfe1e5]' : 'bg-[#ffffff] border-[#d1d5db] text-[#1f2328]'
+      }`}
+    >
       {/* IntelliJ Tool Window Tab Header */}
-      <div className="h-8 px-2 flex items-center justify-between border-b border-[#2b2d30] bg-[#2b2d30] select-none">
+      <div
+        className={`h-8 px-2 flex items-center justify-between border-b select-none shrink-0 ${
+          isDark ? 'border-[#2b2d30] bg-[#2b2d30]' : 'border-[#d1d5db] bg-[#ebecf0]'
+        }`}
+      >
         <div className="flex items-center h-full">
           {/* Problems Tab */}
           <button
             onClick={() => setActiveTab('problems')}
             className={`h-full px-3 flex items-center gap-1.5 text-xs font-medium border-b-2 transition ${
               activeTab === 'problems'
-                ? 'border-[#3574f0] text-white bg-[#1e1f22]'
-                : 'border-transparent text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#313438]'
+                ? isDark
+                  ? 'border-[#3574f0] text-white bg-[#1e1f22]'
+                  : 'border-[#3574f0] text-[#1f2328] bg-[#ffffff]'
+                : isDark
+                  ? 'border-transparent text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#313438]'
+                  : 'border-transparent text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
             }`}
           >
             <span>Problems</span>
@@ -52,8 +81,12 @@ export const DiagnosticsLogPanel: React.FC<DiagnosticsLogPanelProps> = ({
             onClick={() => setActiveTab('build')}
             className={`h-full px-3 flex items-center gap-1.5 text-xs font-medium border-b-2 transition ${
               activeTab === 'build'
-                ? 'border-[#3574f0] text-white bg-[#1e1f22]'
-                : 'border-transparent text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#313438]'
+                ? isDark
+                  ? 'border-[#3574f0] text-white bg-[#1e1f22]'
+                  : 'border-[#3574f0] text-[#1f2328] bg-[#ffffff]'
+                : isDark
+                  ? 'border-transparent text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#313438]'
+                  : 'border-transparent text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
             }`}
           >
             <Terminal className="w-3.5 h-3.5" />
@@ -61,74 +94,88 @@ export const DiagnosticsLogPanel: React.FC<DiagnosticsLogPanelProps> = ({
           </button>
         </div>
 
-        {/* Toggle Hide/Show */}
-        <div className="flex items-center gap-1 text-[#868a91]">
+        {/* Close Button */}
+        <div className="flex items-center gap-1">
           <button
-            onClick={onToggle}
-            className="p-1 hover:text-white hover:bg-[#393b40] rounded text-xs"
-            title={isOpen ? 'Hide' : 'Show'}
+            onClick={handleClose}
+            className={`p-1 rounded text-xs transition ${
+              isDark
+                ? 'text-[#868a91] hover:text-white hover:bg-[#393b40]'
+                : 'text-[#6c707e] hover:text-black hover:bg-[#dfe1e5]'
+            }`}
+            title="Close Problems Panel"
+            aria-label="Close Problems Panel"
           >
-            {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {isOpen && (
-        <div className="max-h-44 min-h-24 overflow-y-auto font-mono text-[11px] p-2 bg-[#1e1f22]">
-          {activeTab === 'problems' && (
-            <div className="space-y-0.5">
-              {diagnostics.length === 0 ? (
-                <div className="flex items-center gap-1.5 text-[#59a869] px-2 py-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>No problems found in document</span>
-                </div>
-              ) : (
-                diagnostics.map((d, index) => {
-                  const isErr = d.severity === 'error';
-                  return (
-                    <div
-                      key={index}
-                      onClick={() => onSelectDiagnostic?.(d)}
-                      className={`flex items-start gap-2 px-2 py-1 rounded cursor-pointer transition ${
-                        isErr
-                          ? 'hover:bg-[#e05555]/10 text-[#dfe1e5]'
-                          : 'hover:bg-[#e2a53b]/10 text-[#dfe1e5]'
-                      }`}
-                    >
-                      {isErr ? (
-                        <AlertCircle className="w-3.5 h-3.5 text-[#e05555] shrink-0 mt-0.5" />
-                      ) : (
-                        <AlertTriangle className="w-3.5 h-3.5 text-[#e2a53b] shrink-0 mt-0.5" />
-                      )}
-                      <div className="flex-1">
-                        <span className="text-[#3574f0] font-semibold">
-                          {d.file ?? 'TeX'}:{d.line ?? 1}
-                        </span>{' '}
-                        <span>{d.message}</span>
-                      </div>
+      <div
+        className={`max-h-48 min-h-24 overflow-y-auto font-mono text-[11px] p-2 ${
+          isDark ? 'bg-[#1e1f22]' : 'bg-[#ffffff]'
+        }`}
+      >
+        {activeTab === 'problems' && (
+          <div className="space-y-0.5">
+            {diagnostics.length === 0 ? (
+              <div className="flex items-center gap-1.5 text-[#59a869] px-2 py-1">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>No problems found in document</span>
+              </div>
+            ) : (
+              diagnostics.map((d, index) => {
+                const isErr = d.severity === 'error';
+                return (
+                  <div
+                    key={index}
+                    onClick={() => onSelectDiagnostic?.(d)}
+                    className={`flex items-start gap-2 px-2 py-1 rounded cursor-pointer transition ${
+                      isErr
+                        ? 'hover:bg-[#e05555]/10'
+                        : 'hover:bg-[#e2a53b]/10'
+                    }`}
+                  >
+                    {isErr ? (
+                      <AlertCircle className="w-3.5 h-3.5 text-[#e05555] shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-3.5 h-3.5 text-[#e2a53b] shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1">
+                      <span className="text-[#3574f0] font-semibold">
+                        {d.file ?? 'TeX'}:{d.line ?? 1}
+                      </span>{' '}
+                      <span className={isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'}>{d.message}</span>
                     </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          {activeTab === 'build' && (
-            <div className="text-[#868a91] space-y-1">
-              <div className="text-[#59a869] font-bold">TeX compilation output:</div>
-              {diagnostics.length > 0 ? (
-                diagnostics.map((d, idx) => (
-                  <div key={idx} className="pl-2 border-l border-[#393b40]">
-                    [{d.severity.toUpperCase()}] {d.file ? `${d.file}:${d.line}` : ''} {d.message}
                   </div>
-                ))
-              ) : (
-                <div className="pl-2 italic text-[#6c707e]">Ready. Click Compile to run.</div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {activeTab === 'build' && (
+          <div className={`space-y-1 ${isDark ? 'text-[#868a91]' : 'text-[#5c6066]'}`}>
+            <div className="text-[#59a869] font-bold">TeX compilation output:</div>
+            {diagnostics.length > 0 ? (
+              diagnostics.map((d, idx) => (
+                <div
+                  key={idx}
+                  className={`pl-2 border-l ${
+                    isDark ? 'border-[#393b40]' : 'border-[#d1d5db]'
+                  }`}
+                >
+                  [{d.severity.toUpperCase()}] {d.file ? `${d.file}:${d.line}` : ''} {d.message}
+                </div>
+              ))
+            ) : (
+              <div className={`pl-2 italic ${isDark ? 'text-[#6c707e]' : 'text-[#868a91]'}`}>
+                Ready. Click Compile to run.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

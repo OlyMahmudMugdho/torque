@@ -1,13 +1,20 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { FileTreeSidebar } from '../FileTreeSidebar';
 import { DiagnosticsLogPanel } from '../DiagnosticsLogPanel';
 import { ProjectTopBar } from '../ProjectTopBar';
 import { PdfPreviewPane } from '../PdfPreviewPane';
+import { ThemeProvider } from '../../context/ThemeContext';
+import { WorkspaceUI } from '../../App';
 import type { Project, ProjectFile, Diagnostic } from '../../types/workspace';
+
+vi.mock('@monaco-editor/react', () => ({
+  default: () => <div data-testid="monaco-editor-mock" />,
+  useMonaco: () => null,
+}));
 
 vi.mock('pdfjs-dist', () => {
   return {
@@ -47,7 +54,42 @@ const sampleFiles: ProjectFile[] = [
   { projectId: 'p1', path: 'sections/intro.tex', content: '...', isBinary: false, updatedAt: 1 },
 ];
 
+let mockWorkspaceState: any;
+
+vi.mock('../../workspace/useWorkspace', () => ({
+  useWorkspace: () => mockWorkspaceState,
+}));
+
 describe('Workspace UI Components', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.className = '';
+    mockWorkspaceState = {
+      ready: true,
+      projects: [sampleProject],
+      activeProject: sampleProject,
+      activeFilePath: 'main.tex',
+      files: sampleFiles,
+      openTabs: ['main.tex'],
+      compileStatus: 'spotless',
+      lastResult: null,
+      actions: { compile: vi.fn() },
+      selectProject: vi.fn(),
+      createNewProject: vi.fn(),
+      renameActiveProject: vi.fn(),
+      deleteProjectById: vi.fn(),
+      selectFile: vi.fn(),
+      closeTab: vi.fn(),
+      createFile: vi.fn(),
+      renameFilePath: vi.fn(),
+      deleteFilePath: vi.fn(),
+      setProjectRootEntry: vi.fn(),
+      updateActiveFileContent: vi.fn(),
+      exportActiveProjectZip: vi.fn(),
+      importZipAsProject: vi.fn(),
+    };
+  });
+
   it('renders FileTreeSidebar with ROOT badge and triggers file selection and root entry changes', () => {
     const onSelectFile = vi.fn();
     const onSetRoot = vi.fn();
@@ -110,6 +152,29 @@ describe('Workspace UI Components', () => {
     expect(onSelect).toHaveBeenCalledWith(diagnostics[0]);
   });
 
+  it('returns null and takes zero space when DiagnosticsLogPanel has isOpen={false}', () => {
+    const diagnostics: Diagnostic[] = [
+      { severity: 'error', file: 'main.tex', line: 18, message: 'Syntax error' },
+    ];
+    const { container } = render(
+      <DiagnosticsLogPanel diagnostics={diagnostics} isOpen={false} />
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('invokes onClose when close button in DiagnosticsLogPanel is clicked', () => {
+    const onClose = vi.fn();
+    const diagnostics: Diagnostic[] = [
+      { severity: 'error', file: 'main.tex', line: 18, message: 'Syntax error' },
+    ];
+    render(
+      <DiagnosticsLogPanel diagnostics={diagnostics} isOpen={true} onClose={onClose} />
+    );
+    const closeBtn = screen.getByRole('button', { name: /close problems panel/i });
+    fireEvent.click(closeBtn);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('renders PdfPreviewPane with empty state when no pdfBytes provided', () => {
     render(<PdfPreviewPane pdfBytes={null} compiling={false} />);
     const downloadBtn = screen.getByRole('button', { name: /export \/ download pdf/i });
@@ -126,9 +191,7 @@ describe('Workspace UI Components', () => {
     expect(pdfjsLib.getDocument).toHaveBeenCalled();
     const lastCall = vi.mocked(pdfjsLib.getDocument).mock.calls.at(-1)?.[0] as { data: Uint8Array };
     expect(lastCall.data).toBeDefined();
-    // Verify it is a separate cloned buffer, not the same ArrayBuffer reference
     expect(lastCall.data.buffer).not.toBe(rawBytes.buffer);
-    // Verify original bytes remain intact and non-detached
     expect(rawBytes.byteLength).toBe(8);
     expect(Array.from(rawBytes)).toEqual([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35]);
   });
@@ -162,13 +225,11 @@ describe('Workspace UI Components', () => {
 
       fireEvent.click(downloadBtn);
 
-      // Verify Blob creation and URL generation
       expect(createObjectURLMock).toHaveBeenCalledTimes(1);
       const createdBlob = createObjectURLMock.mock.calls[0][0] as Blob;
       expect(createdBlob).toBeInstanceOf(Blob);
       expect(createdBlob.type).toBe('application/pdf');
 
-      // Verify Blob contains exact bytes matching %PDF- header
       expect(createdBlob.size).toBe(pdfBytes.length);
       const sym = Object.getOwnPropertySymbols(createdBlob)[0];
       const internalBuffer = (createdBlob as any)[sym]?._buffer ?? (createdBlob as any)._buffer;
@@ -176,7 +237,6 @@ describe('Workspace UI Components', () => {
         expect(Array.from(new Uint8Array(internalBuffer))).toEqual(Array.from(pdfBytes));
       }
 
-      // Verify DOM anchor manipulation
       const appendedAnchor = appendSpy.mock.calls.find(
         ([node]) => (node as HTMLElement).tagName === 'A'
       )?.[0] as HTMLAnchorElement;
@@ -187,15 +247,117 @@ describe('Workspace UI Components', () => {
       expect(clickSpy).toHaveBeenCalledTimes(1);
       expect(removeSpy).toHaveBeenCalledWith(appendedAnchor);
 
-      // Revocation must NOT occur synchronously right after click
       expect(revokeObjectURLMock).not.toHaveBeenCalled();
 
-      // Advancing timer to 10 seconds triggers revocation
       vi.advanceTimersByTime(10000);
       expect(revokeObjectURLMock).toHaveBeenCalledTimes(1);
       expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:http://localhost/test-uuid');
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('renders embedded TopMenuBar inside ProjectTopBar and triggers callbacks', () => {
+    const onNewFile = vi.fn();
+    render(
+      <ThemeProvider>
+        <ProjectTopBar
+          projects={[sampleProject]}
+          activeProject={sampleProject}
+          compileStatus="spotless"
+          onSelectProject={vi.fn()}
+          onCreateProject={vi.fn()}
+          onRenameProject={vi.fn()}
+          onDeleteProject={vi.fn()}
+          onExportZip={vi.fn()}
+          onImportZip={vi.fn()}
+          onCompile={vi.fn()}
+          onNewFile={onNewFile}
+        />
+      </ThemeProvider>
+    );
+
+    expect(screen.getByRole('menubar')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'File' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Help' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'File' }));
+    fireEvent.click(screen.getByText('New File'));
+    expect(onNewFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('toggles theme between dark and light mode via ProjectTopBar theme button', () => {
+    render(
+      <ThemeProvider defaultTheme="dark">
+        <ProjectTopBar
+          projects={[sampleProject]}
+          activeProject={sampleProject}
+          compileStatus="spotless"
+          onSelectProject={vi.fn()}
+          onCreateProject={vi.fn()}
+          onRenameProject={vi.fn()}
+          onDeleteProject={vi.fn()}
+          onExportZip={vi.fn()}
+          onImportZip={vi.fn()}
+          onCompile={vi.fn()}
+        />
+      </ThemeProvider>
+    );
+
+    const toggleBtn = screen.getByRole('button', { name: /toggle theme/i });
+    expect(toggleBtn).toBeInTheDocument();
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+
+    fireEvent.click(toggleBtn);
+    expect(document.documentElement.classList.contains('light')).toBe(true);
+
+    fireEvent.click(toggleBtn);
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+  });
+
+  it('WorkspaceUI: does NOT render Problems/Build panel when diagnostics is empty', () => {
+    mockWorkspaceState.lastResult = {
+      status: 'spotless',
+      diagnostics: [],
+      pdfBytes: null,
+      missingFiles: [],
+      durationMs: 10,
+    };
+
+    render(
+      <ThemeProvider>
+        <WorkspaceUI />
+      </ThemeProvider>
+    );
+
+    expect(screen.queryByText(/no problems found in document/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/problems \/ build/i)).not.toBeInTheDocument();
+  });
+
+  it('WorkspaceUI: renders Problems/Build panel in sidebar when diagnostics are present', () => {
+    mockWorkspaceState.lastResult = {
+      status: 'failed',
+      diagnostics: [
+        { severity: 'error', file: 'main.tex', line: 42, message: 'Missing delimiter $' },
+      ],
+      pdfBytes: null,
+      missingFiles: [],
+      durationMs: 40,
+    };
+
+    render(
+      <ThemeProvider>
+        <WorkspaceUI />
+      </ThemeProvider>
+    );
+
+    expect(screen.getByText('Missing delimiter $')).toBeInTheDocument();
+    expect(screen.getByLabelText(/problems \/ build/i)).toBeInTheDocument();
+
+    const closeBtn = screen.getByRole('button', { name: /close problems panel/i });
+    fireEvent.click(closeBtn);
+    expect(screen.queryByText('Missing delimiter $')).not.toBeInTheDocument();
   });
 });

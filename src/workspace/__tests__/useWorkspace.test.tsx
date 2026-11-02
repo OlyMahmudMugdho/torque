@@ -13,7 +13,7 @@ describe('useWorkspace', () => {
       isCompiling: () => false,
       compile: vi.fn().mockResolvedValue({
         status: 'spotless',
-        pdfBytes: new Uint8Array([1, 2, 3]),
+        pdfBytes: new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35]),
         diagnostics: [{ severity: 'warning', file: 'main.tex', line: 3, message: 'Test warning' }],
         missingFiles: [],
         durationMs: 55,

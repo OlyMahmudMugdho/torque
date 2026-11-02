@@ -137,7 +137,18 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
 
     let pdfBytes: Uint8Array | null = null;
     if (compileRes.status !== 'failed') {
-      pdfBytes = engine.pdf() ?? null;
+      const output = engine.pdf() ?? null;
+      if (output && output.length >= 4) {
+        const hasPdfHeader =
+          output[0] === 0x25 && // %
+          output[1] === 0x50 && // P
+          output[2] === 0x44 && // D
+          output[3] === 0x46;   // F
+        if (!hasPdfHeader) {
+          console.warn('[compiler.worker] Compiled output is missing valid %PDF- header');
+        }
+      }
+      pdfBytes = output;
     }
 
     const diagnostics: Diagnostic[] = (compileRes.diagnostics || []).map((d) => ({

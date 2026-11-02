@@ -33,7 +33,7 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
       }
 
       try {
-        const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
+        const loadingTask = pdfjsLib.getDocument({ data: pdfBytes.slice() });
         const doc = await loadingTask.promise;
         if (!active) return;
         pdfDocRef.current = doc;
@@ -101,14 +101,16 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
   }, [numPages, scale]);
 
   const handleDownload = () => {
-    if (!pdfBytes) return;
-    const blob = new Blob([pdfBytes as BlobPart], { type: 'application/pdf' });
+    if (!pdfBytes || pdfBytes.length === 0) return;
+    const blob = new Blob([pdfBytes.slice()], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${projectName.toLowerCase().replace(/\s+/g, '-')}.pdf`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
   return (
@@ -160,13 +162,14 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
 
           <button
             onClick={handleDownload}
-            disabled={!pdfBytes}
+            disabled={!pdfBytes || pdfBytes.length === 0}
             className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition ${
-              pdfBytes
+              pdfBytes && pdfBytes.length > 0
                 ? 'hover:bg-[#393b40] text-[#dfe1e5]'
                 : 'text-[#5a5d63] cursor-not-allowed'
             }`}
             title="Export / Download PDF"
+            aria-label="Export / Download PDF"
           >
             <Download className="w-3 h-3" />
             <span>PDF</span>
@@ -176,7 +179,7 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
 
       {/* Preview Content */}
       <div className="flex-1 overflow-auto p-4 flex flex-col items-center justify-start bg-[#141517]">
-        {!pdfBytes && (
+        {(!pdfBytes || pdfBytes.length === 0) && (
           <div className="my-auto flex flex-col items-center gap-2 text-[#868a91]">
             <FileQuestion className="w-10 h-10 text-[#5a5d63]" />
             <p className="text-xs font-medium text-[#dfe1e5]">No PDF compiled</p>

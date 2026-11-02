@@ -69,7 +69,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 font-semibold text-lg tracking-tight text-white">
           <span className="bg-indigo-600 text-white p-1 rounded font-bold text-xs">TEX</span>
-          <span>Prism LaTeX</span>
+          <span>Torque</span>
         </div>
 
         {/* Project Switcher */}

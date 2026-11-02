@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Prism LaTeX Editor',
+  title: 'Torque - Client-Side LaTeX Editor',
   description: 'Client-side WASM LaTeX workspace with AI editing capabilities',
 };
 

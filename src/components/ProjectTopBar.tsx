@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import type { Project, CompileStatus } from '../types/workspace';
-import { Play, Loader2, Download, Upload, Plus, Folder, Trash2, Edit2 } from 'lucide-react';
+import { Play, Loader2, Download, Upload, Plus, Folder, Trash2, Edit2, ChevronDown, Check } from 'lucide-react';
 
 interface ProjectTopBarProps {
   projects: Project[];
@@ -65,66 +65,83 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
   };
 
   return (
-    <header className="h-14 border-b border-zinc-800 bg-zinc-950 px-4 flex items-center justify-between text-zinc-100 select-none">
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 font-semibold text-lg tracking-tight text-white">
-          <span className="bg-indigo-600 text-white p-1 rounded font-bold text-xs">TEX</span>
-          <span>Torque</span>
+    <header className="h-10 bg-[#2b2d30] border-b border-[#1e1f22] px-3 flex items-center justify-between text-[#dfe1e5] select-none text-[13px] font-sans">
+      {/* Left: IntelliJ Brand + Project Selector */}
+      <div className="flex items-center gap-2">
+        {/* IntelliJ Style App Icon */}
+        <div className="flex items-center gap-1.5 mr-2">
+          <div className="w-5 h-5 bg-gradient-to-tr from-[#3574f0] via-[#59a869] to-[#e2a53b] rounded flex items-center justify-center shadow-sm">
+            <span className="text-[10px] font-black text-black tracking-tighter leading-none">TQ</span>
+          </div>
+          <span className="font-semibold text-xs tracking-wide text-[#dfe1e5]">Torque</span>
         </div>
 
-        {/* Project Switcher */}
+        {/* Project Dropdown (IntelliJ Style Combo Box) */}
         <div className="relative">
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-zinc-800 border border-zinc-800 text-sm font-medium transition"
+            className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[#393b40] border border-transparent hover:border-[#4e5157] text-[#dfe1e5] transition text-xs font-medium"
           >
-            <Folder className="w-4 h-4 text-indigo-400" />
-            <span className="max-w-[160px] truncate">{activeProject?.name ?? 'No Project'}</span>
+            <Folder className="w-3.5 h-3.5 text-[#3574f0]" />
+            <span className="max-w-[140px] truncate">{activeProject?.name ?? 'Select Project'}</span>
+            <ChevronDown className="w-3 h-3 text-[#868a91]" />
           </button>
 
           {dropdownOpen && (
-            <div className="absolute left-0 mt-2 w-64 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 py-1.5 text-sm">
-              <div className="px-3 py-1 text-xs text-zinc-400 uppercase font-semibold">Your Projects</div>
-              <div className="max-h-48 overflow-y-auto">
-                {projects.map((p) => (
-                  <div
-                    key={p.id}
-                    onClick={() => {
-                      onSelectProject(p.id);
-                      setDropdownOpen(false);
-                    }}
-                    className={`flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-zinc-800 ${
-                      p.id === activeProject?.id ? 'bg-zinc-800/80 font-medium text-white' : 'text-zinc-300'
-                    }`}
-                  >
-                    <span className="truncate flex-1">{p.name}</span>
-                    <div className="flex items-center gap-1 opacity-60 hover:opacity-100">
-                      {p.id === activeProject?.id && (
-                        <button onClick={handleRename} className="p-1 hover:text-white" title="Rename">
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      {projects.length > 1 && (
-                        <button
-                          onClick={(e) => handleDelete(e, p.id, p.name)}
-                          className="p-1 hover:text-red-400"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+            <div className="absolute left-0 mt-1 w-64 bg-[#2b2d30] border border-[#4e5157] rounded shadow-2xl z-50 py-1 text-xs text-[#dfe1e5]">
+              <div className="px-3 py-1 text-[11px] text-[#868a91] font-semibold uppercase tracking-wider">
+                Projects
+              </div>
+              <div className="max-h-56 overflow-y-auto">
+                {projects.map((p) => {
+                  const isCur = p.id === activeProject?.id;
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => {
+                        onSelectProject(p.id);
+                        setDropdownOpen(false);
+                      }}
+                      className={`flex items-center justify-between px-3 py-1.5 cursor-pointer hover:bg-[#393b40] ${
+                        isCur ? 'bg-[#3574f0]/20 text-white font-medium' : 'text-[#dfe1e5]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate flex-1">
+                        {isCur ? (
+                          <Check className="w-3 h-3 text-[#3574f0] shrink-0" />
+                        ) : (
+                          <div className="w-3 h-3 shrink-0" />
+                        )}
+                        <span className="truncate">{p.name}</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-[#868a91]">
+                        {isCur && (
+                          <button onClick={handleRename} className="p-0.5 hover:text-white" title="Rename">
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        )}
+                        {projects.length > 1 && (
+                          <button
+                            onClick={(e) => handleDelete(e, p.id, p.name)}
+                            className="p-0.5 hover:text-[#e05555]"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
-              <div className="border-t border-zinc-800 mt-1 pt-1">
+              <div className="border-t border-[#393b40] mt-1 pt-1">
                 <button
                   onClick={handleCreateNew}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-800 text-indigo-400"
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[#393b40] text-[#3574f0] font-medium"
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>New Project</span>
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>New Project...</span>
                 </button>
               </div>
             </div>
@@ -132,68 +149,71 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
         </div>
       </div>
 
-      {/* Center Actions: Compile Button */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={onCompile}
-          disabled={compileStatus === 'compiling'}
-          className={`flex items-center gap-2 px-4 py-1.5 rounded-md font-medium text-sm transition shadow-sm ${
-            compileStatus === 'compiling'
-              ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
-              : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-          }`}
-          title="Compile LaTeX (Ctrl+Enter / Cmd+Enter)"
-        >
-          {compileStatus === 'compiling' ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Compiling...</span>
-            </>
-          ) : (
-            <>
-              <Play className="w-4 h-4 fill-current" />
-              <span>Compile</span>
-            </>
-          )}
-        </button>
+      {/* Center: IntelliJ Iconic Run Widget */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center bg-[#1e1f22] border border-[#393b40] rounded-md pl-2 pr-1 py-0.5 gap-2">
+          <span className="text-[11px] font-mono text-[#868a91] truncate max-w-[120px]">
+            {activeProject?.rootEntry || 'main.tex'}
+          </span>
 
+          <div className="h-3 w-px bg-[#393b40]" />
+
+          <button
+            onClick={onCompile}
+            disabled={compileStatus === 'compiling'}
+            className={`flex items-center justify-center p-1 rounded-sm transition ${
+              compileStatus === 'compiling'
+                ? 'text-[#868a91] cursor-not-allowed'
+                : 'text-[#59a869] hover:bg-[#59a869]/20 hover:text-[#6ec27e]'
+            }`}
+            title="Compile (Shift+F10 / Ctrl+Enter)"
+          >
+            {compileStatus === 'compiling' ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#3574f0]" />
+            ) : (
+              <Play className="w-3.5 h-3.5 fill-current" />
+            )}
+          </button>
+        </div>
+
+        {/* Status Pills */}
         {lastDurationMs !== undefined && (
-          <span className="text-xs text-zinc-400 font-mono">
+          <span className="text-[11px] text-[#868a91] font-mono px-1">
             {lastDurationMs}ms
           </span>
         )}
 
         {compileStatus === 'failed' && (
-          <span className="text-xs px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-800">
-            Error
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#e05555]/20 text-[#e05555] font-medium border border-[#e05555]/40">
+            Build Failed
           </span>
         )}
         {compileStatus === 'warnings' && (
-          <span className="text-xs px-2 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-800">
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#e2a53b]/20 text-[#e2a53b] font-medium border border-[#e2a53b]/40">
             Warnings
           </span>
         )}
         {compileStatus === 'spotless' && (
-          <span className="text-xs px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
-            Clean
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#59a869]/20 text-[#59a869] font-medium border border-[#59a869]/40">
+            Build Success
           </span>
         )}
       </div>
 
-      {/* Right Actions: Export / Import Zip */}
-      <div className="flex items-center gap-2">
+      {/* Right: Actions & Tools */}
+      <div className="flex items-center gap-1.5">
         <button
           onClick={onExportZip}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-zinc-800 hover:bg-zinc-800 text-xs text-zinc-300 font-medium transition"
-          title="Export Project as .zip"
+          className="flex items-center gap-1 px-2 py-1 rounded text-xs text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#393b40] transition"
+          title="Export Project (.zip)"
         >
           <Download className="w-3.5 h-3.5" />
-          <span>Export .zip</span>
+          <span className="hidden sm:inline">Export</span>
         </button>
 
-        <label className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-zinc-800 hover:bg-zinc-800 text-xs text-zinc-300 font-medium cursor-pointer transition">
+        <label className="flex items-center gap-1 px-2 py-1 rounded text-xs text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#393b40] cursor-pointer transition">
           <Upload className="w-3.5 h-3.5" />
-          <span>Import .zip</span>
+          <span className="hidden sm:inline">Import</span>
           <input
             ref={fileInputRef}
             type="file"

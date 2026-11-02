@@ -29,7 +29,6 @@ export function diagnosticsToMarkers(
         fileMatch = false;
       }
     } else {
-      // Diagnostic without file defaults to root entry
       fileMatch = normActive === normRoot;
     }
 
@@ -63,51 +62,75 @@ export function registerLatexLanguage(monacoInstance: any): void {
   if (!monacoInstance || !monacoInstance.languages) return;
 
   const languages = monacoInstance.languages.getLanguages();
-  if (languages.some((l: any) => l.id === 'latex')) {
-    return;
+  if (!languages.some((l: any) => l.id === 'latex')) {
+    monacoInstance.languages.register({ id: 'latex', extensions: ['.tex', '.sty', '.cls', '.bib'] });
+
+    monacoInstance.languages.setMonarchTokensProvider('latex', {
+      defaultToken: '',
+      tokenPostfix: '.latex',
+
+      tokenizer: {
+        root: [
+          // Comments
+          [/%.*$/, 'comment'],
+
+          // Inline math
+          [/\$[^$]*\$/, 'string.math'],
+
+          // Commands
+          [/\\[a-zA-Z@]+/, 'keyword'],
+
+          // Braces
+          [/[{}]/, 'delimiter.bracket'],
+          [/[[\]]/, 'delimiter.array'],
+
+          // Numbers
+          [/\d+/, 'number'],
+        ],
+      },
+    });
+
+    monacoInstance.languages.setLanguageConfiguration('latex', {
+      comments: {
+        lineComment: '%',
+      },
+      brackets: [
+        ['{', '}'],
+        ['[', ']'],
+        ['(', ')'],
+      ],
+      autoClosingPairs: [
+        { open: '{', close: '}' },
+        { open: '[', close: ']' },
+        { open: '(', close: ')' },
+        { open: '$', close: '$' },
+      ],
+    });
   }
 
-  monacoInstance.languages.register({ id: 'latex', extensions: ['.tex', '.sty', '.cls', '.bib'] });
-
-  monacoInstance.languages.setMonarchTokensProvider('latex', {
-    defaultToken: '',
-    tokenPostfix: '.latex',
-
-    tokenizer: {
-      root: [
-        // Comments
-        [/%.*$/, 'comment'],
-
-        // Inline math
-        [/\$[^$]*\$/, 'string.math'],
-
-        // Commands
-        [/\\[a-zA-Z@]+/, 'keyword'],
-
-        // Braces
-        [/[{}]/, 'delimiter.bracket'],
-        [/[[\]]/, 'delimiter.array'],
-
-        // Numbers
-        [/\d+/, 'number'],
-      ],
-    },
-  });
-
-  monacoInstance.languages.setLanguageConfiguration('latex', {
-    comments: {
-      lineComment: '%',
-    },
-    brackets: [
-      ['{', '}'],
-      ['[', ']'],
-      ['(', ')'],
+  // Register IntelliJ Darcula Theme
+  monacoInstance.editor.defineTheme('intellij-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '7a7e85', fontStyle: 'italic' },
+      { token: 'keyword', foreground: 'cc7832', fontStyle: 'bold' },
+      { token: 'string.math', foreground: '6897bb' },
+      { token: 'delimiter.bracket', foreground: 'e8bf6a' },
+      { token: 'delimiter.array', foreground: 'e8bf6a' },
+      { token: 'number', foreground: '6897bb' },
     ],
-    autoClosingPairs: [
-      { open: '{', close: '}' },
-      { open: '[', close: ']' },
-      { open: '(', close: ')' },
-      { open: '$', close: '$' },
-    ],
+    colors: {
+      'editor.background': '#1e1f22',
+      'editor.foreground': '#bcbec4',
+      'editorCursor.foreground': '#3574f0',
+      'editor.lineHighlightBackground': '#26282e',
+      'editorLineNumber.foreground': '#5a5d63',
+      'editorLineNumber.activeForeground': '#a1a3a8',
+      'editor.selectionBackground': '#2e436e',
+      'editor.inactiveSelectionBackground': '#24324d',
+      'editorIndentGuide.background': '#313438',
+      'editorIndentGuide.activeBackground': '#474b50',
+    },
   });
 }

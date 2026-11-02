@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import type { ProjectFile } from '../types/workspace';
-import { FileCode, FileText, Image, FilePlus, Upload, Trash2, Edit, CheckCircle } from 'lucide-react';
+import { FileText, Image, FilePlus, Upload, Trash2, Edit, CheckCircle, ChevronDown, Folder } from 'lucide-react';
 
 interface FileTreeSidebarProps {
   files: ProjectFile[];
@@ -44,18 +44,25 @@ export const FileTreeSidebar: React.FC<FileTreeSidebarProps> = ({
   const getFileIcon = (path: string) => {
     const ext = path.split('.').pop()?.toLowerCase();
     if (ext === 'tex' || ext === 'sty' || ext === 'cls') {
-      return <FileCode className="w-4 h-4 text-emerald-400 shrink-0" />;
+      return (
+        <span className="w-4 h-4 flex items-center justify-center font-bold text-[10px] text-[#59a869] bg-[#59a869]/10 rounded border border-[#59a869]/30 shrink-0">
+          T
+        </span>
+      );
     }
     if (ext === 'bib') {
-      return <FileText className="w-4 h-4 text-amber-400 shrink-0" />;
+      return (
+        <span className="w-4 h-4 flex items-center justify-center font-bold text-[10px] text-[#e2a53b] bg-[#e2a53b]/10 rounded border border-[#e2a53b]/30 shrink-0">
+          B
+        </span>
+      );
     }
     if (['png', 'jpg', 'jpeg', 'pdf', 'eps', 'svg'].includes(ext ?? '')) {
-      return <Image className="w-4 h-4 text-sky-400 shrink-0" />;
+      return <Image className="w-4 h-4 text-[#3574f0] shrink-0" />;
     }
-    return <FileText className="w-4 h-4 text-zinc-400 shrink-0" />;
+    return <FileText className="w-4 h-4 text-[#868a91] shrink-0" />;
   };
 
-  // Sort files with rootEntry first, then alphabetically
   const sortedFiles = [...files].sort((a, b) => {
     if (a.path === rootEntry) return -1;
     if (b.path === rootEntry) return 1;
@@ -63,23 +70,28 @@ export const FileTreeSidebar: React.FC<FileTreeSidebarProps> = ({
   });
 
   return (
-    <aside className="w-full h-full bg-zinc-950 border-r border-zinc-800 flex flex-col select-none">
-      <div className="p-3 border-b border-zinc-800 flex items-center justify-between">
-        <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Project Files</span>
-        <div className="flex items-center gap-1">
+    <aside className="w-full h-full bg-[#2b2d30] border-r border-[#1e1f22] flex flex-col select-none text-[13px] text-[#dfe1e5] font-sans">
+      {/* IntelliJ Tool Window Header */}
+      <div className="h-8 px-3 border-b border-[#1e1f22] flex items-center justify-between text-xs text-[#dfe1e5] bg-[#2b2d30]">
+        <div className="flex items-center gap-1.5 font-semibold text-[#dfe1e5]">
+          <Folder className="w-3.5 h-3.5 text-[#3574f0]" />
+          <span>Project</span>
+        </div>
+
+        <div className="flex items-center gap-1 text-[#868a91]">
           <button
             onClick={handleCreate}
-            className="p-1 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded"
-            title="New File"
+            className="p-1 hover:bg-[#393b40] hover:text-[#dfe1e5] rounded transition"
+            title="New File (Alt+Insert)"
           >
-            <FilePlus className="w-4 h-4" />
+            <FilePlus className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="p-1 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded"
+            className="p-1 hover:bg-[#393b40] hover:text-[#dfe1e5] rounded transition"
             title="Upload Files"
           >
-            <Upload className="w-4 h-4" />
+            <Upload className="w-3.5 h-3.5" />
           </button>
           <input
             ref={fileInputRef}
@@ -91,79 +103,90 @@ export const FileTreeSidebar: React.FC<FileTreeSidebarProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-2">
-        {sortedFiles.map((file) => {
-          const isActive = file.path === activeFilePath;
-          const isRoot = file.path === rootEntry;
-          const isTex = file.path.endsWith('.tex');
+      {/* Project Tree Items */}
+      <div className="flex-1 overflow-y-auto py-1">
+        {/* Root Directory Row */}
+        <div className="px-2 py-1 flex items-center gap-1.5 text-xs text-[#868a91] font-medium">
+          <ChevronDown className="w-3.5 h-3.5 text-[#868a91]" />
+          <Folder className="w-3.5 h-3.5 text-[#e2a53b]" />
+          <span className="text-[#dfe1e5]">project-root</span>
+        </div>
 
-          return (
-            <div
-              key={file.path}
-              onClick={() => onSelectFile(file.path)}
-              className={`group flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm transition ${
-                isActive
-                  ? 'bg-zinc-800/90 text-white font-medium border-l-2 border-indigo-500'
-                  : 'text-zinc-300 hover:bg-zinc-900'
-              }`}
-            >
-              <div className="flex items-center gap-2 truncate">
-                {getFileIcon(file.path)}
-                <span className="truncate">{file.path}</span>
-                {isRoot && (
-                  <span className="text-[10px] uppercase font-bold bg-indigo-900/80 text-indigo-300 px-1 rounded">
-                    ROOT
-                  </span>
-                )}
-              </div>
+        {/* Files */}
+        <div className="pl-3">
+          {sortedFiles.map((file) => {
+            const isActive = file.path === activeFilePath;
+            const isRoot = file.path === rootEntry;
+            const isTex = file.path.endsWith('.tex');
 
-              {/* Action Buttons on Hover */}
-              <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-zinc-400">
-                {isTex && !isRoot && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSetRootEntry(file.path);
-                    }}
-                    className="p-1 hover:text-indigo-400"
-                    title="Set as Root Entry"
-                  >
-                    <CheckCircle className="w-3.5 h-3.5" />
-                  </button>
-                )}
+            return (
+              <div
+                key={file.path}
+                onClick={() => onSelectFile(file.path)}
+                className={`group flex items-center justify-between pl-3 pr-2 py-1 cursor-pointer transition text-xs border-l-2 ${
+                  isActive
+                    ? 'bg-[#2e436e]/60 text-white font-medium border-[#3574f0]'
+                    : 'border-transparent text-[#dfe1e5] hover:bg-[#313438]'
+                }`}
+              >
+                <div className="flex items-center gap-2 truncate flex-1">
+                  {getFileIcon(file.path)}
+                  <span className="truncate">{file.path}</span>
+                  {isRoot && (
+                    <span className="text-[9px] uppercase font-bold bg-[#3574f0]/20 text-[#3574f0] px-1 rounded border border-[#3574f0]/40">
+                      ROOT
+                    </span>
+                  )}
+                </div>
 
-                <button
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    const newPath = window.prompt('Rename file path:', file.path);
-                    if (newPath?.trim() && newPath !== file.path) {
-                      await onRenameFile(file.path, newPath.trim());
-                    }
-                  }}
-                  className="p-1 hover:text-white"
-                  title="Rename"
-                >
-                  <Edit className="w-3.5 h-3.5" />
-                </button>
+                {/* IntelliJ Quick Actions */}
+                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-[#868a91]">
+                  {isTex && !isRoot && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSetRootEntry(file.path);
+                      }}
+                      className="p-0.5 hover:text-[#3574f0]"
+                      title="Set as Root Entry"
+                    >
+                      <CheckCircle className="w-3 h-3" />
+                    </button>
+                  )}
 
-                {!isRoot && (
                   <button
                     onClick={async (e) => {
                       e.stopPropagation();
-                      if (window.confirm(`Delete ${file.path}?`)) {
-                        await onDeleteFile(file.path);
+                      const newPath = window.prompt('Rename file path (Shift+F6):', file.path);
+                      if (newPath?.trim() && newPath !== file.path) {
+                        await onRenameFile(file.path, newPath.trim());
                       }
                     }}
-                    className="p-1 hover:text-red-400"
-                    title="Delete"
+                    className="p-0.5 hover:text-white"
+                    title="Rename"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Edit className="w-3 h-3" />
                   </button>
-                )}
+
+                  {!isRoot && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (window.confirm(`Delete ${file.path}?`)) {
+                          await onDeleteFile(file.path);
+                        }
+                      }}
+                      className="p-0.5 hover:text-[#e05555]"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </aside>
   );

@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
 import type { ProjectFile, Diagnostic } from '../types/workspace';
 import { registerLatexLanguage, diagnosticsToMarkers } from './latexLanguage';
-import { X, Image } from 'lucide-react';
+import { X, Image, ChevronRight, FileCode } from 'lucide-react';
 
 interface MonacoEditorPaneProps {
   files: ProjectFile[];
@@ -30,7 +30,6 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
   const monaco = useMonaco();
   const editorRef = useRef<any>(null);
 
-  // Register LaTeX language syntax & tokens once Monaco is ready
   useEffect(() => {
     if (monaco) {
       registerLatexLanguage(monaco);
@@ -44,7 +43,6 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
       ? activeFile.content
       : '';
 
-  // Update Monaco diagnostic markers on model
   useEffect(() => {
     if (!monaco || !editorRef.current || isBinary) return;
 
@@ -58,16 +56,23 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
   const handleEditorDidMount = (editor: any, m: any) => {
     editorRef.current = editor;
 
-    // Add Ctrl+Enter / Cmd+Enter hotkey for Compile
+    // Ctrl+Enter / Cmd+Enter for compile
     editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.Enter, () => {
+      onCompileShortcut();
+    });
+
+    // Shift+F10 (IntelliJ shortcut for Run)
+    editor.addCommand(m.KeyMod.Shift | m.KeyCode.F10, () => {
       onCompileShortcut();
     });
   };
 
+  const pathParts = activeFilePath.split('/');
+
   return (
-    <div className="w-full h-full flex flex-col bg-[#1e1e1e]">
-      {/* Tab Bar */}
-      <div className="h-9 bg-zinc-950 border-b border-zinc-800 flex items-center overflow-x-auto select-none">
+    <div className="w-full h-full flex flex-col bg-[#1e1f22]">
+      {/* IntelliJ Tab Bar */}
+      <div className="h-9 bg-[#2b2d30] border-b border-[#1e1f22] flex items-center overflow-x-auto select-none">
         {openTabs.map((tabPath) => {
           const isActive = tabPath === activeFilePath;
           const fileName = tabPath.split('/').pop() || tabPath;
@@ -76,12 +81,13 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
             <div
               key={tabPath}
               onClick={() => onSelectTab(tabPath)}
-              className={`h-full flex items-center gap-2 px-3 text-xs border-r border-zinc-800 cursor-pointer transition ${
+              className={`h-full flex items-center gap-2 px-3 text-xs border-r border-[#1e1f22] cursor-pointer transition ${
                 isActive
-                  ? 'bg-[#1e1e1e] text-white font-medium border-t-2 border-t-indigo-500'
-                  : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
+                  ? 'bg-[#1e1f22] text-[#dfe1e5] font-medium border-b-2 border-b-[#3574f0]'
+                  : 'bg-[#2b2d30] text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#313438]'
               }`}
             >
+              <FileCode className="w-3.5 h-3.5 text-[#59a869]" />
               <span>{fileName}</span>
               {openTabs.length > 1 && (
                 <button
@@ -89,7 +95,7 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
                     e.stopPropagation();
                     onCloseTab(tabPath);
                   }}
-                  className="p-0.5 hover:bg-zinc-700 rounded text-zinc-500 hover:text-white"
+                  className="p-0.5 hover:bg-[#393b40] rounded text-[#868a91] hover:text-white"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -99,31 +105,52 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
         })}
       </div>
 
+      {/* IntelliJ Breadcrumbs Bar */}
+      <div className="h-6 bg-[#1e1f22] border-b border-[#2b2d30] px-3 flex items-center text-[11px] text-[#868a91] font-mono select-none">
+        <span className="hover:text-[#dfe1e5] cursor-pointer">project</span>
+        {pathParts.map((part, idx) => (
+          <React.Fragment key={idx}>
+            <ChevronRight className="w-3 h-3 text-[#5a5d63] mx-1" />
+            <span
+              className={`hover:text-[#dfe1e5] cursor-pointer ${
+                idx === pathParts.length - 1 ? 'text-[#dfe1e5] font-medium' : ''
+              }`}
+            >
+              {part}
+            </span>
+          </React.Fragment>
+        ))}
+      </div>
+
       {/* Editor or Binary Asset View */}
-      <div className="flex-1 w-full h-[calc(100%-2.25rem)]">
+      <div className="flex-1 w-full h-[calc(100%-3.75rem)]">
         {isBinary ? (
-          <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400 gap-2">
-            <Image className="w-12 h-12 text-zinc-600" />
-            <span className="text-sm font-medium">Binary asset: {activeFilePath}</span>
-            <span className="text-xs text-zinc-500">Binary files cannot be edited in the code editor.</span>
+          <div className="w-full h-full flex flex-col items-center justify-center text-[#868a91] gap-2">
+            <Image className="w-12 h-12 text-[#5a5d63]" />
+            <span className="text-sm font-medium text-[#dfe1e5]">Binary asset: {activeFilePath}</span>
+            <span className="text-xs text-[#868a91]">Binary file preview is not supported in the code editor.</span>
           </div>
         ) : (
           <Editor
             height="100%"
             language={activeFilePath.endsWith('.tex') ? 'latex' : 'plaintext'}
-            theme="vs-dark"
+            theme="intellij-dark"
             value={textContent}
             onChange={(val) => onContentChange(val ?? '')}
             onMount={handleEditorDidMount}
             options={{
-              fontSize: 14,
-              fontFamily: 'JetBrains Mono, Menlo, Monaco, Courier New, monospace',
+              fontSize: 13,
+              fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
+              lineHeight: 20,
               minimap: { enabled: true },
               lineNumbers: 'on',
               scrollBeyondLastLine: false,
               automaticLayout: true,
               tabSize: 2,
               wordWrap: 'on',
+              cursorBlinking: 'smooth',
+              cursorSmoothCaretAnimation: 'on',
+              renderLineHighlight: 'all',
             }}
           />
         )}

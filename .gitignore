@@ -1,5 +1,5 @@
-node_modules
-dist
-dist-ssr
-*.local
+node_modules/
+dist/
+.superpowers/
 .DS_Store
+*.log

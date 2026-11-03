@@ -10,13 +10,22 @@ import {
   Trash2,
   ExternalLink,
   FileCode,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { useThemeSafe as useTheme } from '../context/ThemeContext';
 import type { LatexPackage, PackageCategory } from '../packages/packageTypes';
 import {
   getPackageCatalog,
   setPackageInstalled,
+  markPackageCached,
+  syncPackageCacheStatus,
 } from '../packages/packageManager';
+import { downloadPackage } from '../packages/packageDownloader';
+import {
+  defaultPackageCache,
+  deletePackageFile,
+} from '../storage/packageCache';
 
 export interface PackageManagerModalProps {
   isOpen: boolean;
@@ -49,16 +58,34 @@ export const PackageManagerModal: React.FC<PackageManagerModalProps> = ({
   const [packages, setPackages] = useState<LatexPackage[]>(() =>
     isOpen ? getPackageCatalog() : []
   );
+  const [cachedPackageIds, setCachedPackageIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const [selectedCategory, setSelectedCategory] = useState<PackageCategory | 'All'>('All');
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
 
-  // Sync state when modal opens or initialSearchQuery changes
+  const [downloadingPackageId, setDownloadingPackageId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  // Sync state and query cache when modal opens or initialSearchQuery changes
   useEffect(() => {
     if (isOpen) {
       setPackages(getPackageCatalog());
       setSearchQuery(initialSearchQuery);
       setSelectedCategory('All');
+      setDownloadError(null);
+
+      let isMounted = true;
+      syncPackageCacheStatus(defaultPackageCache).then((cached) => {
+        if (isMounted) {
+          setCachedPackageIds(cached);
+          setPackages(getPackageCatalog());
+        }
+      });
+
+      return () => {
+        isMounted = false;
+      };
     }
   }, [isOpen, initialSearchQuery]);
 
@@ -110,12 +137,84 @@ export const PackageManagerModal: React.FC<PackageManagerModalProps> = ({
     setPackages(getPackageCatalog());
   }, []);
 
-  // Toggle installation status
+  // Helper checking whether a package is installed or cached
+  const isPackageCachedOrInstalled = useCallback(
+    (pkg: LatexPackage) => {
+      if (pkg.source === 'bundle') {
+        return pkg.isInstalled;
+      }
+      return (
+        cachedPackageIds.has(pkg.id.toLowerCase()) ||
+        cachedPackageIds.has(pkg.name.toLowerCase()) ||
+        pkg.isInstalled
+      );
+    },
+    [cachedPackageIds]
+  );
+
+  // Toggle installation status (for bundle packages)
   const handleToggleInstall = useCallback(
     (pkg: LatexPackage) => {
       const nextStatus = !pkg.isInstalled;
       setPackageInstalled(pkg.name, nextStatus);
       refreshCatalog();
+    },
+    [refreshCatalog]
+  );
+
+  // Download CTAN package and store in persistent cache
+  const handleDownload = useCallback(
+    async (pkg: LatexPackage) => {
+      setDownloadingPackageId(pkg.id);
+      setDownloadProgress(`Connecting to CTAN for ${pkg.name}...`);
+      setDownloadError(null);
+
+      try {
+        const result = await downloadPackage(pkg.id, (msg) => {
+          setDownloadProgress(msg);
+        });
+
+        if (result.success) {
+          setCachedPackageIds((prev) => {
+            const next = new Set(prev);
+            next.add(pkg.id.toLowerCase());
+            return next;
+          });
+          markPackageCached(pkg.id, true);
+          setPackageInstalled(pkg.name, true);
+          refreshCatalog();
+          setDownloadProgress(null);
+        } else {
+          setDownloadError(result.error || `Failed to download ${pkg.name}`);
+        }
+      } catch (err: any) {
+        setDownloadError(err?.message || `Failed to download ${pkg.name}`);
+      } finally {
+        setDownloadingPackageId(null);
+      }
+    },
+    [refreshCatalog]
+  );
+
+  // Remove CTAN package from persistent cache
+  const handleRemoveFromCache = useCallback(
+    async (pkg: LatexPackage) => {
+      for (const file of pkg.files) {
+        try {
+          await deletePackageFile(file);
+        } catch {
+          // Continue removing remaining files
+        }
+      }
+      setCachedPackageIds((prev) => {
+        const next = new Set(prev);
+        next.delete(pkg.id.toLowerCase());
+        return next;
+      });
+      markPackageCached(pkg.id, false);
+      setPackageInstalled(pkg.name, false);
+      refreshCatalog();
+      setDownloadError(null);
     },
     [refreshCatalog]
   );
@@ -134,6 +233,11 @@ export const PackageManagerModal: React.FC<PackageManagerModalProps> = ({
   if (!isOpen) {
     return null;
   }
+
+  const isCurrentPkgDownloading =
+    selectedPackage !== null && downloadingPackageId === selectedPackage.id;
+  const isCurrentPkgCached =
+    selectedPackage !== null && isPackageCachedOrInstalled(selectedPackage);
 
   return (
     <div
@@ -267,6 +371,7 @@ export const PackageManagerModal: React.FC<PackageManagerModalProps> = ({
               <div className="divide-y divide-transparent">
                 {filteredPackages.map((pkg) => {
                   const isSelected = selectedPackage?.id === pkg.id;
+                  const isInstalledOrCached = isPackageCachedOrInstalled(pkg);
 
                   return (
                     <button
@@ -274,7 +379,10 @@ export const PackageManagerModal: React.FC<PackageManagerModalProps> = ({
                       type="button"
                       data-testid={`package-item-${pkg.id}`}
                       aria-label={`Select ${pkg.name}`}
-                      onClick={() => setSelectedPackageId(pkg.id)}
+                      onClick={() => {
+                        setSelectedPackageId(pkg.id);
+                        setDownloadError(null);
+                      }}
                       className={`w-full text-left p-3 transition flex flex-col gap-1 border-b ${
                         isDark ? 'border-[#2b2d30]' : 'border-[#f0f2f5]'
                       } ${
@@ -304,7 +412,7 @@ export const PackageManagerModal: React.FC<PackageManagerModalProps> = ({
                             {pkg.category}
                           </span>
 
-                          {pkg.isInstalled ? (
+                          {isInstalledOrCached ? (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/15 text-emerald-500 dark:text-emerald-400">
                               <Check className="w-2.5 h-2.5" />
                               Installed
@@ -391,10 +499,25 @@ export const PackageManagerModal: React.FC<PackageManagerModalProps> = ({
                       </div>
                     </div>
 
-                    {selectedPackage.isInstalled ? (
+                    {selectedPackage.source === 'bundle' ? (
+                      selectedPackage.isInstalled ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-500 dark:text-emerald-400 shrink-0">
+                          <Check className="w-3.5 h-3.5" />
+                          Installed
+                        </span>
+                      ) : (
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium shrink-0 ${
+                            isDark ? 'bg-[#2b2d30] text-[#8c9099]' : 'bg-[#f0f2f5] text-[#57606a]'
+                          }`}
+                        >
+                          Available
+                        </span>
+                      )
+                    ) : isCurrentPkgCached ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-500 dark:text-emerald-400 shrink-0">
                         <Check className="w-3.5 h-3.5" />
-                        Installed
+                        Installed (Cached)
                       </span>
                     ) : (
                       <span
@@ -402,7 +525,7 @@ export const PackageManagerModal: React.FC<PackageManagerModalProps> = ({
                           isDark ? 'bg-[#2b2d30] text-[#8c9099]' : 'bg-[#f0f2f5] text-[#57606a]'
                         }`}
                       >
-                        Available
+                        Available (CTAN)
                       </span>
                     )}
                   </div>
@@ -456,6 +579,38 @@ export const PackageManagerModal: React.FC<PackageManagerModalProps> = ({
                       </a>
                     </div>
                   )}
+
+                  {/* Error & Progress Feedback Banner */}
+                  {downloadError && (
+                    <div
+                      data-testid="download-error-message"
+                      className="p-3 rounded text-xs flex items-center justify-between gap-2 border bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400 animate-in fade-in"
+                    >
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{downloadError}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDownload(selectedPackage)}
+                        className="px-2.5 py-1 rounded text-xs font-medium bg-red-600 text-white hover:bg-red-700 transition shrink-0 cursor-pointer shadow-xs"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+
+                  {isCurrentPkgDownloading && (
+                    <div
+                      data-testid="download-progress-indicator"
+                      className="p-2.5 rounded text-xs flex items-center gap-2.5 border bg-blue-500/10 border-blue-500/30 text-[#3574f0] dark:text-[#528bff] animate-in fade-in"
+                    >
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                      <span className="font-medium">
+                        {downloadProgress || 'Downloading from CTAN...'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Bottom Action Bar */}
@@ -464,11 +619,37 @@ export const PackageManagerModal: React.FC<PackageManagerModalProps> = ({
                     isDark ? 'border-[#393b40]' : 'border-[#d1d5db]'
                   }`}
                 >
-                  {/* Install / Uninstall Button */}
-                  {selectedPackage.isInstalled ? (
+                  {/* Left Action: Install / Download / Remove from Cache */}
+                  {selectedPackage.source === 'bundle' ? (
+                    selectedPackage.isInstalled ? (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleInstall(selectedPackage)}
+                        className={`px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1.5 transition border ${
+                          isDark
+                            ? 'border-red-500/40 text-red-400 hover:bg-red-500/10'
+                            : 'border-red-500/40 text-red-600 hover:bg-red-50'
+                        }`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Uninstall
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleInstall(selectedPackage)}
+                        className="px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1.5 transition bg-[#3574f0] text-white hover:bg-[#2b62cc] shadow-xs cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Install Package
+                      </button>
+                    )
+                  ) : isCurrentPkgCached ? (
                     <button
                       type="button"
-                      onClick={() => handleToggleInstall(selectedPackage)}
+                      data-testid="remove-cache-button"
+                      aria-label="Uninstall and remove from cache"
+                      onClick={() => handleRemoveFromCache(selectedPackage)}
                       className={`px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1.5 transition border ${
                         isDark
                           ? 'border-red-500/40 text-red-400 hover:bg-red-500/10'
@@ -476,16 +657,32 @@ export const PackageManagerModal: React.FC<PackageManagerModalProps> = ({
                       }`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      Uninstall
+                      Remove from Cache
                     </button>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => handleToggleInstall(selectedPackage)}
-                      className="px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1.5 transition bg-[#3574f0] text-white hover:bg-[#2b62cc] shadow-xs"
+                      data-testid="download-package-button"
+                      aria-label={`Download and install ${selectedPackage.name}`}
+                      disabled={isCurrentPkgDownloading}
+                      onClick={() => handleDownload(selectedPackage)}
+                      className={`px-3.5 py-1.5 rounded text-xs font-medium flex items-center gap-1.5 transition ${
+                        isCurrentPkgDownloading
+                          ? 'bg-[#3574f0]/60 text-white cursor-not-allowed opacity-75'
+                          : 'bg-[#3574f0] text-white hover:bg-[#2b62cc] shadow-xs cursor-pointer'
+                      }`}
                     >
-                      <Download className="w-3.5 h-3.5" />
-                      Install Package
+                      {isCurrentPkgDownloading ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Downloading...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-3.5 h-3.5" />
+                          Download
+                        </>
+                      )}
                     </button>
                   )}
 
@@ -493,7 +690,7 @@ export const PackageManagerModal: React.FC<PackageManagerModalProps> = ({
                   <button
                     type="button"
                     onClick={() => handleInsert(selectedPackage)}
-                    className="px-4 py-1.5 rounded text-xs font-medium transition bg-[#3574f0] text-white hover:bg-[#2b62cc] shadow-xs ml-auto"
+                    className="px-4 py-1.5 rounded text-xs font-medium transition bg-[#3574f0] text-white hover:bg-[#2b62cc] shadow-xs ml-auto cursor-pointer"
                   >
                     Insert \usepackage
                   </button>

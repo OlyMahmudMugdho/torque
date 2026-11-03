@@ -4,12 +4,16 @@ import {
   searchPackages,
   getPackageByName,
   isPackageInstalled,
+  isPackageInstalledAsync,
   setPackageInstalled,
+  markPackageCached,
+  syncPackageCacheStatus,
   insertPackageDeclaration,
   getInstalledPackages,
   resetPackageManagerState,
   PACKAGE_STORAGE_KEY,
 } from '../packageManager';
+import { PackageCache } from '../../storage/packageCache';
 
 describe('packageManager service', () => {
   beforeEach(() => {
@@ -194,6 +198,38 @@ describe('packageManager service', () => {
       if (typeof localStorage !== 'undefined') {
         expect(localStorage.getItem(PACKAGE_STORAGE_KEY)).toBeNull();
       }
+    });
+
+    it('respects cached packages in isPackageInstalled and markPackageCached', () => {
+      expect(isPackageInstalled('physics')).toBe(false);
+
+      markPackageCached('physics', true);
+      expect(isPackageInstalled('physics')).toBe(true);
+
+      markPackageCached('physics', false);
+      expect(isPackageInstalled('physics')).toBe(false);
+    });
+
+    it('syncs package cache status from persistent cache', async () => {
+      const mockCache = new PackageCache({ forceInMemory: true });
+      await mockCache.savePackageFile('physics.sty', new Uint8Array([1, 2, 3]), 'physics');
+
+      const cached = await syncPackageCacheStatus(mockCache);
+      expect(cached.has('physics')).toBe(true);
+      expect(isPackageInstalled('physics')).toBe(true);
+    });
+
+    it('asynchronously checks package installation respecting bundle and cache', async () => {
+      const mockCache = new PackageCache({ forceInMemory: true });
+      // amsmath is in bundle
+      expect(await isPackageInstalledAsync('amsmath', mockCache)).toBe(true);
+
+      // mathtools is not cached yet
+      expect(await isPackageInstalledAsync('mathtools', mockCache)).toBe(false);
+
+      // Save mathtools.sty to cache
+      await mockCache.savePackageFile('mathtools.sty', new Uint8Array([10, 20]), 'mathtools');
+      expect(await isPackageInstalledAsync('mathtools', mockCache)).toBe(true);
     });
   });
 

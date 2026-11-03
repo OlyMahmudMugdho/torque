@@ -12,11 +12,13 @@ let bundlePreloadPromise: Promise<void> | null = null;
 let bundleManifest: Set<string> | null = null;
 export const cachedBundleFiles = new Map<string, Uint8Array>();
 export const pendingDownloads = new Map<string, Promise<Uint8Array | null>>();
-export const JIT_DOWNLOAD_EXTENSIONS = ['.sty', '.cls', '.def', '.fd'] as const;
+export const failedDownloads = new Set<string>();
+export const JIT_DOWNLOAD_EXTENSIONS = ['.sty'] as const;
 
 export function clearWorkerCache(): void {
   cachedBundleFiles.clear();
   pendingDownloads.clear();
+  failedDownloads.clear();
 }
 
 export function setBundleManifest(manifest: Set<string> | null): void {
@@ -515,8 +517,12 @@ export async function fetchBundleFile(
     }
   }
 
-  // Priority 4 (JIT Download): If still not found and the file is a TeX macro/font file (.sty, .cls, .def, .fd),
-  // invoke downloadSingleFile(resolvedName) with in-flight deduplication
+  // Priority 4 (JIT Download): If still not found and the file is an eligible package (.sty),
+  // invoke downloadSingleFile(resolvedName) with in-flight deduplication and short timeout.
+  if (failedDownloads.has(resolvedName)) {
+    return null;
+  }
+
   const isJitEligible = JIT_DOWNLOAD_EXTENSIONS.some((ext) => lowerResolved.endsWith(ext));
   if (!isJitEligible) {
     return null;
@@ -527,13 +533,16 @@ export async function fetchBundleFile(
     if (!downloadPromise) {
       downloadPromise = (async () => {
         try {
-          const res = await downloadSingleFile(resolvedName);
+          // Fast timeout (2000ms) during interactive compilation to prevent spinner hangs
+          const res = await downloadSingleFile(resolvedName, undefined, { timeoutMs: 2000 });
           if (res && res.success && res.data) {
             return res.data;
           }
+          failedDownloads.add(resolvedName);
           return null;
         } catch (downloadErr) {
           console.warn(`[compiler.worker] JIT download failed for ${resolvedName}:`, downloadErr);
+          failedDownloads.add(resolvedName);
           return null;
         } finally {
           pendingDownloads.delete(resolvedName);
@@ -552,6 +561,7 @@ export async function fetchBundleFile(
     }
   } catch (err) {
     console.warn(`[compiler.worker] Unexpected error during JIT download of ${resolvedName}:`, err);
+    failedDownloads.add(resolvedName);
   }
 
   return null;

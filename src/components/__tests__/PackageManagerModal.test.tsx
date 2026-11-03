@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import {
   PackageManagerModal,
   type PackageManagerModalProps,
@@ -11,6 +11,19 @@ import {
   resetPackageManagerState,
   isPackageInstalled,
 } from '../../packages/packageManager';
+import { downloadPackage } from '../../packages/packageDownloader';
+import {
+  clearPackageCache,
+  savePackageFile,
+} from '../../storage/packageCache';
+
+vi.mock('../../packages/packageDownloader', async () => {
+  const actual = await vi.importActual<any>('../../packages/packageDownloader');
+  return {
+    ...actual,
+    downloadPackage: vi.fn(),
+  };
+});
 
 function renderModal(
   props: Partial<PackageManagerModalProps> = {},
@@ -34,9 +47,15 @@ function renderModal(
 }
 
 describe('PackageManagerModal', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear();
     resetPackageManagerState();
+    await clearPackageCache();
+    vi.mocked(downloadPackage).mockReset();
+    vi.mocked(downloadPackage).mockResolvedValue({
+      success: true,
+      files: ['mathtools.sty'],
+    });
   });
 
   describe('Visibility and Basic Rendering', () => {
@@ -203,7 +222,7 @@ describe('PackageManagerModal', () => {
   });
 
   describe('Package Installation Toggle', () => {
-    it('allows installing an uninstalled package', () => {
+    it('allows installing an uninstalled package', async () => {
       renderModal({ isOpen: true, initialSearchQuery: 'mathtools' });
 
       expect(isPackageInstalled('mathtools')).toBe(false);
@@ -211,11 +230,13 @@ describe('PackageManagerModal', () => {
       const installBtn = screen.getByRole('button', { name: /install/i });
       fireEvent.click(installBtn);
 
-      expect(isPackageInstalled('mathtools')).toBe(true);
+      await waitFor(() => {
+        expect(isPackageInstalled('mathtools')).toBe(true);
+      });
       expect(screen.getByRole('button', { name: /uninstall/i })).toBeInTheDocument();
     });
 
-    it('allows uninstalling an installed package', () => {
+    it('allows uninstalling an installed package', async () => {
       renderModal({ isOpen: true, initialSearchQuery: 'amsmath' });
 
       expect(isPackageInstalled('amsmath')).toBe(true);
@@ -223,7 +244,9 @@ describe('PackageManagerModal', () => {
       const uninstallBtn = screen.getByRole('button', { name: /uninstall/i });
       fireEvent.click(uninstallBtn);
 
-      expect(isPackageInstalled('amsmath')).toBe(false);
+      await waitFor(() => {
+        expect(isPackageInstalled('amsmath')).toBe(false);
+      });
       expect(screen.getByRole('button', { name: /install/i })).toBeInTheDocument();
     });
   });
@@ -332,6 +355,140 @@ describe('PackageManagerModal', () => {
       expect(docLink).toHaveAttribute('href', 'https://ctan.org/pkg/amsmath');
       expect(docLink).toHaveAttribute('target', '_blank');
       expect(docLink).toHaveAttribute('rel', expect.stringContaining('noreferrer'));
+    });
+  });
+
+  describe('CTAN Package Download and Persistent Cache Status', () => {
+    it('renders an active Download button and Available (CTAN) badge for uninstalled CTAN packages', () => {
+      renderModal({ isOpen: true, initialSearchQuery: 'mathtools' });
+
+      const detailPane = screen.getByTestId('package-detail-pane');
+      expect(within(detailPane).getByText(/Available \(CTAN\)/i)).toBeInTheDocument();
+
+      const downloadBtn = screen.getByRole('button', { name: /download/i });
+      expect(downloadBtn).toBeInTheDocument();
+      expect(downloadBtn).toBeEnabled();
+    });
+
+    it('shows visual progress feedback and disables Download button during active download', async () => {
+      let resolveDownload: (res: any) => void;
+      const downloadPromise = new Promise((resolve) => {
+        resolveDownload = resolve;
+      });
+
+      vi.mocked(downloadPackage).mockImplementation((_pkgId, onProgress) => {
+        onProgress?.('Downloading mathtools.sty (1/1)...');
+        return downloadPromise as any;
+      });
+
+      renderModal({ isOpen: true, initialSearchQuery: 'mathtools' });
+
+      const downloadBtn = screen.getByRole('button', { name: /download/i });
+      fireEvent.click(downloadBtn);
+
+      // Verify downloadPackage was called with the package id
+      expect(downloadPackage).toHaveBeenCalledWith('mathtools', expect.any(Function));
+
+      // Download button should now be disabled or showing downloading state
+      expect(downloadBtn).toBeDisabled();
+      expect(screen.getByText(/Downloading mathtools\.sty/i)).toBeInTheDocument();
+
+      // Finish download
+      resolveDownload!({ success: true, files: ['mathtools.sty'] });
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Downloading mathtools\.sty/i)).not.toBeInTheDocument();
+      });
+    });
+
+    it('updates status badge to Installed (Cached) on successful download', async () => {
+      vi.mocked(downloadPackage).mockImplementation(async (_pkgId, onProgress) => {
+        onProgress?.('Installing mathtools...');
+        return { success: true, files: ['mathtools.sty'] };
+      });
+
+      renderModal({ isOpen: true, initialSearchQuery: 'mathtools' });
+
+      const downloadBtn = screen.getByRole('button', { name: /download/i });
+      fireEvent.click(downloadBtn);
+
+      // Status pill should update to Installed (Cached)
+      await waitFor(() => {
+        const detailPane = screen.getByTestId('package-detail-pane');
+        expect(within(detailPane).getByText(/Installed \(Cached\)/i)).toBeInTheDocument();
+      });
+
+      // Should offer option to remove from cache and insert \usepackage
+      expect(screen.getByRole('button', { name: /remove from cache/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /insert \\usepackage/i })).toBeInTheDocument();
+    });
+
+    it('displays inline error message and retry button when download fails', async () => {
+      vi.mocked(downloadPackage).mockResolvedValue({
+        success: false,
+        files: [],
+        error: 'Failed to download mathtools.sty: CTAN mirror unreachable',
+      });
+
+      renderModal({ isOpen: true, initialSearchQuery: 'mathtools' });
+
+      const downloadBtn = screen.getByRole('button', { name: /download/i });
+      fireEvent.click(downloadBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/CTAN mirror unreachable/i)).toBeInTheDocument();
+      });
+
+      const retryBtn = screen.getByRole('button', { name: /retry/i });
+      expect(retryBtn).toBeInTheDocument();
+
+      // Configure next download attempt to succeed
+      vi.mocked(downloadPackage).mockResolvedValue({
+        success: true,
+        files: ['mathtools.sty'],
+      });
+
+      fireEvent.click(retryBtn);
+
+      await waitFor(() => {
+        const detailPane = screen.getByTestId('package-detail-pane');
+        expect(within(detailPane).getByText(/Installed \(Cached\)/i)).toBeInTheDocument();
+      });
+    });
+
+    it('detects already cached packages on mount and renders Installed (Cached) badge', async () => {
+      // Pre-populate packageCache
+      await savePackageFile('mathtools.sty', new Uint8Array([1, 2, 3]), 'mathtools');
+
+      renderModal({ isOpen: true, initialSearchQuery: 'mathtools' });
+
+      await waitFor(() => {
+        const detailPane = screen.getByTestId('package-detail-pane');
+        expect(within(detailPane).getByText(/Installed \(Cached\)/i)).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('button', { name: /remove from cache/i })).toBeInTheDocument();
+    });
+
+    it('removes package from cache when Remove from Cache is clicked', async () => {
+      // Pre-populate packageCache
+      await savePackageFile('mathtools.sty', new Uint8Array([1, 2, 3]), 'mathtools');
+
+      renderModal({ isOpen: true, initialSearchQuery: 'mathtools' });
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /remove from cache/i })).toBeInTheDocument();
+      });
+
+      const removeBtn = screen.getByRole('button', { name: /remove from cache/i });
+      fireEvent.click(removeBtn);
+
+      await waitFor(() => {
+        const detailPane = screen.getByTestId('package-detail-pane');
+        expect(within(detailPane).getByText(/Available \(CTAN\)/i)).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('button', { name: /download/i })).toBeInTheDocument();
     });
   });
 });

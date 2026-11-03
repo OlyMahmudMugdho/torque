@@ -1,4 +1,8 @@
 import type { LatexPackage, PackageCategory } from './packageTypes';
+import {
+  defaultPackageCache,
+  type PackageCache,
+} from '../storage/packageCache';
 
 export const PACKAGE_STORAGE_KEY = 'torque_installed_packages';
 
@@ -432,7 +436,62 @@ export const DEFAULT_PACKAGE_CATALOG: readonly LatexPackage[] = [
 // In-memory state tracking overrides and dynamically registered packages
 let installedOverrides: Record<string, boolean> = {};
 let dynamicPackages: LatexPackage[] = [];
+let cachedPackageIds: Set<string> = new Set();
 let hasLoadedStorage = false;
+
+/**
+ * Manually marks a package as cached in-memory.
+ */
+export function markPackageCached(nameOrId: string, isCached = true): void {
+  const normalized = nameOrId.trim().toLowerCase();
+  const clean = normalized.endsWith('.sty') ? normalized.slice(0, -4) : normalized;
+  if (isCached) {
+    cachedPackageIds.add(clean);
+  } else {
+    cachedPackageIds.delete(clean);
+  }
+}
+
+/**
+ * Checks if a package is marked as cached in memory.
+ */
+export function isPackageCachedInMemory(nameOrId: string): boolean {
+  const normalized = nameOrId.trim().toLowerCase();
+  const clean = normalized.endsWith('.sty') ? normalized.slice(0, -4) : normalized;
+  return cachedPackageIds.has(clean);
+}
+
+/**
+ * Synchronizes cached packages by querying persistent packageCache and updating in-memory cache set.
+ */
+export async function syncPackageCacheStatus(
+  cache: PackageCache = defaultPackageCache
+): Promise<Set<string>> {
+  try {
+    const cachedFiles = await cache.listCachedPackageFiles();
+    const cachedFileSet = new Set(cachedFiles.map((f) => f.toLowerCase()));
+
+    for (const pkg of DEFAULT_PACKAGE_CATALOG) {
+      if (pkg.files.length > 0 && pkg.files.every((f) => cachedFileSet.has(f.toLowerCase()))) {
+        cachedPackageIds.add(pkg.id.toLowerCase());
+      } else {
+        cachedPackageIds.delete(pkg.id.toLowerCase());
+      }
+    }
+
+    for (const dyn of dynamicPackages) {
+      if (dyn.files.length > 0 && dyn.files.every((f) => cachedFileSet.has(f.toLowerCase()))) {
+        cachedPackageIds.add(dyn.id.toLowerCase());
+      } else {
+        cachedPackageIds.delete(dyn.id.toLowerCase());
+      }
+    }
+  } catch (err) {
+    console.warn('[packageManager] Failed to sync package cache status:', err);
+  }
+
+  return new Set(cachedPackageIds);
+}
 
 function loadStorageOverrides(): void {
   if (hasLoadedStorage) return;
@@ -469,15 +528,28 @@ function persistStorageOverrides(): void {
 export function getPackageCatalog(): LatexPackage[] {
   loadStorageOverrides();
 
+  const isPkgInstalled = (pkg: LatexPackage) => {
+    if (installedOverrides[pkg.name] !== undefined) {
+      return installedOverrides[pkg.name];
+    }
+    if (pkg.source === 'bundle') {
+      return true;
+    }
+    if (cachedPackageIds.has(pkg.id.toLowerCase()) || cachedPackageIds.has(pkg.name.toLowerCase())) {
+      return true;
+    }
+    return pkg.isInstalled;
+  };
+
   const catalog: LatexPackage[] = DEFAULT_PACKAGE_CATALOG.map((pkg) => ({
     ...pkg,
-    isInstalled: installedOverrides[pkg.name] !== undefined ? installedOverrides[pkg.name] : pkg.isInstalled,
+    isInstalled: isPkgInstalled(pkg),
   }));
 
   for (const dyn of dynamicPackages) {
     catalog.push({
       ...dyn,
-      isInstalled: installedOverrides[dyn.name] !== undefined ? installedOverrides[dyn.name] : dyn.isInstalled,
+      isInstalled: isPkgInstalled(dyn),
     });
   }
 
@@ -505,11 +577,51 @@ export function getPackageByName(name: string): LatexPackage | undefined {
 }
 
 /**
- * Checks whether a package is installed.
+ * Checks whether a package is installed (in bundle, overridden, or in persistent cache).
  */
 export function isPackageInstalled(name: string): boolean {
   const pkg = getPackageByName(name);
-  return pkg ? pkg.isInstalled : false;
+  if (!pkg) return false;
+  if (installedOverrides[pkg.name] !== undefined) {
+    return installedOverrides[pkg.name];
+  }
+  if (pkg.source === 'bundle') {
+    return true;
+  }
+  if (cachedPackageIds.has(pkg.id.toLowerCase()) || cachedPackageIds.has(pkg.name.toLowerCase())) {
+    return true;
+  }
+  return pkg.isInstalled;
+}
+
+/**
+ * Asynchronously checks whether a package is installed in bundle, overridden, or cached in packageCache.
+ */
+export async function isPackageInstalledAsync(
+  name: string,
+  cache: PackageCache = defaultPackageCache
+): Promise<boolean> {
+  const pkg = getPackageByName(name);
+  if (!pkg) return false;
+  if (installedOverrides[pkg.name] !== undefined) {
+    return installedOverrides[pkg.name];
+  }
+  if (pkg.source === 'bundle') {
+    return true;
+  }
+  if (cachedPackageIds.has(pkg.id.toLowerCase()) || cachedPackageIds.has(pkg.name.toLowerCase())) {
+    return true;
+  }
+
+  for (const file of pkg.files) {
+    const isCached = await cache.isPackageFileCached(file);
+    if (!isCached) {
+      return false;
+    }
+  }
+
+  cachedPackageIds.add(pkg.id.toLowerCase());
+  return true;
 }
 
 /**
@@ -705,6 +817,7 @@ export function insertPackageDeclaration(latexCode: string, packageName: string,
 export function resetPackageManagerState(): void {
   installedOverrides = {};
   dynamicPackages = [];
+  cachedPackageIds.clear();
   hasLoadedStorage = false;
 
   if (typeof window !== 'undefined' && window.localStorage) {

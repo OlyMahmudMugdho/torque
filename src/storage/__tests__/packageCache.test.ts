@@ -107,6 +107,16 @@ describe('PackageCache - IndexedDB Mode', () => {
     expect(await cache.listCachedPackageFiles()).toHaveLength(0);
     expect(await cache.getPackageFile('a.sty')).toBeNull();
   });
+
+  it('deletes a single cached file cleanly', async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    await cache.savePackageFile('physics.sty', bytes, 'physics');
+    expect(await cache.isPackageFileCached('physics.sty')).toBe(true);
+
+    await cache.deletePackageFile('physics.sty');
+    expect(await cache.isPackageFileCached('physics.sty')).toBe(false);
+    expect(await cache.getPackageFile('physics.sty')).toBeNull();
+  });
 });
 
 describe('PackageCache - In-Memory Fallback Mode', () => {

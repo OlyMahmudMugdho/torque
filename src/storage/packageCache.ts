@@ -263,6 +263,39 @@ export class PackageCache {
     }
   }
 
+  async deletePackageFile(filename: string): Promise<void> {
+    const sanitized = sanitizePackageFilename(filename);
+
+    if (this.isDesktop) {
+      try {
+        await this.tauriInvoke('tauri_delete_package_file', { filename: sanitized });
+      } catch (err) {
+        console.warn(`[PackageCache] Desktop deletePackageFile failed for ${sanitized}:`, err);
+      }
+      return;
+    }
+
+    this.inMemoryMap.delete(sanitized);
+
+    const db = await this.getIndexedDb();
+    if (!db) {
+      return;
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      try {
+        const tx = db.transaction('packages', 'readwrite');
+        const store = tx.objectStore('packages');
+        const req = store.delete(sanitized);
+
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      } catch (err) {
+        resolve();
+      }
+    });
+  }
+
   async clearPackageCache(): Promise<void> {
     if (this.isDesktop) {
       try {
@@ -315,6 +348,10 @@ export async function listCachedPackageFiles(): Promise<string[]> {
 
 export async function isPackageFileCached(filename: string): Promise<boolean> {
   return defaultPackageCache.isPackageFileCached(filename);
+}
+
+export async function deletePackageFile(filename: string): Promise<void> {
+  return defaultPackageCache.deletePackageFile(filename);
 }
 
 export async function clearPackageCache(): Promise<void> {

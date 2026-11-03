@@ -115,7 +115,7 @@ export async function downloadSingleFile(
   const pkgId = (packageId || inferPackageId(sanitizedFilename)).trim().toLowerCase();
   const urls = resolveCtanUrls(sanitizedFilename, pkgId, options?.customMirrors);
   const fetchFn = options?.fetchFn ?? globalThis.fetch;
-  const timeoutMs = options?.timeoutMs ?? 10000;
+  const timeoutMs = options?.timeoutMs ?? 3000;
   const cache = options?.packageCache ?? defaultPackageCache;
 
   if (options?.skipIfCached && cache.getPackageFile) {

@@ -1,8 +1,8 @@
 [package]
 name = "torque"
 version = "0.1.0"
-description = "Torque - Client-Side LaTeX Editor"
-authors = ["you"]
+description = "Torque - Client-Side WebAssembly LaTeX Editor"
+authors = ["Torque Contributors"]
 license = ""
 repository = ""
 edition = "2024"

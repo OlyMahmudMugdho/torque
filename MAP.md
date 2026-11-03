@@ -174,7 +174,7 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 - [`src-tauri/src/main.rs`](file:///home/mugdho/codes/torque/src-tauri/src/main.rs): Tauri entry point.
 - [`src-tauri/src/lib.rs`](file:///home/mugdho/codes/torque/src-tauri/src/lib.rs): Tauri application builder and IPC command registration.
 - [`src-tauri/src/storage.rs`](file:///home/mugdho/codes/torque/src-tauri/src/storage.rs): Native filesystem operations managing `~/.torque/projects`, reading/writing text & binary assets.
-- [`src-tauri/tauri.conf.json`](file:///home/mugdho/codes/torque/src-tauri/tauri.conf.json): Tauri v2 configuration (window size, title, permissions, bundle identifier).
+- [`src-tauri/tauri.conf.json`](file:///home/mugdho/codes/torque/src-tauri/tauri.conf.json): Tauri v2 configuration (window size, title, permissions, bundle identifier, packaging metadata, and multi-platform bundle targets).
 
 ---
 

@@ -14,6 +14,7 @@ export const cachedBundleFiles = new Map<string, Uint8Array>();
 export const pendingDownloads = new Map<string, Promise<Uint8Array | null>>();
 export const failedDownloads = new Set<string>();
 export const JIT_DOWNLOAD_EXTENSIONS = ['.sty'] as const;
+export const JIT_PACKAGE_FILENAME_REGEX = /^[a-zA-Z0-9_-]+\.sty$/i;
 
 export function clearWorkerCache(): void {
   cachedBundleFiles.clear();
@@ -62,6 +63,10 @@ export const CORE_BUNDLE_FILES = [
 
   // Citations & Bibliography
   'cite.sty',
+
+  // Algorithms
+  'algorithm.sty',
+  'algorithmic.sty',
 
   // Layout & tools
   'geometry.sty',
@@ -523,7 +528,9 @@ export async function fetchBundleFile(
     return null;
   }
 
-  const isJitEligible = JIT_DOWNLOAD_EXTENSIONS.some((ext) => lowerResolved.endsWith(ext));
+  const isJitEligible =
+    JIT_PACKAGE_FILENAME_REGEX.test(resolvedName) &&
+    JIT_DOWNLOAD_EXTENSIONS.some((ext) => lowerResolved.endsWith(ext));
   if (!isJitEligible) {
     return null;
   }
@@ -655,18 +662,27 @@ export function parseDiagnosticFromError(
 async function getWasmModule(): Promise<WebAssembly.Module> {
   if (!wasmModulePromise) {
     wasmModulePromise = (async () => {
-      console.log('[compiler.worker] Initializing Tectonic WebAssembly module...');
-      const wasmResp = await fetch('/wasm/tectonic_wasm.wasm');
-      if (typeof WebAssembly.compileStreaming === 'function') {
-        try {
-          return await WebAssembly.compileStreaming(wasmResp);
-        } catch {
+      try {
+        console.log('[compiler.worker] Initializing Tectonic WebAssembly module...');
+        const wasmResp = await fetch('/wasm/tectonic_wasm.wasm');
+        if (!wasmResp.ok) {
+          throw new Error(`Failed to fetch tectonic_wasm.wasm: HTTP ${wasmResp.status} ${wasmResp.statusText}`);
+        }
+        if (typeof WebAssembly.compileStreaming === 'function') {
+          try {
+            return await WebAssembly.compileStreaming(wasmResp.clone());
+          } catch (streamingErr) {
+            console.warn('[compiler.worker] compileStreaming failed, falling back to arrayBuffer:', streamingErr);
+            const buf = await wasmResp.arrayBuffer();
+            return await WebAssembly.compile(buf);
+          }
+        } else {
           const buf = await wasmResp.arrayBuffer();
           return await WebAssembly.compile(buf);
         }
-      } else {
-        const buf = await wasmResp.arrayBuffer();
-        return await WebAssembly.compile(buf);
+      } catch (err) {
+        wasmModulePromise = null;
+        throw err;
       }
     })();
   }
@@ -686,11 +702,12 @@ async function ensureCoreBundleLoaded(): Promise<void> {
         console.warn('[compiler.worker] Could not load bundle manifest:', err);
       }
 
-      await Promise.all(
-        CORE_BUNDLE_FILES.map(async (file) => {
-          await fetchBundleFile(file);
-        })
-      );
+      // Preload in batches of 10 to prevent HTTP connection starvation
+      const batchSize = 10;
+      for (let i = 0; i < CORE_BUNDLE_FILES.length; i += batchSize) {
+        const batch = CORE_BUNDLE_FILES.slice(i, i + batchSize);
+        await Promise.all(batch.map((file) => fetchBundleFile(file)));
+      }
     })();
   }
   return bundlePreloadPromise;
@@ -720,6 +737,8 @@ async function createFreshEngine(): Promise<TexEngine> {
 }
 
 async function getEngine(): Promise<TexEngine> {
+  // Ensure WebAssembly module is compiled first before queueing bundle assets
+  await getWasmModule();
   await ensureCoreBundleLoaded();
 
   if (!currentEngine || engineUsageCount >= MAX_ENGINE_USES) {

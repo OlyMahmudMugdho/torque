@@ -369,6 +369,17 @@ export const DEFAULT_PACKAGE_CATALOG: readonly LatexPackage[] = [
 
   // Code
   {
+    id: 'algorithms',
+    name: 'algorithms',
+    description: 'Floating algorithm environment and algorithmic pseudo-code formatting environments (algorithm and algorithmic).',
+    category: 'Code',
+    version: '0.1',
+    files: ['algorithm.sty', 'algorithmic.sty'],
+    isInstalled: true,
+    source: 'bundle',
+    documentationUrl: 'https://ctan.org/pkg/algorithms',
+  },
+  {
     id: 'listings',
     name: 'listings',
     description: 'Typeset source code listings in LaTeX with language syntax highlighting and line numbering.',

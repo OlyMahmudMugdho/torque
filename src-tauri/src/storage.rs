@@ -384,9 +384,102 @@ pub fn tauri_delete_project(id: String) -> Result<(), String> {
     Ok(())
 }
 
+pub fn get_cache_packages_dir() -> Result<PathBuf, String> {
+    let torque_dir = get_torque_base_dir()?;
+    let packages_dir = torque_dir.join("cache").join("packages");
+    if !packages_dir.exists() {
+        std::fs::create_dir_all(&packages_dir)
+            .map_err(|e| format!("Failed to create package cache directory {}: {}", packages_dir.display(), e))?;
+    }
+    Ok(packages_dir)
+}
+
+#[tauri::command]
+pub fn tauri_save_package_file(filename: String, data: String) -> Result<(), String> {
+    let sanitized = normalize_path(&filename)?;
+    let file_stem = Path::new(&sanitized)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid filename".to_string())?;
+
+    let packages_dir = get_cache_packages_dir()?;
+    let target_path = packages_dir.join(file_stem);
+
+    let decoded = base64_utils::decode(&data)
+        .ok_or_else(|| "Failed to decode base64 data for package file".to_string())?;
+
+    std::fs::write(&target_path, decoded)
+        .map_err(|e| format!("Failed to write package file {}: {}", target_path.display(), e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn tauri_get_package_file(filename: String) -> Result<Option<String>, String> {
+    let sanitized = normalize_path(&filename)?;
+    let file_stem = Path::new(&sanitized)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid filename".to_string())?;
+
+    let packages_dir = get_cache_packages_dir()?;
+    let target_path = packages_dir.join(file_stem);
+
+    if !target_path.exists() {
+        return Ok(None);
+    }
+
+    let bytes = std::fs::read(&target_path)
+        .map_err(|e| format!("Failed to read package file {}: {}", target_path.display(), e))?;
+
+    Ok(Some(base64_utils::encode(&bytes)))
+}
+
+#[tauri::command]
+pub fn tauri_list_package_files() -> Result<Vec<String>, String> {
+    let packages_dir = get_cache_packages_dir()?;
+    let mut files = Vec::new();
+
+    let entries = std::fs::read_dir(&packages_dir)
+        .map_err(|e| format!("Failed to read packages directory: {}", e))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                files.push(name.to_string());
+            }
+        }
+    }
+
+    files.sort();
+    Ok(files)
+}
+
+#[tauri::command]
+pub fn tauri_clear_package_cache() -> Result<(), String> {
+    let packages_dir = get_cache_packages_dir()?;
+    if packages_dir.exists() {
+        let entries = std::fs::read_dir(&packages_dir)
+            .map_err(|e| format!("Failed to read packages directory: {}", e))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+            let path = entry.path();
+            if path.is_file() {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_base64_encode_decode() {
@@ -407,6 +500,7 @@ mod tests {
 
     #[test]
     fn test_save_load_list_delete_project_flow() {
+        let _lock = ENV_MUTEX.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!("torque-test-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         std::fs::create_dir_all(&temp_dir).unwrap();
         let orig_home = std::env::var("HOME").ok();
@@ -463,6 +557,45 @@ mod tests {
         // Delete
         tauri_delete_project(proj_id.clone()).expect("delete project failed");
         let list_after = tauri_list_projects().expect("list projects after delete failed");
+        assert_eq!(list_after.len(), 0);
+
+        if let Some(h) = orig_home {
+            unsafe {
+                std::env::set_var("HOME", h);
+            }
+        }
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_package_cache_storage_flow() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let temp_dir = std::env::temp_dir().join(format!("torque-pkg-cache-test-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let orig_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", &temp_dir);
+        }
+
+        let pkg_data = b"\\ProvidesPackage{custompkg}[2026/11/03]";
+        let encoded = base64_utils::encode(pkg_data);
+
+        // Save
+        tauri_save_package_file("custompkg.sty".to_string(), encoded).expect("save package file failed");
+
+        // List
+        let list = tauri_list_package_files().expect("list package files failed");
+        assert_eq!(list, vec!["custompkg.sty".to_string()]);
+
+        // Get
+        let fetched_b64 = tauri_get_package_file("custompkg.sty".to_string()).expect("get package file failed");
+        assert!(fetched_b64.is_some());
+        let decoded = base64_utils::decode(&fetched_b64.unwrap()).expect("decode package file failed");
+        assert_eq!(&decoded, pkg_data);
+
+        // Clear
+        tauri_clear_package_cache().expect("clear package cache failed");
+        let list_after = tauri_list_package_files().expect("list package files after clear failed");
         assert_eq!(list_after.len(), 0);
 
         if let Some(h) = orig_home {

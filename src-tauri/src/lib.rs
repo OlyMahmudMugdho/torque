@@ -1,7 +1,8 @@
 pub mod storage;
 
 use storage::{
-  get_torque_dir, tauri_delete_project, tauri_load_project, tauri_list_projects,
+  get_torque_dir, tauri_clear_package_cache, tauri_delete_project, tauri_get_package_file,
+  tauri_list_package_files, tauri_list_projects, tauri_load_project, tauri_save_package_file,
   tauri_save_project,
 };
 
@@ -24,6 +25,10 @@ pub fn run() {
       tauri_save_project,
       tauri_load_project,
       tauri_delete_project,
+      tauri_save_package_file,
+      tauri_get_package_file,
+      tauri_list_package_files,
+      tauri_clear_package_cache,
     ])
     .run(tauri::generate_context!())
     .expect("error while building tauri application");

@@ -21,17 +21,84 @@ declare global {
   }
 }
 
-export const WorkspaceUI: React.FC = () => {
+export interface WorkspaceUIProps {
+  initialHomeView?: boolean;
+  projectId?: string;
+}
+
+export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
+  initialHomeView,
+  projectId: propProjectId,
+}) => {
   const workspace = useWorkspace();
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
 
-  const [isHomeViewOpen, setIsHomeViewOpen] = useState(false);
+  const [welcomeTab, setWelcomeTab] = useState<'projects' | 'customize'>('projects');
+  const [isHomeViewOpen, setIsHomeViewOpen] = useState<boolean>(() => {
+    if (initialHomeView !== undefined) return initialHomeView;
+    if (propProjectId) return false;
+    if (typeof window !== 'undefined') {
+      const search = window.location.search;
+      if (search.includes('project=') || search.includes('id=')) {
+        return false;
+      }
+    }
+    return true;
+  });
   const [logsOpen, setLogsOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [previewOpen, setPreviewOpen] = useState(true);
   const [isPackageManagerOpen, setPackageManagerOpen] = useState(false);
   const [packageManagerSearchQuery, setPackageManagerSearchQuery] = useState('');
+
+  // Synchronize URL search params (?project=, ?id=, ?page=) on mount and popstate
+  useEffect(() => {
+    if (!workspace.ready) return;
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const projId = propProjectId || params.get('project') || params.get('id');
+      const page = params.get('page');
+
+      if (projId) {
+        const target = workspace.projects.find((p) => p.id === projId || p.name === projId);
+        if (target && workspace.activeProject?.id !== target.id) {
+          workspace.selectProject(target.id);
+        }
+        setIsHomeViewOpen(false);
+      } else if (page === 'customize') {
+        setWelcomeTab('customize');
+        setIsHomeViewOpen(true);
+      } else if (initialHomeView === undefined && !propProjectId) {
+        setIsHomeViewOpen(true);
+      }
+    }
+  }, [workspace.ready, workspace.projects, propProjectId, initialHomeView]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window === 'undefined') return;
+      const params = new URLSearchParams(window.location.search);
+      const projId = params.get('project') || params.get('id');
+      const page = params.get('page');
+
+      if (projId) {
+        workspace.selectProject(projId);
+        setIsHomeViewOpen(false);
+      } else {
+        setIsHomeViewOpen(true);
+        if (page === 'customize') {
+          setWelcomeTab('customize');
+        } else {
+          setWelcomeTab('projects');
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [workspace.selectProject]);
 
   // Keyboard shortcut listener for LaTeX Package Manager (Shift+Alt+P or Ctrl+Alt+P)
   useEffect(() => {
@@ -164,6 +231,62 @@ export const WorkspaceUI: React.FC = () => {
     );
   }
 
+  const handleSelectProject = async (projectId: string) => {
+    await workspace.selectProject(projectId);
+    setIsHomeViewOpen(false);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('project', projectId);
+      url.searchParams.delete('page');
+      window.history.pushState({ projectId }, '', url.toString());
+    }
+  };
+
+  const handleCreateProject = async (
+    name: string,
+    initialFiles?: any,
+    rootEntry?: string
+  ) => {
+    const newProj = await workspace.createNewProject(name, initialFiles, rootEntry);
+    setIsHomeViewOpen(false);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('project', newProj.id);
+      url.searchParams.delete('page');
+      window.history.pushState({ projectId: newProj.id }, '', url.toString());
+    }
+    return newProj;
+  };
+
+  const handleCloseProject = () => {
+    setIsHomeViewOpen(true);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('project');
+      url.searchParams.delete('id');
+      url.searchParams.delete('file');
+      if (welcomeTab === 'customize') {
+        url.searchParams.set('page', 'customize');
+      }
+      const queryStr = url.searchParams.toString();
+      window.history.pushState({}, '', url.pathname + (queryStr ? `?${queryStr}` : ''));
+    }
+  };
+
+  const handleWelcomeTabChange = (tab: 'projects' | 'customize') => {
+    setWelcomeTab(tab);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (tab === 'customize') {
+        url.searchParams.set('page', 'customize');
+      } else {
+        url.searchParams.delete('page');
+      }
+      const queryStr = url.searchParams.toString();
+      window.history.pushState({}, '', url.pathname + (queryStr ? `?${queryStr}` : ''));
+    }
+  };
+
   const showHomeView = isHomeViewOpen || workspace.projects.length === 0 || !workspace.activeProject;
 
   if (showHomeView) {
@@ -171,14 +294,10 @@ export const WorkspaceUI: React.FC = () => {
       <WelcomeHomeScreen
         projects={workspace.projects}
         activeProjectId={workspace.activeProject?.id}
-        onSelectProject={async (projectId) => {
-          await workspace.selectProject(projectId);
-          setIsHomeViewOpen(false);
-        }}
-        onCreateProject={async (name) => {
-          await workspace.createNewProject(name);
-          setIsHomeViewOpen(false);
-        }}
+        initialTab={welcomeTab}
+        onTabChange={handleWelcomeTabChange}
+        onSelectProject={handleSelectProject}
+        onCreateProject={handleCreateProject}
         onImportZip={async (file) => {
           await handleImportZip(file);
           setIsHomeViewOpen(false);
@@ -210,14 +329,14 @@ export const WorkspaceUI: React.FC = () => {
         activeProject={workspace.activeProject}
         compileStatus={workspace.compileStatus}
         lastDurationMs={workspace.lastResult?.durationMs}
-        onSelectProject={workspace.selectProject}
-        onCreateProject={workspace.createNewProject}
+        onSelectProject={handleSelectProject}
+        onCreateProject={handleCreateProject}
         onRenameProject={workspace.renameActiveProject}
         onDeleteProject={workspace.deleteProjectById}
         onExportZip={handleExportZip}
         onImportZip={handleImportZip}
         onCompile={handleCompile}
-        onCloseProject={() => setIsHomeViewOpen(true)}
+        onCloseProject={handleCloseProject}
         onNewFile={handleCreateFile}
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
         onToggleProblems={() => {
@@ -482,10 +601,10 @@ export const WorkspaceUI: React.FC = () => {
   );
 };
 
-export const App: React.FC = () => {
+export const App: React.FC<WorkspaceUIProps> = (props) => {
   return (
     <ThemeProvider>
-      <WorkspaceUI />
+      <WorkspaceUI {...props} />
     </ThemeProvider>
   );
 };

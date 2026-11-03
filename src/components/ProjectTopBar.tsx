@@ -1,7 +1,9 @@
 import React, { useState, useRef } from 'react';
-import type { Project, CompileStatus } from '../types/workspace';
+import type { Project, ProjectFile, CompileStatus } from '../types/workspace';
 import { useThemeSafe } from '../context/ThemeContext';
 import { TopMenuBar } from './TopMenuBar';
+import { NewProjectModal } from './NewProjectModal';
+import { scaffoldProjectFiles, type NewProjectFormValues } from '../templates/projectTemplates';
 import {
   Play,
   Loader2,
@@ -23,7 +25,11 @@ export interface ProjectTopBarProps {
   compileStatus: CompileStatus;
   lastDurationMs?: number;
   onSelectProject: (projectId: string) => Promise<void>;
-  onCreateProject: (name: string) => Promise<Project>;
+  onCreateProject: (
+    name: string,
+    initialFiles?: Omit<ProjectFile, 'projectId' | 'updatedAt'>[],
+    rootEntry?: string
+  ) => Promise<Project>;
   onRenameProject: (name: string) => Promise<void>;
   onDeleteProject: (projectId: string) => Promise<void>;
   onExportZip: () => Promise<void>;
@@ -67,14 +73,17 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
   const { theme, toggleTheme } = useThemeSafe();
   const isDark = theme === 'dark';
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleCreateNew = async () => {
-    const name = window.prompt('Enter new project name:', 'Untitled Project');
-    if (name?.trim()) {
-      await onCreateProject(name.trim());
-      setDropdownOpen(false);
-    }
+  const handleCreateNew = () => {
+    setIsNewProjectModalOpen(true);
+    setDropdownOpen(false);
+  };
+
+  const handleConfirmCreate = async (values: NewProjectFormValues) => {
+    const { files, rootEntry } = scaffoldProjectFiles(values);
+    await onCreateProject(values.name, files, rootEntry);
   };
 
   const handleRename = async (e: React.MouseEvent) => {
@@ -365,6 +374,13 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
           />
         </label>
       </div>
+
+      {/* JetBrains-style New Project Modal Wizard */}
+      <NewProjectModal
+        isOpen={isNewProjectModalOpen}
+        onClose={() => setIsNewProjectModalOpen(false)}
+        onCreate={handleConfirmCreate}
+      />
     </header>
   );
 };

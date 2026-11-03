@@ -64,6 +64,7 @@ describe('Workspace UI Components', () => {
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.className = '';
+    window.history.replaceState({}, '', '/?project=p1');
     mockWorkspaceState = {
       ready: true,
       projects: [sampleProject],
@@ -594,6 +595,49 @@ describe('Workspace UI Components', () => {
 
     expect(screen.getByText('Welcome to Torque', { selector: 'h1' })).toBeInTheDocument();
     expect(screen.getByText('No recent projects')).toBeInTheDocument();
+  });
+
+  it('WorkspaceUI: shows Welcome to Torque screen first when URL is at root / without project query param', () => {
+    window.history.replaceState({}, '', '/');
+    render(
+      <ThemeProvider>
+        <WorkspaceUI />
+      </ThemeProvider>
+    );
+
+    expect(screen.getByText('Welcome to Torque', { selector: 'h1' })).toBeInTheDocument();
+    expect(screen.getByText('Relativity Paper')).toBeInTheDocument();
+  });
+
+  it('WorkspaceUI: updates URL search parameters on project select, close, and customize tab switch', async () => {
+    window.history.replaceState({}, '', '/');
+    render(
+      <ThemeProvider>
+        <WorkspaceUI />
+      </ThemeProvider>
+    );
+
+    // Initial state: welcome screen
+    expect(screen.getByText('Welcome to Torque', { selector: 'h1' })).toBeInTheDocument();
+
+    // Switch to Customize tab
+    fireEvent.click(screen.getByRole('button', { name: 'Customize' }));
+    expect(window.location.search).toContain('page=customize');
+
+    // Switch back to Projects
+    fireEvent.click(screen.getByRole('button', { name: 'Projects' }));
+    expect(window.location.search).not.toContain('page=customize');
+
+    // Open project
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    });
+    expect(window.location.search).toContain('project=p1');
+
+    // Close project to return to Welcome
+    const torqueBtn = screen.getByRole('button', { name: /return to welcome screen/i });
+    fireEvent.click(torqueBtn);
+    expect(screen.getByText('Welcome to Torque', { selector: 'h1' })).toBeInTheDocument();
   });
 
   it('WorkspaceUI: navigates to WelcomeHomeScreen on Close Project or Torque logo click and returns on project select', async () => {

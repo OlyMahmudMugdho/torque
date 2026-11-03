@@ -26,7 +26,11 @@ export interface WorkspaceState {
   compileStatus: CompileStatus;
   lastResult: CompileResult | null;
   selectProject: (projectId: string) => Promise<void>;
-  createNewProject: (name: string) => Promise<Project>;
+  createNewProject: (
+    name: string,
+    initialFiles?: Omit<ProjectFile, 'projectId' | 'updatedAt'>[],
+    rootEntry?: string
+  ) => Promise<Project>;
   renameActiveProject: (name: string) => Promise<void>;
   deleteProjectById: (projectId: string) => Promise<void>;
   selectFile: (path: string) => void;
@@ -123,8 +127,12 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
   );
 
   const createNewProject = useCallback(
-    async (name: string) => {
-      const newProj = await storeRef.current.createProject(name);
+    async (
+      name: string,
+      initialFiles?: Omit<ProjectFile, 'projectId' | 'updatedAt'>[],
+      rootEntry?: string
+    ) => {
+      const newProj = await storeRef.current.createProject(name, initialFiles, rootEntry);
       await refreshProjects();
       await selectProject(newProj.id);
       return newProj;

@@ -1,6 +1,8 @@
-import React, { useState, useRef } from 'react';
-import type { Project } from '../types/workspace';
+import React, { useState, useRef, useEffect } from 'react';
+import type { Project, ProjectFile } from '../types/workspace';
 import { useThemeSafe } from '../context/ThemeContext';
+import { NewProjectModal } from './NewProjectModal';
+import { scaffoldProjectFiles, type NewProjectFormValues } from '../templates/projectTemplates';
 import {
   Folder,
   FolderOpen,
@@ -23,8 +25,14 @@ import {
 export interface WelcomeHomeScreenProps {
   projects: Project[];
   activeProjectId?: string;
+  initialTab?: 'projects' | 'customize';
+  onTabChange?: (tab: 'projects' | 'customize') => void;
   onSelectProject: (projectId: string) => Promise<void> | void;
-  onCreateProject: (name: string) => Promise<Project> | Promise<void> | void;
+  onCreateProject: (
+    name: string,
+    initialFiles?: Omit<ProjectFile, 'projectId' | 'updatedAt'>[],
+    rootEntry?: string
+  ) => Promise<Project> | Promise<void> | void;
   onImportZip: (file: File) => Promise<void> | void;
   onDeleteProject: (projectId: string) => Promise<void> | void;
   onCloseWelcome?: () => void;
@@ -46,6 +54,8 @@ export function formatLastModified(timestamp: number): string {
 export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
   projects,
   activeProjectId,
+  initialTab = 'projects',
+  onTabChange,
   onSelectProject,
   onCreateProject,
   onImportZip,
@@ -55,17 +65,31 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
   const { theme, setTheme } = useThemeSafe();
   const isDark = theme === 'dark';
 
-  const [activeTab, setActiveTab] = useState<'projects' | 'customize'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'customize'>(initialTab);
+  const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>('medium');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleCreateProject = async () => {
-    const name = window.prompt('Enter new project name:', 'Untitled Project');
-    if (name?.trim()) {
-      await onCreateProject(name.trim());
+  useEffect(() => {
+    if (initialTab && initialTab !== activeTab) {
+      setActiveTab(initialTab);
     }
+  }, [initialTab]);
+
+  const handleTabSwitch = (tab: 'projects' | 'customize') => {
+    setActiveTab(tab);
+    onTabChange?.(tab);
+  };
+
+  const handleCreateProject = () => {
+    setIsNewProjectModalOpen(true);
+  };
+
+  const handleConfirmCreateProject = async (values: NewProjectFormValues) => {
+    const { files, rootEntry } = scaffoldProjectFiles(values);
+    await onCreateProject(values.name, files, rootEntry);
   };
 
   const handleCloneRepository = async () => {
@@ -237,7 +261,7 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
               <nav aria-label="Welcome screen navigation" className="flex flex-col gap-1">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('projects')}
+                  onClick={() => handleTabSwitch('projects')}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition ${
                     activeTab === 'projects'
                       ? 'bg-[#3574f0] text-white shadow-sm'
@@ -252,7 +276,7 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setActiveTab('customize')}
+                  onClick={() => handleTabSwitch('customize')}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition ${
                     activeTab === 'customize'
                       ? 'bg-[#3574f0] text-white shadow-sm'
@@ -271,7 +295,7 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
             <div className={`pt-3 border-t ${isDark ? 'border-[#393b40]' : 'border-[#d1d5db]'}`}>
               <button
                 type="button"
-                onClick={() => setActiveTab('customize')}
+                onClick={() => handleTabSwitch('customize')}
                 className={`flex items-center gap-2 text-xs p-1.5 rounded transition w-full ${
                   isDark
                     ? 'text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#2b2d30]'
@@ -671,6 +695,13 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
           </main>
         </div>
       </div>
+
+      {/* JetBrains-style New Project Modal Wizard */}
+      <NewProjectModal
+        isOpen={isNewProjectModalOpen}
+        onClose={() => setIsNewProjectModalOpen(false)}
+        onCreate={handleConfirmCreateProject}
+      />
     </div>
   );
 };

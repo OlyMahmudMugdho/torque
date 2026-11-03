@@ -116,25 +116,37 @@ describe('WelcomeHomeScreen', () => {
       expect(screen.getByRole('button', { name: 'Remote Development' })).toBeInTheDocument();
     });
 
-    it('clicking "New Project" card prompts for name and triggers onCreateProject', async () => {
-      const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('My New Thesis');
+    it('clicking "New Project" card opens JetBrains New Project modal and triggers onCreateProject on submit', async () => {
       const { props } = renderComponent({ projects: [] });
 
       const newProjCard = screen.getByRole('button', { name: 'New Project' });
       fireEvent.click(newProjCard);
 
-      expect(promptSpy).toHaveBeenCalledWith('Enter new project name:', 'Untitled Project');
-      expect(props.onCreateProject).toHaveBeenCalledWith('My New Thesis');
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /new project/i })).toBeInTheDocument();
+
+      const nameInput = screen.getByLabelText(/name:/i);
+      fireEvent.change(nameInput, { target: { value: 'My New Thesis' } });
+
+      const createBtn = screen.getByRole('button', { name: /create/i });
+      fireEvent.click(createBtn);
+
+      expect(props.onCreateProject).toHaveBeenCalledWith('My New Thesis', expect.any(Array), 'main.tex');
     });
 
-    it('does not trigger onCreateProject if user cancels prompt on "New Project" card', async () => {
-      vi.spyOn(window, 'prompt').mockReturnValue(null);
+    it('does not trigger onCreateProject if user cancels the New Project modal', async () => {
       const { props } = renderComponent({ projects: [] });
 
       const newProjCard = screen.getByRole('button', { name: 'New Project' });
       fireEvent.click(newProjCard);
 
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+      const cancelBtn = screen.getByRole('button', { name: /cancel/i });
+      fireEvent.click(cancelBtn);
+
       expect(props.onCreateProject).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
     it('clicking "Open" card triggers file input click', () => {
@@ -222,15 +234,21 @@ describe('WelcomeHomeScreen', () => {
       expect(screen.getByPlaceholderText('Search projects...')).toBeInTheDocument();
     });
 
-    it('triggers onCreateProject from top header New Project button', async () => {
-      const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Another Thesis');
+    it('triggers onCreateProject from top header New Project button via modal', async () => {
       const { props } = renderComponent();
 
       const newBtn = screen.getByRole('button', { name: /new project/i });
       fireEvent.click(newBtn);
 
-      expect(promptSpy).toHaveBeenCalledWith('Enter new project name:', 'Untitled Project');
-      expect(props.onCreateProject).toHaveBeenCalledWith('Another Thesis');
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+      const nameInput = screen.getByLabelText(/name:/i);
+      fireEvent.change(nameInput, { target: { value: 'Another Thesis' } });
+
+      const createBtn = screen.getByRole('button', { name: /create/i });
+      fireEvent.click(createBtn);
+
+      expect(props.onCreateProject).toHaveBeenCalledWith('Another Thesis', expect.any(Array), 'main.tex');
     });
 
     it('triggers file input from top header Open button', () => {

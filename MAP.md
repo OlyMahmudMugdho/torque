@@ -178,6 +178,11 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 
 ---
 
+### `.github/workflows/` — Continuous Integration & Releases
+- [`.github/workflows/release.yml`](file:///home/mugdho/codes/torque/.github/workflows/release.yml): Multi-platform GitHub Actions release matrix building binaries for Linux (`deb`, `rpm`, `AppImage`), Windows (`nsis` `.exe`, `msi`), and macOS (`dmg`, `app`), uploading built artifacts directly to GitHub Releases.
+
+---
+
 ### `public/` — Static Web Assets & TeX Distribution
 - `public/wasm/tectonic_wasm.wasm`: Precompiled WebAssembly binary of Tectonic.
 - `public/bundle/`: TeX Live distribution files (LaTeX format `latex.fmt`, standard packages, AMS fonts `.tfm`/`.pfb`, TikZ `.code.tex`, Latin Modern fonts `.otf`).

@@ -10,9 +10,13 @@ Compile LaTeX documents directly inside the browser using WebAssembly (Tectonic 
 ## Core Principles
 
 1. **Worker Isolation**: Always execute the WebAssembly TeX engine off the main thread in a dedicated Web Worker (`new Worker(new URL('./compiler.worker.ts', import.meta.url), { type: 'module' })`) to prevent UI freezes or dropped frames in the code editor during compilation.
-2. **On-Demand Package Resolution**: Rather than forcing users to download an entire 50MB+ TeX Live distribution upfront, resolve missing packages on demand when the compiler reports `missingFiles`.
-3. **Core Bundle Preloading**: Preload the minimal set of standard LaTeX files (`latex.fmt`, `article.cls`, `size10.clo`, `l3backend-xetex.def`, font metrics) in parallel during engine initialization so the first compilation is instant.
-4. **Header Hygiene**: Do NOT set `Cross-Origin-Embedder-Policy: require-corp` on the server unless you strictly require `SharedArrayBuffer` (single-threaded TeX WASM does not). COEP causes browsers to silently block static bundle asset fetches (`CORP` errors) unless every static asset has explicit CORS/CORP headers.
+2. **Precompiled WebAssembly.Module**: Compile the WASM binary once using `WebAssembly.compileStreaming(resp)` or `WebAssembly.compile(buf)` and cache the `WebAssembly.Module` promise. Instantiating a new engine from a precompiled module takes ~1-3ms instead of recompiling bytecode from scratch (~200ms).
+3. **Automatic Engine Invalidation on Failure**: Tectonic's internal Rust/C engine enters a dirty or poisoned state when a compile errors out or traps (`RuntimeError: unreachable` or `index out of bounds` in `bridge_core`). Discard the engine instance (`currentEngine = null`) on failure so the next run starts with a clean linear memory instance.
+4. **Stderr & Stdout Diagnostics Capture**: Pass `{ onStderr, onStdout }` handlers to `TexEngine.load(wasmModule, { onStderr, onStdout })`. Parse stderr for Rust panic reasons (`panicked at ...`), fatal errors, and LaTeX job abortion messages to construct human-actionable error messages.
+5. **XeTeX Font Name Probe Resolution**: XeTeX probes fonts with specific suffixes, bracket specifiers (e.g., `[lmroman10-regular.otf]`), and mapping options (e.g., `:mapping=tex-text`). Sanitize probe requests by stripping brackets, options, and auxiliary extensions before querying the bundle cache.
+6. **Core Bundle & TikZ Preloading**: Preload essential format files (`latex.fmt`), document classes (`article.cls`, `IEEEtran.cls`), AMS packages, TikZ core (`pgf`, `tikz`, `tikz-cd`, `topaths`, `plothandlers`, `plotmarks`), and Latin Modern Roman OpenType fonts so standard documents compile in a single pass without extra roundtrips.
+7. **Package Manager Integration**: Pair compiler diagnostics with an interactive package catalog to allow one-click insertion of missing `\usepackage{...}` statements before `\begin{document}`.
+8. **Header Hygiene**: Do NOT set `Cross-Origin-Embedder-Policy: require-corp` on the server unless you strictly require `SharedArrayBuffer` (single-threaded TeX WASM does not). COEP causes browsers to silently block static bundle asset fetches (`CORP` errors) unless every static asset has explicit CORS/CORP headers.
 
 ---
 
@@ -20,11 +24,14 @@ Compile LaTeX documents directly inside the browser using WebAssembly (Tectonic 
 
 | Problem | Root Cause | Solution |
 |---|---|---|
+| `RuntimeError: unreachable` in `bridge_core` | Previous compilation failed, leaving dirty engine memory | Invalidate engine instance (`currentEngine = null`) on failure and recreate from cached `WebAssembly.Module` |
 | `LaTeX Error: File 'l3backend-xetex.def' not found` | Sub-resource fetch blocked by browser COEP or missing from engine virtual FS | Remove `Cross-Origin-Embedder-Policy: require-corp` from server config; preload core bundle assets in worker init |
+| `panicked at ...: index out of bounds` | Font shaper error or unmapped Unicode glyph | Catch in `onStderr`, diagnose invalid characters/glyphs, and reinitialize engine |
 | `Missing files: ['latex', 'latex.fmt']` | Engine initialized without format file in virtual filesystem | Add `latex.fmt` to `TexEngine` before first compile pass |
 | `operation is manually canceled` | Overlapping compiles triggered before previous pass finished | Add an `isCompiling()` concurrency guard in the client controller |
+| Font file not resolved (`[lmroman10-regular.otf]:mapping=tex-text`) | XeTeX requests font with brackets and mapping parameters | Strip brackets `[...]` and `:mapping=...` options in `resolveCandidateBundleName` |
+| TikZ compilation failure (`pgfsys`, `arrows.meta`, `plotmarks`) | Missing auxiliary TikZ libraries | Preload `tikz.code.tex`, `tikz-cd.sty`, `pgfsys-xetex.def`, and TikZ libraries in `CORE_BUNDLE_FILES` |
 | Diagnostic line numbers are `0` or `null` | Global TeX engine errors (e.g., memory, format, or general packages) | Clamp line numbers with `Math.max(1, d.line ?? 1)` when projecting to Monaco markers |
-| Monaco freeze / stuttering during typing | Triggering WASM compilation on every keystroke | Enforce trigger-based compilation only (manual button, hotkey, or action hook) |
 
 ---
 
@@ -32,117 +39,125 @@ Compile LaTeX documents directly inside the browser using WebAssembly (Tectonic 
 
 ```
 Main Thread                                       Web Worker Thread
-┌─────────────────────────┐                      ┌───────────────────────────┐
-│ Monaco Code Editor      │                      │ TexEngine (Tectonic WASM) │
-│ & Project State         │                      │ Virtual Memory Filesystem │
-└───────────┬─────────────┘                      └─────────────▲─────────────┘
-            │                                                  │
-            │ postMessage({ files, entry })                    │ engine.addFile()
-            ▼                                                  ▼
-┌─────────────────────────┐   postMessage(result)┌───────────────────────────┐
-│ CompilerClient          │◄─────────────────────┤ On-Demand Bundle Resolver │
-│ - Concurrency Guard     │                      │ - Checks /bundle/manifest │
-│ - Promise Resolution    │                      │ - Fetches /bundle/<file>  │
-└─────────────────────────┘                      └───────────────────────────┘
+┌─────────────────────────┐                      ┌────────────────────────────────────────┐
+│ Monaco Code Editor      │                      │ TexEngine (Tectonic WASM)              │
+│ & Project State         │                      │ - Precompiled WebAssembly.Module       │
+└───────────┬─────────────┘                      │ - Virtual Memory Filesystem            │
+            │                                    │ - Stderr / Stdout Diagnostic Parser    │
+            │ postMessage({ files, entry })      └───────────────────▲────────────────────┘
+            ▼                                                        │
+┌─────────────────────────┐   postMessage(result)┌───────────────────┴────────────────────┐
+│ CompilerClient          │◄─────────────────────┤ On-Demand Bundle Resolver              │
+│ - Concurrency Guard     │                      │ - XeTeX Probe & Font Stripping         │
+│ - Promise Resolution    │                      │ - Manifest Lookup (/bundle/manifest)   │
+│ - Error Recovery        │                      │ - Fetches /bundle/<resolvedName>       │
+└─────────────────────────┘                      └────────────────────────────────────────┘
 ```
 
 ---
 
-## Standard LaTeX Minimal Bundle Requirements
+## Standard LaTeX & TikZ Bundle Requirements
 
-For a standard `\documentclass{article}` document, Tectonic requires these 12 core files:
+For standard LaTeX documents and TikZ diagrams, Tectonic requires these core bundle files preloaded:
 
-1. `latex.fmt` (TeX format binary, ~3.8MB)
-2. `article.cls` (Document class definition)
-3. `size10.clo` (Font size definitions)
-4. `l3backend-xetex.def` (LaTeX3 backend driver for XeTeX)
-5. `lmroman10-regular.otf` (Latin Modern Roman OpenType font)
-6. `ckx.map`, `glyphlist.txt`, `kanjix.map`, `pdfglyphlist.txt`, `pdftex.map` (Font and glyph mappings)
-7. `tex-text.tec` (XeTeX font mapping table)
-8. `texglyphlist.txt` (TeX glyph name mapping table)
-
-Preloading these 12 files in parallel during worker initialization ensures the very first compilation completes cleanly in a single pass.
+1. **Format & Document Classes**: `latex.fmt`, `article.cls`, `IEEEtran.cls`, `size10.clo`, `size11.clo`, `size12.clo`, `l3backend-xetex.def`
+2. **AMS Math Suite**: `amsmath.sty`, `amssymb.sty`, `amstext.sty`, `amsfonts.sty`, `umsa.fd`, `umsb.fd`
+3. **Graphics & Layout**: `graphicx.sty`, `graphics.sty`, `xcolor.sty`, `geometry.sty`, `multicol.sty`, `calc.sty`, `etoolbox.sty`
+4. **TikZ & PGF Ecosystem**:
+   - `pgf.sty`, `tikz.sty`, `tikz.code.tex`, `pgfsys.code.tex`, `pgfsys-xetex.def`
+   - `tikz-cd.sty`, `tikzlibrarycd.code.tex`, `tikzlibrarymatrix.code.tex`
+   - `tikzlibraryquotes.code.tex`, `pgflibraryarrows.meta.code.tex`
+   - `tikzlibraryplothandlers.code.tex`, `tikzlibrarytopaths.code.tex`, `tikzlibraryplotmarks.code.tex`
+5. **OpenType Fonts & Font Mappings**:
+   - `lmroman10-regular.otf`, `lmroman12-regular.otf`
+   - `ckx.map`, `glyphlist.txt`, `kanjix.map`, `pdfglyphlist.txt`, `pdftex.map`, `tex-text.tec`, `texglyphlist.txt`
+6. **Math Metric & Outline Files**:
+   - `cmex10.tfm`, `cmmi10.tfm`, `cmr10.tfm`, `cmsy10.tfm`, `msam10.tfm`, `msbm10.tfm`
+   - `cmex10.pfb`, `cmmi10.pfb`, `cmr10.pfb`, `cmsy10.pfb`, `msam10.pfb`, `msbm10.pfb`
 
 ---
 
 ## Implementation Pattern
 
-### 1. Dedicated Web Worker (`compiler.worker.ts`)
+### 1. Robust Web Worker Implementation (`compiler.worker.ts`)
 
 ```typescript
 import { TexEngine } from 'glyphtex-engine';
 
-let enginePromise: Promise<TexEngine> | null = null;
+let wasmModulePromise: Promise<WebAssembly.Module> | null = null;
+let currentEngine: TexEngine | null = null;
+let engineUsageCount = 0;
+const MAX_ENGINE_USES = 25;
+
 let bundleManifest: Set<string> | null = null;
 const cachedBundleFiles = new Map<string, Uint8Array>();
+let stderrLogs: string[] = [];
+let stdoutLogs: string[] = [];
 
-const CORE_BUNDLE_FILES = [
-  'latex.fmt',
-  'article.cls',
-  'size10.clo',
-  'l3backend-xetex.def',
-  'lmroman10-regular.otf',
-  'ckx.map',
-  'glyphlist.txt',
-  'kanjix.map',
-  'pdfglyphlist.txt',
-  'pdftex.map',
-  'tex-text.tec',
-  'texglyphlist.txt',
-];
+// Precompile and cache WebAssembly module once
+async function getWasmModule(): Promise<WebAssembly.Module> {
+  if (!wasmModulePromise) {
+    wasmModulePromise = (async () => {
+      const resp = await fetch('/wasm/tectonic_wasm.wasm');
+      if (typeof WebAssembly.compileStreaming === 'function') {
+        try {
+          return await WebAssembly.compileStreaming(resp);
+        } catch {
+          const buf = await resp.arrayBuffer();
+          return await WebAssembly.compile(buf);
+        }
+      }
+      const buf = await resp.arrayBuffer();
+      return await WebAssembly.compile(buf);
+    })();
+  }
+  return wasmModulePromise;
+}
 
-async function fetchBundleFile(name: string): Promise<Uint8Array | null> {
-  if (cachedBundleFiles.has(name)) return cachedBundleFiles.get(name)!;
-
-  // Skip probe names containing brackets or invalid symbols
+// Strip XeTeX probe parameters and options
+function resolveCandidateBundleName(name: string): string | null {
   if (name.startsWith('[') || name.endsWith(']') || name.includes(':')) {
+    // Strip [font.otf]:mapping=tex-text
+    const cleaned = name.replace(/^\[+|\]+$/g, '').split(':')[0];
+    if (bundleManifest && bundleManifest.has(cleaned)) return cleaned;
     return null;
+  }
+  if (!bundleManifest) return name;
+  if (bundleManifest.has(name)) return name;
+
+  // Probe with standard extensions
+  if (!name.includes('.')) {
+    for (const ext of ['.sty', '.cls', '.tfm', '.pfb', '.otf', '.def']) {
+      const cand = `${name}${ext}`;
+      if (bundleManifest.has(cand)) return cand;
+    }
+  }
+  return null;
+}
+
+async function createFreshEngine(): Promise<TexEngine> {
+  const module = await getWasmModule();
+  stderrLogs = [];
+  stdoutLogs = [];
+
+  const engine = await TexEngine.load(module, {
+    onStdout: (text: string) => stdoutLogs.push(text),
+    onStderr: (text: string) => stderrLogs.push(text),
+  });
+
+  for (const [name, data] of cachedBundleFiles.entries()) {
+    engine.addFile(name, data);
   }
 
-  if (bundleManifest && !bundleManifest.has(name)) {
-    return null;
-  }
-
-  try {
-    const resp = await fetch(`/bundle/${encodeURIComponent(name)}`);
-    if (!resp.ok) return null;
-    const buf = new Uint8Array(await resp.arrayBuffer());
-    cachedBundleFiles.set(name, buf);
-    return buf;
-  } catch (err) {
-    console.warn(`[compiler] Failed to fetch bundle file: ${name}`, err);
-    return null;
-  }
+  engineUsageCount = 0;
+  return engine;
 }
 
 async function getEngine(): Promise<TexEngine> {
-  if (!enginePromise) {
-    enginePromise = (async () => {
-      const wasmResp = await fetch('/wasm/tectonic_wasm.wasm');
-      const engine = await TexEngine.load(wasmResp);
-
-      try {
-        const manifestResp = await fetch('/bundle/manifest.json');
-        if (manifestResp.ok) {
-          const list: string[] = await manifestResp.json();
-          bundleManifest = new Set(list);
-        }
-      } catch (e) {
-        console.warn('[compiler] Could not load bundle manifest:', e);
-      }
-
-      // Preload core bundle files in parallel
-      await Promise.all(
-        CORE_BUNDLE_FILES.map(async (file) => {
-          const data = await fetchBundleFile(file);
-          if (data) engine.addFile(file, data);
-        })
-      );
-
-      return engine;
-    })();
+  if (!currentEngine || engineUsageCount >= MAX_ENGINE_USES) {
+    currentEngine = await createFreshEngine();
   }
-  return enginePromise;
+  return currentEngine;
 }
 
 self.addEventListener('message', async (event: MessageEvent) => {
@@ -151,42 +166,51 @@ self.addEventListener('message', async (event: MessageEvent) => {
 
   const start = performance.now();
   try {
-    const engine = await getEngine();
+    let engine = await getEngine();
+    stderrLogs = [];
+    stdoutLogs = [];
 
-    // Clear previous project inputs
     engine.clearFiles();
-
-    // Re-mount cached bundle files
     for (const [name, data] of cachedBundleFiles.entries()) {
       engine.addFile(name, data);
     }
-
-    // Mount user files
     for (const file of req.files) {
       engine.addFile(file.path, file.content);
     }
 
-    let compileRes = engine.compile({
-      entry: req.entry,
-      synctex: false,
-    });
+    engineUsageCount++;
+    let compileRes = engine.compile({ entry: req.entry, synctex: false });
 
-    // Handle missing package resolution loop
+    // Handle missing files on-demand
     let passes = 0;
-    while (compileRes.missingFiles && compileRes.missingFiles.length > 0 && passes < 15) {
+    while (compileRes.status === 'failed' && compileRes.missingFiles?.length && passes < 25) {
       passes++;
       let added = 0;
       for (const missing of compileRes.missingFiles) {
-        if (!cachedBundleFiles.has(missing)) {
-          const data = await fetchBundleFile(missing);
-          if (data) {
-            engine.addFile(missing, data);
+        const resolved = resolveCandidateBundleName(missing);
+        if (resolved && !cachedBundleFiles.has(resolved)) {
+          const resp = await fetch(`/bundle/${encodeURIComponent(resolved)}`);
+          if (resp.ok) {
+            const buf = new Uint8Array(await resp.arrayBuffer());
+            cachedBundleFiles.set(resolved, buf);
             added++;
           }
         }
       }
       if (added === 0) break;
+
+      // Recreate engine with freshly fetched bundle files
+      currentEngine = await createFreshEngine();
+      engine = currentEngine;
+      for (const file of req.files) {
+        engine.addFile(file.path, file.content);
+      }
       compileRes = engine.compile({ entry: req.entry, synctex: false });
+    }
+
+    // CRITICAL: Invalidate engine if compilation failed to prevent corrupted state
+    if (compileRes.status === 'failed') {
+      currentEngine = null;
     }
 
     const durationMs = Math.round(performance.now() - start);
@@ -201,12 +225,7 @@ self.addEventListener('message', async (event: MessageEvent) => {
       result: {
         status: compileRes.status,
         pdfBytes,
-        diagnostics: (compileRes.diagnostics || []).map((d: any) => ({
-          severity: d.severity === 'error' ? 'error' : 'warning',
-          file: d.file ?? undefined,
-          line: d.line ?? undefined,
-          message: d.message,
-        })),
+        diagnostics: compileRes.diagnostics || [],
         durationMs,
       },
     };
@@ -217,6 +236,8 @@ self.addEventListener('message', async (event: MessageEvent) => {
       self.postMessage(response);
     }
   } catch (error) {
+    // Drop engine on crash
+    currentEngine = null;
     self.postMessage({
       type: 'compile-result',
       requestId: req.requestId,
@@ -233,7 +254,7 @@ self.addEventListener('message', async (event: MessageEvent) => {
 
 ---
 
-### 2. Main-Thread Controller (`compilerClient.ts`)
+### 2. Main-Thread Concurrency Guard & Error Recovery (`compilerClient.ts`)
 
 ```typescript
 export class CompilerClient {
@@ -242,23 +263,8 @@ export class CompilerClient {
   private activeResolver: ((res: any) => void) | null = null;
   private activeRequestId: string | null = null;
 
-  private getWorker(): Worker {
-    if (!this.worker) {
-      this.worker = new Worker(new URL('./compiler.worker.ts', import.meta.url), {
-        type: 'module',
-      });
-      this.worker.addEventListener('message', (event) => {
-        const data = event.data;
-        if (data.requestId === this.activeRequestId) {
-          this.compiling = false;
-          const resolve = this.activeResolver;
-          this.activeResolver = null;
-          this.activeRequestId = null;
-          resolve?.(data.result);
-        }
-      });
-    }
-    return this.worker;
+  isCompiling(): boolean {
+    return this.compiling;
   }
 
   async compile(files: Array<{ path: string; content: string | Uint8Array }>, entry: string) {
@@ -283,32 +289,46 @@ export class CompilerClient {
 
 ---
 
-### 3. Mapping Diagnostics to Monaco Markers
+### 3. Preamble Package Insertion Pattern (`packageManager.ts`)
 
 ```typescript
-export function diagnosticsToMarkers(
-  diagnostics: Array<{ file?: string; line?: number; message: string; severity: 'error' | 'warning' }>,
-  activeFilePath: string,
-  rootEntry: string
-) {
-  return diagnostics
-    .filter((d) => (d.file ? d.file === activeFilePath : activeFilePath === rootEntry))
-    .map((d) => ({
-      startLineNumber: Math.max(1, d.line ?? 1),
-      startColumn: 1,
-      endLineNumber: Math.max(1, d.line ?? 1),
-      endColumn: 1000,
-      message: d.message,
-      severity: d.severity === 'error' ? 8 : 4, // monaco.MarkerSeverity
-    }));
+export function injectPackageIntoDocument(documentContent: string, packageName: string, options?: string): string {
+  const packageStatement = options ? `\\usepackage[${options}]{${packageName}}` : `\\usepackage{${packageName}}`;
+
+  // Avoid duplicate package insertion
+  const packageRegex = new RegExp(`\\\\usepackage(?:\\[[^\\]]*\\])?\\{${packageName}\\}`, 'm');
+  if (packageRegex.test(documentContent)) {
+    return documentContent;
+  }
+
+  // Insert before \begin{document}
+  const beginDocMatch = documentContent.match(/\\begin\{document\}/);
+  if (beginDocMatch && beginDocMatch.index !== undefined) {
+    const before = documentContent.substring(0, beginDocMatch.index);
+    const after = documentContent.substring(beginDocMatch.index);
+    return `${before}${packageStatement}\n${after}`;
+  }
+
+  // Fallback: Append after documentclass
+  const docClassMatch = documentContent.match(/\\documentclass(\[[^\]]*\])?\{[^}]+\}/);
+  if (docClassMatch && docClassMatch.index !== undefined) {
+    const insertPos = docClassMatch.index + docClassMatch[0].length;
+    return `${documentContent.slice(0, insertPos)}\n${packageStatement}${documentContent.slice(insertPos)}`;
+  }
+
+  return `${packageStatement}\n${documentContent}`;
 }
 ```
 
 ---
 
-## Common Mistakes to Avoid
+## Best Practices & Anti-Patterns Checklist
 
-1. **Setting `COEP: require-corp` unnecessarily**: Single-threaded WASM does not use `SharedArrayBuffer`. Enabling `require-corp` forces the browser to block all local static fetches without `Cross-Origin-Resource-Policy` headers.
-2. **Re-initializing `TexEngine` on every compile**: Initializing the WASM instance compiles the module and allocates WebAssembly linear memory (~100-300ms). Keep a singleton instance in the Web Worker and only call `engine.clearFiles()` between runs.
-3. **Discarding auxiliary files when resolving missing packages**: When a compile halts due to `missingFiles`, do NOT clear auxiliary files (`.aux`, `.toc`). Tectonic needs them so the rerun picks up where it left off.
-4. **Passing `pdfBytes` without transferring the ArrayBuffer**: Copying multi-megabyte PDF byte buffers across the Web Worker boundary serializes the entire array. Always use `self.postMessage(response, [pdfBytes.buffer])` to transfer ownership with zero copy overhead.
+- [x] **DO** compile `WebAssembly.Module` once and instantiate `TexEngine` instances from it.
+- [x] **DO** discard and nullify `currentEngine` when a compile fails or aborts to avoid `bridge_core` crashes.
+- [x] **DO** capture `onStderr` logs from `TexEngine.load` to diagnose Rust panic reasons and missing fonts.
+- [x] **DO** transfer `pdfBytes.buffer` in `postMessage(response, [pdfBytes.buffer])` for zero-copy IPC.
+- [x] **DO** strip bracket font lookups (`[name.otf]:mapping=...`) when checking `/bundle/manifest.json`.
+- [ ] **DON'T** enable `COEP: require-corp` on the web server unless strictly required (it blocks local font and bundle fetches).
+- [ ] **DON'T** re-compile raw WASM bytes from scratch on every run; instantiate from cached `WebAssembly.Module`.
+- [ ] **DON'T** leave the Problems / Build Output panel visible with dead vertical space when dismissed.

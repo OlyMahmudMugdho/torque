@@ -12,7 +12,7 @@ const cachedBundleFiles = new Map<string, Uint8Array>();
 let stderrLogs: string[] = [];
 let stdoutLogs: string[] = [];
 
-const CORE_BUNDLE_FILES = [
+export const CORE_BUNDLE_FILES = [
   // Core format & document classes
   'latex.fmt',
   'article.cls',
@@ -41,9 +41,10 @@ const CORE_BUNDLE_FILES = [
   'color.cfg',
   'xcolor.sty',
   'xetex.def',
+  'mathcolor.ltx',
   'trig.sty',
 
-  // Layout, TikZ & tools
+  // Layout & tools
   'geometry.sty',
   'keyval.sty',
   'iftex.sty',
@@ -51,18 +52,128 @@ const CORE_BUNDLE_FILES = [
   'multicol.sty',
   'calc.sty',
   'etoolbox.sty',
+
+  // PGF & TikZ Core Engine
+  'pgf.cfg',
+  'pgf.revision.tex',
+  'pgf.sty',
+  'pgfrcs.sty',
+  'pgfrcs.code.tex',
+  'pgfutil-common.tex',
+  'pgfutil-latex.def',
+  'pgfcomp-version-0-65.sty',
+  'pgfcomp-version-1-18.sty',
+  'pgfcore.sty',
+  'pgfcore.code.tex',
   'pgfsys.sty',
   'pgfsys.code.tex',
   'pgfsys-xetex.def',
-  'pgf.sty',
+  'pgfsys-dvipdfmx.def',
+  'pgfsys-common-pdf.def',
+  'pgfsys-luatex.def',
+  'pgfsysprotocol.code.tex',
+  'pgfsyssoftpath.code.tex',
+  'pgfcorepoints.code.tex',
+  'pgfcorepathconstruct.code.tex',
+  'pgfcorepathusage.code.tex',
+  'pgfcorescopes.code.tex',
+  'pgfcoregraphicstate.code.tex',
+  'pgfcoretransformations.code.tex',
+  'pgfcorequick.code.tex',
+  'pgfcoreobjects.code.tex',
+  'pgfcorepathprocessing.code.tex',
+  'pgfcorearrows.code.tex',
+  'pgfcoreshade.code.tex',
+  'pgfcoreimage.code.tex',
+  'pgfcoreexternal.code.tex',
+  'pgfcorelayers.code.tex',
+  'pgfcoretransparency.code.tex',
+  'pgfcorepatterns.code.tex',
+  'pgfcorerdf.code.tex',
+  'pgfint.code.tex',
+  'pgfkeys.code.tex',
+  'pgfkeys.sty',
+  'pgfkeyslibraryfiltered.code.tex',
+  'pgfmath.sty',
+  'pgfmath.code.tex',
+  'pgfmathutil.code.tex',
+  'pgfmathparser.code.tex',
+  'pgfmathfunctions.code.tex',
+  'pgfmathfunctions.basic.code.tex',
+  'pgfmathfunctions.trigonometric.code.tex',
+  'pgfmathfunctions.random.code.tex',
+  'pgfmathfunctions.comparison.code.tex',
+  'pgfmathfunctions.base.code.tex',
+  'pgfmathfunctions.round.code.tex',
+  'pgfmathfunctions.misc.code.tex',
+  'pgfmathfunctions.integerarithmetics.code.tex',
+  'pgfmathcalc.code.tex',
+  'pgfmathfloat.code.tex',
+  'pgffor.sty',
+  'pgffor.code.tex',
+  'pgfmoduleshapes.code.tex',
+  'pgfmoduleplot.code.tex',
+  'pgfmodulematrix.code.tex',
+  'pgfmoduledecorations.code.tex',
+  'tc-pgf.def',
+
+  // TikZ Core & Libraries
   'tikz.sty',
   'tikz.code.tex',
   'tikz-cd.sty',
+  'tikzlibrarytopaths.code.tex',
+  'pgflibraryplothandlers.code.tex',
+  'tikzlibraryplotmarks.code.tex',
+  'pgflibraryplotmarks.code.tex',
+  'tikzlibrarypositioning.code.tex',
+  'tikzlibraryquotes.code.tex',
   'tikzlibrarycd.code.tex',
   'tikzlibrarymatrix.code.tex',
-  'pgfmodulematrix.code.tex',
-  'tikzlibraryquotes.code.tex',
+  'tikzlibrarydecorations.code.tex',
+  'tikzlibrarydecorations.pathmorphing.code.tex',
+  'tikzlibrarydecorations.pathreplacing.code.tex',
+  'tikzlibraryfill.image.code.tex',
   'pgflibraryarrows.meta.code.tex',
+  'pgflibrarydecorations.pathmorphing.code.tex',
+  'pgflibrarydecorations.pathreplacing.code.tex',
+  'pgflibraryfpu.code.tex',
+
+  // PGFPlots Core & Libraries
+  'pgfplots.sty',
+  'pgfplots.code.tex',
+  'pgfplotscore.code.tex',
+  'pgfplotsarray.code.tex',
+  'pgfplotsbinary.code.tex',
+  'pgfplotsbinary.data.code.tex',
+  'pgfplotscolor.code.tex',
+  'pgfplotscolormap.code.tex',
+  'pgfplotscoordprocessing.code.tex',
+  'pgfplotsdeque.code.tex',
+  'pgfplots.errorbars.code.tex',
+  'pgfplotslibrary.code.tex',
+  'pgfplotsliststructure.code.tex',
+  'pgfplotsliststructureext.code.tex',
+  'pgfplots.markers.code.tex',
+  'pgfplotsmatrix.code.tex',
+  'pgfplotsmeshplotimage.code.tex',
+  'pgfplotsmeshplothandler.code.tex',
+  'pgfplotsoldpgfsupp_loader.code.tex',
+  'pgfplotsoldpgfsupp_pgflibraryfpu.code.tex',
+  'pgfplotsoldpgfsupp_pgfutil-common-lists.tex',
+  'pgfplots.paths.code.tex',
+  'pgfplotsplothandlers.code.tex',
+  'pgfplots.revision.tex',
+  'pgfplots.scaling.code.tex',
+  'pgfplotsstackedplots.code.tex',
+  'pgfplotssysgeneric.code.tex',
+  'pgfplotstableshared.code.tex',
+  'pgfplotsticks.code.tex',
+  'pgfplotsutil.code.tex',
+  'pgfplotsutil.verb.code.tex',
+  'pgflibrarypgfplots.surfshading.code.tex',
+  'pgflibrarypgfplots.surfshading.pgfsys-xetex.def',
+  'pgflibrarypgfplots.surfshading.pgfsys-dvipdfmx.def',
+  'tikzlibrarypgfplots.contourlua.code.tex',
 
   // Mappings & OpenType Fonts
   'ckx.map',
@@ -72,8 +183,61 @@ const CORE_BUNDLE_FILES = [
   'pdftex.map',
   'tex-text.tec',
   'texglyphlist.txt',
+
+  // Latin Modern Roman Fonts (Full Optical & Style Family)
   'lmroman10-regular.otf',
+  'lmroman10-bold.otf',
+  'lmroman10-italic.otf',
+  'lmroman10-bolditalic.otf',
   'lmroman12-regular.otf',
+  'lmroman12-bold.otf',
+  'lmroman12-italic.otf',
+  'lmroman17-regular.otf',
+  'lmroman9-regular.otf',
+  'lmroman9-bold.otf',
+  'lmroman9-italic.otf',
+  'lmroman8-regular.otf',
+  'lmroman8-bold.otf',
+  'lmroman8-italic.otf',
+  'lmroman7-regular.otf',
+  'lmroman7-bold.otf',
+  'lmroman7-italic.otf',
+  'lmroman6-regular.otf',
+  'lmroman6-bold.otf',
+  'lmroman5-regular.otf',
+  'lmroman5-bold.otf',
+  'lmromancaps10-regular.otf',
+  'lmromancaps10-oblique.otf',
+  'lmromandemi10-regular.otf',
+  'lmromandemi10-oblique.otf',
+  'lmromandunh10-regular.otf',
+  'lmromandunh10-oblique.otf',
+  'lmromanslant8-regular.otf',
+  'lmromanslant9-regular.otf',
+  'lmromanslant10-regular.otf',
+  'lmromanslant10-bold.otf',
+  'lmromanslant12-regular.otf',
+  'lmromanslant17-regular.otf',
+  'lmromanunsl10-regular.otf',
+
+  // Latin Modern Sans & Monospace Fonts
+  'lmsans10-regular.otf',
+  'lmsans10-bold.otf',
+  'lmsans10-oblique.otf',
+  'lmsans10-boldoblique.otf',
+  'lmsans12-regular.otf',
+  'lmsans12-oblique.otf',
+  'lmsans17-regular.otf',
+  'lmsans17-oblique.otf',
+  'lmsans8-regular.otf',
+  'lmsans8-oblique.otf',
+  'lmsans9-regular.otf',
+  'lmsans9-oblique.otf',
+  'lmmono10-regular.otf',
+  'lmmono10-italic.otf',
+  'lmmono12-regular.otf',
+  'lmmono8-regular.otf',
+  'lmmono9-regular.otf',
 
   // Common Math Font Metrics (TFM)
   'cmex10.tfm',
@@ -124,46 +288,111 @@ const CORE_BUNDLE_FILES = [
   'msbm7.pfb',
 ];
 
-function resolveCandidateBundleName(name: string): string | null {
-  // Probe lookups with brackets or invalid file tokens are not bundle packages
-  if (name.startsWith('[') || name.endsWith(']') || name.includes(':')) {
-    return null;
+export function resolveCandidateBundleName(
+  name: string,
+  manifest: Set<string> | null = bundleManifest
+): string | null {
+  if (!name || typeof name !== 'string') return null;
+
+  let cleaned = name.trim();
+
+  // Strip XeTeX font options, shaper probes, or auxiliary suffixes with ':' (e.g., ":mapping=tex-text;", ":0-0-GID", ":outline=true")
+  if (cleaned.includes(':')) {
+    cleaned = cleaned.split(':')[0].trim();
   }
 
-  if (!bundleManifest) {
-    return name;
+  // Strip macOS resource fork probe suffix
+  if (cleaned.endsWith('/rsrc')) {
+    cleaned = cleaned.slice(0, -5);
   }
 
-  if (bundleManifest.has(name)) {
-    return name;
+  // Strip bracket enclosures used by XeTeX font probes, e.g. "[lmroman12-bold]" or "[lmroman10-bold].tfm"
+  if (cleaned.includes('[') || cleaned.includes(']')) {
+    cleaned = cleaned.replace(/[[\]]/g, '');
   }
 
-  // 1. If no extension provided, test common TeX package/font extensions
-  if (!name.includes('.')) {
-    const exts = ['.sty', '.cls', '.tfm', '.pfb', '.otf', '.def', '.cfg', '.fd'];
+  if (!cleaned) return null;
+
+  if (!manifest) {
+    return cleaned;
+  }
+
+  // 1. Exact match in manifest
+  if (manifest.has(cleaned)) {
+    return cleaned;
+  }
+
+  // 2. Case-insensitive exact match in manifest (e.g. lmroman10-bold.OTF -> lmroman10-bold.otf)
+  const lowerCleaned = cleaned.toLowerCase();
+  if (manifest.has(lowerCleaned)) {
+    return lowerCleaned;
+  }
+
+  // 3. If no extension provided, test common TeX package/font/code extensions
+  if (!cleaned.includes('.')) {
+    const exts = [
+      '.sty',
+      '.cls',
+      '.otf',
+      '.ttf',
+      '.code.tex',
+      '.tex',
+      '.def',
+      '.cfg',
+      '.tfm',
+      '.pfb',
+      '.fd',
+    ];
     for (const ext of exts) {
-      const candidate = `${name}${ext}`;
-      if (bundleManifest.has(candidate)) {
+      const candidate = `${cleaned}${ext}`;
+      if (manifest.has(candidate)) {
+        return candidate;
+      }
+      const lowerCandidate = `${lowerCleaned}${ext}`;
+      if (manifest.has(lowerCandidate)) {
+        return lowerCandidate;
+      }
+    }
+
+    // Also check if TikZ/PGF library prefixes match
+    const libPrefixes = ['tikzlibrary', 'pgflibrary', 'pgfmodule'];
+    for (const prefix of libPrefixes) {
+      const candidate = `${prefix}${cleaned}.code.tex`;
+      if (manifest.has(candidate)) {
         return candidate;
       }
     }
   }
 
-  // 2. Strip probe suffixes appended by XeTeX (e.g. .sty.aux, .sty.tex, .aux, .bbl, etc.)
+  // 4. Strip probe suffixes appended by XeTeX / TeX (e.g. .sty.aux, .sty.tex, .aux, .bbl, etc.)
   const probeRegexes = [
-    /\.(?:aux|bbl|clo|cls|def|fd|ldf|sty|tex)$/,
-    /\.(?:TTC|TTF|dfont|pfa|pfb|ttc|ttf|ofm)$/i,
+    /\.(?:aux|bbl|clo|cls|def|fd|ldf|sty|tex|tfm)$/i,
+    /\.(?:TTC|TTF|OTF|dfont|pfa|pfb|ttc|ttf|otf|ofm)$/i,
   ];
   for (const regex of probeRegexes) {
-    if (regex.test(name)) {
-      const stripped = name.replace(regex, '');
-      if (bundleManifest.has(stripped)) {
+    if (regex.test(cleaned)) {
+      const stripped = cleaned.replace(regex, '');
+      if (manifest.has(stripped)) {
         return stripped;
       }
+      const lowerStripped = stripped.toLowerCase();
+      if (manifest.has(lowerStripped)) {
+        return lowerStripped;
+      }
       if (!stripped.includes('.')) {
-        for (const ext of ['.sty', '.cls', '.tfm', '.pfb']) {
+        for (const ext of ['.otf', '.ttf', '.code.tex', '.sty', '.cls', '.tfm', '.pfb', '.def']) {
           const candidate = `${stripped}${ext}`;
-          if (bundleManifest.has(candidate)) {
+          if (manifest.has(candidate)) {
+            return candidate;
+          }
+          const lowerCandidate = `${lowerStripped}${ext}`;
+          if (manifest.has(lowerCandidate)) {
+            return lowerCandidate;
+          }
+        }
+        for (const prefix of ['tikzlibrary', 'pgflibrary', 'pgfmodule']) {
+          const candidate = `${prefix}${stripped}.code.tex`;
+          if (manifest.has(candidate)) {
             return candidate;
           }
         }
@@ -414,10 +643,10 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
       synctex: false,
     });
 
-    // Handle missing files on-demand if the compile failed
+    // Handle missing files on-demand if the compile failed or encountered recoverable missing file errors
     let passes = 0;
     while (
-      compileRes.status === 'failed' &&
+      (compileRes.status === 'failed' || compileRes.status === 'errors') &&
       compileRes.missingFiles &&
       compileRes.missingFiles.length > 0 &&
       passes < 25

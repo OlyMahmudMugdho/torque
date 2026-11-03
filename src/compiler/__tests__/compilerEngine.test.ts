@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { TexEngine } from 'glyphtex-engine';
-import { parseDiagnosticFromError } from '../compiler.worker';
+import {
+  parseDiagnosticFromError,
+  CORE_BUNDLE_FILES,
+  resolveCandidateBundleName,
+} from '../compiler.worker';
 
 describe('compilerEngine', () => {
   it('compiles standard document with geometry, amsmath, graphicx, multicol, and math in a single pass', async () => {
@@ -254,6 +258,171 @@ Modern scientific publishing demands instant local compilation.
     expect(pdf![2]).toBe(0x44); // D
     expect(pdf![3]).toBe(0x46); // F
   }, 15000);
+
+  it('compiles TikZ document with paths and node positioning spotlessly using core bundle files', async () => {
+    const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+    const engine = await TexEngine.load(wasmBuf);
+    const bundleDir = path.resolve('public/bundle');
+
+    for (const file of CORE_BUNDLE_FILES) {
+      const p = path.join(bundleDir, file);
+      if (fs.existsSync(p)) {
+        engine.addFile(file, new Uint8Array(fs.readFileSync(p)));
+      }
+    }
+
+    const doc = `\\documentclass{article}
+\\usepackage{tikz}
+\\usetikzlibrary{positioning,quotes,arrows.meta}
+\\begin{document}
+\\begin{tikzpicture}
+  \\node[draw, circle] (A) {A};
+  \\node[draw, rectangle, right=of A] (B) {B};
+  \\draw[->] (A) to["edge"] (B);
+\\end{tikzpicture}
+\\end{document}`;
+
+    engine.addFile('main.tex', doc);
+    const res = engine.compile({ entry: 'main.tex', synctex: false });
+    expect(res.status).toBe('spotless');
+    expect(res.diagnostics.length).toBe(0);
+
+    const pdf = engine.pdf();
+    expect(pdf).toBeDefined();
+    expect(pdf!.length).toBeGreaterThan(100);
+    expect(pdf![0]).toBe(0x25); // %
+  }, 20000);
+
+  it('compiles documents with Latin Modern bold, italic, and optical sizes (14.4pt, 10.95pt, 8pt) without font not loadable errors', async () => {
+    const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+    const engine = await TexEngine.load(wasmBuf);
+    const bundleDir = path.resolve('public/bundle');
+
+    for (const file of CORE_BUNDLE_FILES) {
+      const p = path.join(bundleDir, file);
+      if (fs.existsSync(p)) {
+        engine.addFile(file, new Uint8Array(fs.readFileSync(p)));
+      }
+    }
+
+    const doc = `\\documentclass[11pt]{article}
+\\begin{document}
+\\section{Title at 14.4pt}
+\\subsection{Subsection at 12pt}
+Regular 10.95pt text with \\textbf{bold text} and \\textit{italic text}.
+{\\footnotesize Footnote size text at 8pt.}
+{\\scriptsize Script size text at 7pt.}
+{\\tiny Tiny size text at 6pt.}
+\\end{document}`;
+
+    engine.addFile('main.tex', doc);
+    const res = engine.compile({ entry: 'main.tex', synctex: false });
+    expect(res.status).toBe('spotless');
+    expect(res.diagnostics.length).toBe(0);
+
+    const pdf = engine.pdf();
+    expect(pdf).toBeDefined();
+    expect(pdf!.length).toBeGreaterThan(100);
+    expect(pdf![0]).toBe(0x25);
+  }, 20000);
+
+  it('compiles pgfplots diagrams using plotmarks and tikz libraries cleanly', async () => {
+    const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+    const engine = await TexEngine.load(wasmBuf);
+    const bundleDir = path.resolve('public/bundle');
+
+    for (const file of CORE_BUNDLE_FILES) {
+      const p = path.join(bundleDir, file);
+      if (fs.existsSync(p)) {
+        engine.addFile(file, new Uint8Array(fs.readFileSync(p)));
+      }
+    }
+
+    const doc = `\\documentclass{article}
+\\usepackage{pgfplots}
+\\pgfplotsset{compat=1.18}
+\\begin{document}
+\\begin{tikzpicture}
+  \\begin{axis}
+    \\addplot[mark=*] coordinates {(0,0) (1,1) (2,4) (3,9)};
+  \\end{axis}
+\\end{tikzpicture}
+\\end{document}`;
+
+    engine.addFile('main.tex', doc);
+    const res = engine.compile({ entry: 'main.tex', synctex: false });
+    expect(res.status).toBe('spotless');
+    expect(res.diagnostics.length).toBe(0);
+
+    const pdf = engine.pdf();
+    expect(pdf).toBeDefined();
+    expect(pdf!.length).toBeGreaterThan(100);
+    expect(pdf![0]).toBe(0x25);
+  }, 20000);
+
+  describe('resolveCandidateBundleName', () => {
+    const manifest = new Set<string>(JSON.parse(fs.readFileSync('public/bundle/manifest.json', 'utf8')));
+
+    it('resolves PGF and TikZ library requests', () => {
+      expect(resolveCandidateBundleName('pgflibraryplothandlers', manifest)).toBe(
+        'pgflibraryplothandlers.code.tex'
+      );
+      expect(resolveCandidateBundleName('plothandlers', manifest)).toBe(
+        'pgflibraryplothandlers.code.tex'
+      );
+      expect(resolveCandidateBundleName('tikzlibrarytopaths', manifest)).toBe(
+        'tikzlibrarytopaths.code.tex'
+      );
+      expect(resolveCandidateBundleName('topaths', manifest)).toBe(
+        'tikzlibrarytopaths.code.tex'
+      );
+      expect(resolveCandidateBundleName('tikzlibraryplotmarks', manifest)).toBe(
+        'tikzlibraryplotmarks.code.tex'
+      );
+      expect(resolveCandidateBundleName('pgflibraryplotmarks', manifest)).toBe(
+        'pgflibraryplotmarks.code.tex'
+      );
+      expect(resolveCandidateBundleName('plotmarks', manifest)).toBe(
+        'tikzlibraryplotmarks.code.tex'
+      );
+    });
+
+    it('resolves XeTeX font probes with brackets, font mappings, and options', () => {
+      expect(resolveCandidateBundleName('[lmroman12-bold]:mapping=tex-text;', manifest)).toBe(
+        'lmroman12-bold.otf'
+      );
+      expect(resolveCandidateBundleName('[lmroman10-bold]:mapping=tex-text;', manifest)).toBe(
+        'lmroman10-bold.otf'
+      );
+      expect(resolveCandidateBundleName('[lmroman8-regular]:mapping=tex-text;', manifest)).toBe(
+        'lmroman8-regular.otf'
+      );
+      expect(resolveCandidateBundleName('[lmroman12-bold]', manifest)).toBe(
+        'lmroman12-bold.otf'
+      );
+      expect(resolveCandidateBundleName('[lmroman10-bold]', manifest)).toBe(
+        'lmroman10-bold.otf'
+      );
+      expect(resolveCandidateBundleName('[lmroman8-regular]', manifest)).toBe(
+        'lmroman8-regular.otf'
+      );
+      expect(resolveCandidateBundleName('[lmroman10-bold].tfm', manifest)).toBe(
+        'lmroman10-bold.otf'
+      );
+      expect(resolveCandidateBundleName('lmroman10-bold.OTF', manifest)).toBe(
+        'lmroman10-bold.otf'
+      );
+      expect(resolveCandidateBundleName('lmroman12-bold', manifest)).toBe(
+        'lmroman12-bold.otf'
+      );
+      expect(resolveCandidateBundleName('lmroman10-regular:0-0-GID', manifest)).toBe(
+        'lmroman10-regular.otf'
+      );
+      expect(resolveCandidateBundleName('lmroman10-regular/rsrc', manifest)).toBe(
+        'lmroman10-regular.otf'
+      );
+    });
+  });
 
   describe('error diagnostics and engine recovery', () => {
     it('translates bridge_core index out of bounds panic into actionable unicode diagnostic', () => {

@@ -493,5 +493,73 @@ Regular 10.95pt text with \\textbf{bold text} and \\textit{italic text}.
       expect(res2.status).toBe('spotless');
       expect(engine.pdf()).toBeDefined();
     }, 20000);
+
+    it('produces valid PDF and warnings status when compiling document with LaTeX warnings', async () => {
+      const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+      const wasmModule = await WebAssembly.compile(wasmBuf);
+      const manifest: string[] = JSON.parse(fs.readFileSync('public/bundle/manifest.json', 'utf8'));
+
+      const engine = await TexEngine.load(wasmModule);
+      for (const f of manifest) {
+        const p = path.join('public/bundle', f);
+        if (fs.existsSync(p)) engine.addFile(f, new Uint8Array(fs.readFileSync(p)));
+      }
+
+      // Overfull hbox and pgfplots backwards compatibility warning
+      const docWithWarnings = `\\documentclass{article}
+\\usepackage{pgfplots}
+\\begin{document}
+\\hbox to 1cm{This is a deliberately overfull hbox that exceeds one centimeter by a large margin}
+\\begin{tikzpicture}
+\\begin{axis}
+\\addplot coordinates {(0,0) (1,1)};
+\\end{axis}
+\\end{tikzpicture}
+\\end{document}
+`;
+      engine.addFile('main.tex', docWithWarnings);
+      const res = engine.compile({ entry: 'main.tex', synctex: false });
+
+      expect(res.status).toBe('warnings');
+      expect(res.diagnostics.length).toBeGreaterThan(0);
+      const pdf = engine.pdf();
+      expect(pdf).toBeDefined();
+      expect(pdf!.length).toBeGreaterThan(100);
+      expect(pdf![0]).toBe(0x25); // %
+      expect(pdf![1]).toBe(0x50); // P
+      expect(pdf![2]).toBe(0x44); // D
+      expect(pdf![3]).toBe(0x46); // F
+    }, 20000);
+
+    it('produces valid PDF and errors status when document has recoverable TeX error', async () => {
+      const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+      const wasmModule = await WebAssembly.compile(wasmBuf);
+      const manifest: string[] = JSON.parse(fs.readFileSync('public/bundle/manifest.json', 'utf8'));
+
+      const engine = await TexEngine.load(wasmModule);
+      for (const f of manifest) {
+        const p = path.join('public/bundle', f);
+        if (fs.existsSync(p)) engine.addFile(f, new Uint8Array(fs.readFileSync(p)));
+      }
+
+      const docWithError = `\\documentclass{article}
+\\begin{document}
+Hello World
+\\undefinedcontrolsequence
+Valid Text Afterwards
+\\end{document}
+`;
+      engine.addFile('main.tex', docWithError);
+      const res = engine.compile({ entry: 'main.tex', synctex: false });
+
+      expect(res.status).toBe('errors');
+      const pdf = engine.pdf();
+      expect(pdf).toBeDefined();
+      expect(pdf!.length).toBeGreaterThan(100);
+      expect(pdf![0]).toBe(0x25); // %
+      expect(pdf![1]).toBe(0x50); // P
+      expect(pdf![2]).toBe(0x44); // D
+      expect(pdf![3]).toBe(0x46); // F
+    }, 20000);
   });
 });

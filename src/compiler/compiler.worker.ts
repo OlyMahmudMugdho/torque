@@ -1,6 +1,6 @@
 import { TexEngine } from 'glyphtex-engine';
 import type { CompileWorkerRequest, CompileWorkerResponse } from './compilerProtocol';
-import type { Diagnostic } from '../types/workspace';
+import type { Diagnostic, CompileStatus } from '../types/workspace';
 
 let wasmModulePromise: Promise<WebAssembly.Module> | null = null;
 let currentEngine: TexEngine | null = null;
@@ -677,16 +677,11 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
       });
     }
 
-    // If compilation ended in failure, invalidate the engine instance so the next compile
-    // runs with a completely fresh, uncorrupted WebAssembly state
-    if (compileRes.status === 'failed') {
-      currentEngine = null;
-    }
-
     const durationMs = Math.round(performance.now() - start);
 
+    // Extract PDF output from engine if generated
     let pdfBytes: Uint8Array | null = null;
-    if (compileRes.status !== 'failed') {
+    try {
       const output = engine.pdf() ?? null;
       if (output && output.length >= 4) {
         const hasPdfHeader =
@@ -694,11 +689,14 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
           output[1] === 0x50 && // P
           output[2] === 0x44 && // D
           output[3] === 0x46; // F
-        if (!hasPdfHeader) {
+        if (hasPdfHeader) {
+          pdfBytes = output;
+        } else {
           console.warn('[compiler.worker] Compiled output is missing valid %PDF- header');
         }
       }
-      pdfBytes = output;
+    } catch (e) {
+      console.warn('[compiler.worker] Error extracting PDF output from engine:', e);
     }
 
     let diagnostics: Diagnostic[] = (compileRes.diagnostics || []).map((d) => ({
@@ -708,7 +706,33 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
       message: d.message,
     }));
 
-    if (compileRes.status === 'failed' && diagnostics.length === 0) {
+    const hasErrorDiagnostic = diagnostics.some((d) => d.severity === 'error');
+    const hasWarningDiagnostic = diagnostics.some((d) => d.severity === 'warning');
+
+    let finalStatus: Exclude<CompileStatus, 'idle' | 'compiling'> = compileRes.status;
+
+    // If compileRes.status is 'failed' but engine.pdf() produced a valid PDF,
+    // or if diagnostics only contain warnings/info, do not treat as a total failure
+    if (finalStatus === 'failed') {
+      if (pdfBytes) {
+        finalStatus = hasErrorDiagnostic ? 'errors' : hasWarningDiagnostic ? 'warnings' : 'spotless';
+      } else if (!hasErrorDiagnostic && diagnostics.length > 0) {
+        finalStatus = hasWarningDiagnostic ? 'warnings' : 'spotless';
+      }
+    } else if (finalStatus === 'errors') {
+      // If status is 'errors' but there are no actual error diagnostics (only warnings/info)
+      if (!hasErrorDiagnostic) {
+        finalStatus = hasWarningDiagnostic ? 'warnings' : 'spotless';
+      }
+    }
+
+    // Invalidate the engine instance on failed or error compilations, or if no PDF was produced,
+    // so subsequent compilations run with completely fresh WebAssembly linear memory
+    if (finalStatus === 'failed' || finalStatus === 'errors' || !pdfBytes) {
+      currentEngine = null;
+    }
+
+    if (finalStatus === 'failed' && diagnostics.length === 0) {
       const rawStderr = stderrLogs.join('');
       diagnostics.push(parseDiagnosticFromError(new Error('TeX compilation failed'), rawStderr, req.entry));
     }
@@ -717,7 +741,7 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
       type: 'compile-result',
       requestId: req.requestId,
       result: {
-        status: compileRes.status,
+        status: finalStatus,
         pdfBytes,
         diagnostics,
         missingFiles: compileRes.missingFiles ?? [],

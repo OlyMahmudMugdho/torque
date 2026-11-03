@@ -139,6 +139,72 @@ describe('Workspace UI Components', () => {
     expect(onCompile).toHaveBeenCalledTimes(1);
   });
 
+  it('renders correct status badges in ProjectTopBar for warnings, errors, failed, and spotless', () => {
+    const { rerender } = render(
+      <ProjectTopBar
+        projects={[sampleProject]}
+        activeProject={sampleProject}
+        compileStatus="spotless"
+        onSelectProject={vi.fn()}
+        onCreateProject={vi.fn()}
+        onRenameProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onExportZip={vi.fn()}
+        onImportZip={vi.fn()}
+        onCompile={vi.fn()}
+      />
+    );
+    expect(screen.getByText('Build Success')).toBeInTheDocument();
+
+    rerender(
+      <ProjectTopBar
+        projects={[sampleProject]}
+        activeProject={sampleProject}
+        compileStatus="warnings"
+        onSelectProject={vi.fn()}
+        onCreateProject={vi.fn()}
+        onRenameProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onExportZip={vi.fn()}
+        onImportZip={vi.fn()}
+        onCompile={vi.fn()}
+      />
+    );
+    expect(screen.getByText('Warnings')).toBeInTheDocument();
+
+    rerender(
+      <ProjectTopBar
+        projects={[sampleProject]}
+        activeProject={sampleProject}
+        compileStatus="errors"
+        onSelectProject={vi.fn()}
+        onCreateProject={vi.fn()}
+        onRenameProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onExportZip={vi.fn()}
+        onImportZip={vi.fn()}
+        onCompile={vi.fn()}
+      />
+    );
+    expect(screen.getByText('Built with Warnings')).toBeInTheDocument();
+
+    rerender(
+      <ProjectTopBar
+        projects={[sampleProject]}
+        activeProject={sampleProject}
+        compileStatus="failed"
+        onSelectProject={vi.fn()}
+        onCreateProject={vi.fn()}
+        onRenameProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onExportZip={vi.fn()}
+        onImportZip={vi.fn()}
+        onCompile={vi.fn()}
+      />
+    );
+    expect(screen.getByText('Build Failed')).toBeInTheDocument();
+  });
+
   it('renders compiler diagnostics in DiagnosticsLogPanel and invokes onSelectDiagnostic on click', () => {
     const onSelect = vi.fn();
     const diagnostics: Diagnostic[] = [
@@ -217,6 +283,35 @@ describe('Workspace UI Components', () => {
     const downloadBtn = screen.getByRole('button', { name: /export \/ download pdf/i });
     expect(downloadBtn).toBeDisabled();
     expect(screen.getByText(/no pdf compiled/i)).toBeInTheDocument();
+  });
+
+  it('renders PdfPreviewPane with Build Failed empty state when compileStatus is failed and no pdfBytes', () => {
+    render(<PdfPreviewPane pdfBytes={null} compiling={false} compileStatus="failed" />);
+    expect(screen.getByText(/build failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/check the problems panel/i)).toBeInTheDocument();
+  });
+
+  it('renders PdfPreviewPane with preview and status badge when compileStatus is warnings or errors with pdfBytes', async () => {
+    const rawBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35]);
+    let rerenderFn: any;
+    await act(async () => {
+      const { rerender } = render(
+        <PdfPreviewPane pdfBytes={rawBytes} compiling={false} compileStatus="warnings" projectName="Paper" />
+      );
+      rerenderFn = rerender;
+    });
+    expect(screen.queryByText(/no pdf compiled/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/build failed/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Warnings')).toBeInTheDocument();
+
+    await act(async () => {
+      rerenderFn(
+        <PdfPreviewPane pdfBytes={rawBytes} compiling={false} compileStatus="errors" projectName="Paper" />
+      );
+    });
+    expect(screen.queryByText(/no pdf compiled/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/build failed/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Built with Warnings')).toBeInTheDocument();
   });
 
   it('clones pdfBytes buffer when loading in pdfjs to prevent detachment of original buffer', async () => {

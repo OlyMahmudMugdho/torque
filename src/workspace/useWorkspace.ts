@@ -272,6 +272,11 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
     try {
       const entry = activeProjectRef.current.rootEntry || 'main.tex';
       const result = await compilerRef.current.compile(filesRef.current, entry);
+      // Ensure that if a PDF was produced, it is not marked as failed
+      if (result.status === 'failed' && result.pdfBytes) {
+        const hasErrors = result.diagnostics.some((d) => d.severity === 'error');
+        result.status = hasErrors ? 'errors' : 'warnings';
+      }
       setCompileStatus(result.status);
       setLastResult(result);
       return result;

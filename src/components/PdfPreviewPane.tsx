@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useThemeSafe } from '../context/ThemeContext';
+import type { CompileStatus } from '../types/workspace';
 import { ZoomIn, ZoomOut, Maximize2, Download, FileQuestion, FileText, Monitor, Layers } from 'lucide-react';
 
 if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
@@ -11,6 +12,7 @@ export interface PdfPreviewPaneProps {
   pdfBytes: Uint8Array | null;
   compiling: boolean;
   projectName?: string;
+  compileStatus?: CompileStatus;
 }
 
 export type PdfViewMode = 'canvas' | 'native';
@@ -19,6 +21,7 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
   pdfBytes,
   compiling,
   projectName = 'document',
+  compileStatus,
 }) => {
   const { theme } = useThemeSafe();
   const isDark = theme === 'dark';
@@ -177,6 +180,16 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
               }`}
             >
               {numPages} {numPages === 1 ? 'page' : 'pages'}
+            </span>
+          )}
+          {compileStatus === 'warnings' && hasPdf && (
+            <span className="font-sans text-[11px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 font-medium">
+              Warnings
+            </span>
+          )}
+          {compileStatus === 'errors' && hasPdf && (
+            <span className="font-sans text-[11px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 font-medium">
+              Built with Warnings
             </span>
           )}
           {renderError && hasPdf && (
@@ -342,20 +355,26 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
                 isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'
               }`}
             >
-              No PDF compiled
+              {compileStatus === 'failed' ? 'Build Failed' : 'No PDF compiled'}
             </p>
             <p className="text-[11px]">
-              Press{' '}
-              <kbd
-                className={`border px-1 py-0.5 rounded ${
-                  isDark
-                    ? 'bg-[#2b2d30] border-[#393b40] text-[#dfe1e5]'
-                    : 'bg-[#ffffff] border-[#d1d5db] text-[#1f2328]'
-                }`}
-              >
-                Ctrl+Enter
-              </kbd>{' '}
-              or click ▶ to build
+              {compileStatus === 'failed' ? (
+                'Check the Problems panel for compiler errors'
+              ) : (
+                <>
+                  Press{' '}
+                  <kbd
+                    className={`border px-1 py-0.5 rounded ${
+                      isDark
+                        ? 'bg-[#2b2d30] border-[#393b40] text-[#dfe1e5]'
+                        : 'bg-[#ffffff] border-[#d1d5db] text-[#1f2328]'
+                    }`}
+                  >
+                    Ctrl+Enter
+                  </kbd>{' '}
+                  or click ▶ to build
+                </>
+              )}
             </p>
           </div>
         ) : effectiveMode === 'native' ? (

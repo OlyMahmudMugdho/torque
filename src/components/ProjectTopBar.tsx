@@ -296,6 +296,11 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
             Build Failed
           </span>
         )}
+        {compileStatus === 'errors' && (
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#e2a53b]/20 text-[#e2a53b] font-medium border border-[#e2a53b]/40">
+            Built with Warnings
+          </span>
+        )}
         {compileStatus === 'warnings' && (
           <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#e2a53b]/20 text-[#e2a53b] font-medium border border-[#e2a53b]/40">
             Warnings

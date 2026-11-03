@@ -421,6 +421,7 @@ export const WorkspaceUI: React.FC = () => {
                     pdfBytes={workspace.lastResult?.pdfBytes ?? null}
                     compiling={workspace.compileStatus === 'compiling'}
                     projectName={workspace.activeProject?.name}
+                    compileStatus={workspace.compileStatus}
                   />
                 </Panel>
               </>

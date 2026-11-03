@@ -11,7 +11,7 @@ export class CompilerClient {
   private messageHandler: ((event: MessageEvent) => void) | null = null;
   private errorHandler: ((event: Event) => void) | null = null;
 
-  private compileTimeoutMs = 20000;
+  private compileTimeoutMs = 45000;
   private compileTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private createWorker?: () => WorkerLike, options?: { timeoutMs?: number }) {

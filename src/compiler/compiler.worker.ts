@@ -64,9 +64,44 @@ export const CORE_BUNDLE_FILES = [
   // Citations & Bibliography
   'cite.sty',
 
-  // Algorithms
+  // Algorithms & Conditionals
   'algorithm.sty',
   'algorithmic.sty',
+  'ifthen.sty',
+
+  // Tables & Formatting
+  'booktabs.sty',
+  'multirow.sty',
+
+  // Font Encoding & Text Symbols
+  'fontenc.sty',
+  't1enc.def',
+  'textcomp.sty',
+
+  // Hyperref Suite & Dependencies
+  'hyperref.sty',
+  'hxetex.def',
+  'rerunfilecheck.sty',
+  'uniquecounter.sty',
+  'nameref.sty',
+  'refcount.sty',
+  'gettitlestring.sty',
+  'kvoptions.sty',
+  'pdfescape.sty',
+  'pdftexcmds.sty',
+  'infwarerr.sty',
+  'ltxcmds.sty',
+  'kvsetkeys.sty',
+  'kvdefinekeys.sty',
+  'hycolor.sty',
+  'stringenc.sty',
+  'intcalc.sty',
+  'bigintcalc.sty',
+  'bitset.sty',
+  'url.sty',
+  'puenc.def',
+  'pd1enc.def',
+  'pzdr.tfm',
 
   // Layout & tools
   'geometry.sty',
@@ -668,18 +703,26 @@ async function getWasmModule(): Promise<WebAssembly.Module> {
         if (!wasmResp.ok) {
           throw new Error(`Failed to fetch tectonic_wasm.wasm: HTTP ${wasmResp.status} ${wasmResp.statusText}`);
         }
-        if (typeof WebAssembly.compileStreaming === 'function') {
+
+        const contentType = wasmResp.headers.get('content-type') || '';
+        let mod: WebAssembly.Module;
+
+        if (typeof WebAssembly.compileStreaming === 'function' && contentType.includes('application/wasm')) {
           try {
-            return await WebAssembly.compileStreaming(wasmResp.clone());
+            mod = await WebAssembly.compileStreaming(wasmResp);
           } catch (streamingErr) {
             console.warn('[compiler.worker] compileStreaming failed, falling back to arrayBuffer:', streamingErr);
-            const buf = await wasmResp.arrayBuffer();
-            return await WebAssembly.compile(buf);
+            const arrayResp = await fetch('/wasm/tectonic_wasm.wasm');
+            const buf = await arrayResp.arrayBuffer();
+            mod = await WebAssembly.compile(buf);
           }
         } else {
           const buf = await wasmResp.arrayBuffer();
-          return await WebAssembly.compile(buf);
+          mod = await WebAssembly.compile(buf);
         }
+
+        console.log('[compiler.worker] Tectonic WebAssembly module initialized successfully.');
+        return mod;
       } catch (err) {
         wasmModulePromise = null;
         throw err;
@@ -692,6 +735,7 @@ async function getWasmModule(): Promise<WebAssembly.Module> {
 async function ensureCoreBundleLoaded(): Promise<void> {
   if (!bundlePreloadPromise) {
     bundlePreloadPromise = (async () => {
+      console.log('[compiler.worker] Preloading core bundle files...');
       try {
         const manifestResp = await fetch('/bundle/manifest.json');
         if (manifestResp.ok) {
@@ -702,12 +746,13 @@ async function ensureCoreBundleLoaded(): Promise<void> {
         console.warn('[compiler.worker] Could not load bundle manifest:', err);
       }
 
-      // Preload in batches of 10 to prevent HTTP connection starvation
-      const batchSize = 10;
+      // Preload in batches of 25 to prevent connection starvation while maximizing throughput
+      const batchSize = 25;
       for (let i = 0; i < CORE_BUNDLE_FILES.length; i += batchSize) {
         const batch = CORE_BUNDLE_FILES.slice(i, i + batchSize);
         await Promise.all(batch.map((file) => fetchBundleFile(file)));
       }
+      console.log(`[compiler.worker] Core bundle preloaded successfully (${cachedBundleFiles.size} files in memory).`);
     })();
   }
   return bundlePreloadPromise;
@@ -795,17 +840,21 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
       (compileRes.status === 'failed' || compileRes.status === 'errors') &&
       compileRes.missingFiles &&
       compileRes.missingFiles.length > 0 &&
-      passes < 25
+      passes < 10
     ) {
       passes++;
-      let added = 0;
+      let newFilesAdded = 0;
       for (const missing of compileRes.missingFiles) {
-        const res = await fetchBundleFile(missing);
-        if (res) {
-          added++;
+        const resolved = resolveCandidateBundleName(missing) || cleanCandidateName(missing);
+        const alreadyHad = (resolved && cachedBundleFiles.has(resolved)) || cachedBundleFiles.has(missing);
+        if (!alreadyHad) {
+          const res = await fetchBundleFile(missing);
+          if (res) {
+            newFilesAdded++;
+          }
         }
       }
-      if (added === 0) break;
+      if (newFilesAdded === 0) break;
 
       // Because a failed compile leaves Tectonic in a dirty internal state that can cause
       // bridge_core panics (index out of bounds / unreachable) on subsequent passes,
@@ -923,3 +972,17 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
     self.postMessage(response);
   }
 });
+
+// Eagerly pre-warm WebAssembly module and core bundle in background upon worker creation
+if (
+  typeof self !== 'undefined' &&
+  typeof (self as any).WorkerGlobalScope !== 'undefined' &&
+  self instanceof (self as any).WorkerGlobalScope
+) {
+  getWasmModule().catch((err) => {
+    console.warn('[compiler.worker] Background WASM pre-warm error:', err);
+  });
+  ensureCoreBundleLoaded().catch((err) => {
+    console.warn('[compiler.worker] Background bundle pre-warm error:', err);
+  });
+}

@@ -9,32 +9,32 @@
 \RequirePackage{iftex}
 
 % Font feature controls
-\newcommand\defaultfontfeatures[2][]{}
-\newcommand\addfontfeatures[1]{}
-\newcommand\newfontfeature[2]{}
-\newcommand\aliasfontfeature[2]{}
-\newcommand\aliasfontfeatureoption[3]{}
+\DeclareDocumentCommand\defaultfontfeatures{ t+ o m o }{}
+\DeclareDocumentCommand\addfontfeatures{ m }{}
+\DeclareDocumentCommand\newfontfeature{ m m }{}
+\DeclareDocumentCommand\aliasfontfeature{ m m }{}
+\DeclareDocumentCommand\aliasfontfeatureoption{ m m m }{}
 
-% Main font setters
-\newcommand\setmainfont[2][]{}
-\newcommand\setsansfont[2][]{}
-\newcommand\setmonofont[2][]{}
-\newcommand\setromanfont[2][]{}
+% Main font setters (handles both [options]{font} and {font}[options])
+\DeclareDocumentCommand\setmainfont{ o m o }{}
+\DeclareDocumentCommand\setsansfont{ o m o }{}
+\DeclareDocumentCommand\setmonofont{ o m o }{}
+\DeclareDocumentCommand\setromanfont{ o m o }{}
 
-% New font family declarations
-\newcommand\newfontfamily[3][]{}
-\newcommand\setfontfamily[3][]{}
-\newcommand\renewfontfamily[3][]{}
-\newcommand\providefontfamily[3][]{}
+% New font family declarations (\newfontfamily\cmd[options]{font}[options])
+\DeclareDocumentCommand\newfontfamily{ m o m o }{\providecommand#1{}}
+\DeclareDocumentCommand\setfontfamily{ m o m o }{\providecommand#1{}}
+\DeclareDocumentCommand\renewfontfamily{ m o m o }{\providecommand#1{}}
+\DeclareDocumentCommand\providefontfamily{ m o m o }{\providecommand#1{}}
 
 % Face declarations
-\newcommand\newfontface[3][]{}
-\newcommand\setfontface[3][]{}
-\newcommand\renewfontface[3][]{}
-\newcommand\providefontface[3][]{}
+\DeclareDocumentCommand\newfontface{ m o m o }{\providecommand#1{}}
+\DeclareDocumentCommand\setfontface{ m o m o }{\providecommand#1{}}
+\DeclareDocumentCommand\renewfontface{ m o m o }{\providecommand#1{}}
+\DeclareDocumentCommand\providefontface{ m o m o }{\providecommand#1{}}
 
 % In-line font specification
-\newcommand\fontspec[2][]{}
-\newcommand\addfontfeature[1]{}
+\DeclareDocumentCommand\fontspec{ o m o }{}
+\DeclareDocumentCommand\addfontfeature{ m }{}
 
 \endinput

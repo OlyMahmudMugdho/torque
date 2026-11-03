@@ -305,8 +305,8 @@ export const DEFAULT_PACKAGE_CATALOG: readonly LatexPackage[] = [
     category: 'Citations',
     version: '7.01f',
     files: ['hyperref.sty'],
-    isInstalled: false,
-    source: 'ctan',
+    isInstalled: true,
+    source: 'bundle',
     documentationUrl: 'https://ctan.org/pkg/hyperref',
   },
   {
@@ -329,8 +329,8 @@ export const DEFAULT_PACKAGE_CATALOG: readonly LatexPackage[] = [
     category: 'Tables',
     version: '1.61803398',
     files: ['booktabs.sty'],
-    isInstalled: false,
-    source: 'ctan',
+    isInstalled: true,
+    source: 'bundle',
     documentationUrl: 'https://ctan.org/pkg/booktabs',
   },
   {
@@ -351,8 +351,8 @@ export const DEFAULT_PACKAGE_CATALOG: readonly LatexPackage[] = [
     category: 'Tables',
     version: '2.9',
     files: ['multirow.sty'],
-    isInstalled: false,
-    source: 'ctan',
+    isInstalled: true,
+    source: 'bundle',
     documentationUrl: 'https://ctan.org/pkg/multirow',
   },
   {

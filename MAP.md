@@ -84,7 +84,9 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
   - **Auto Engine Invalidation**: If a compile fails or traps, `currentEngine` is set to `null` so corrupted WASM linear memory / `bridge_core` state never poisons subsequent compilations.
   - **Diagnostic & Log Extraction**: Captures `onStderr` and `onStdout` to parse panic reasons, missing file notices, and LaTeX syntax errors into structured diagnostics.
   - **XeTeX Font Name Probe Resolution**: Automatically strips `.sty.aux`, probe suffixes, brackets (`[...]`), and `:mapping` specifiers from XeTeX font lookups to match files in `/bundle/`.
-  - **TikZ & AMS Preload**: Bundles core TeX packages, Latin Modern Roman fonts, and TikZ libraries upfront.
+  - **TikZ, AMS, Hyperref & Tables Preload**: Bundles core TeX packages, Latin Modern Roman fonts, TikZ libraries, Hyperref suite (`hxetex.def`, `rerunfilecheck`, `uniquecounter`, `puenc.def`), tables (`booktabs`, `multirow`), fontenc (`t1enc.def`), and algorithmic packages upfront.
+  - **Multi-Pass Resolution Guard**: Tracks whether newly retrieved files were added to cache, terminating early if missing assets are unresolvable or already cached font probes to prevent timeout loops.
+  - **Eager Background Pre-warming**: Immediately compiles WASM module and preloads core bundle when the worker is spawned in browser.
 - [`src/compiler/compilerClient.ts`](file:///home/mugdho/codes/torque/src/compiler/compilerClient.ts):
   - Main thread controller interfacing with `compiler.worker.ts`.
   - Enforces single-concurrency guard (`isCompiling()`), generates unique request IDs, handles timeouts, and disposes worker instances gracefully on error.

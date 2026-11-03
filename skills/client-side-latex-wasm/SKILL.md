@@ -9,14 +9,16 @@ Compile LaTeX documents directly inside the browser using WebAssembly (Tectonic 
 
 ## Core Principles
 
-1. **Worker Isolation**: Always execute the WebAssembly TeX engine off the main thread in a dedicated Web Worker (`new Worker(new URL('./compiler.worker.ts', import.meta.url), { type: 'module' })`) to prevent UI freezes or dropped frames in the code editor during compilation.
-2. **Precompiled WebAssembly.Module**: Compile the WASM binary once using `WebAssembly.compileStreaming(resp)` or `WebAssembly.compile(buf)` and cache the `WebAssembly.Module` promise. Instantiating a new engine from a precompiled module takes ~1-3ms instead of recompiling bytecode from scratch (~200ms).
+1. **Worker Isolation**: Always execute the WebAssembly TeX engine off the main thread in a dedicated Web Worker (`new Worker(new URL('./compiler.worker.ts', import.meta.url), { type: 'module' })`) to prevent UI freezes or dropped frames in the code editor during compilation. Eagerly pre-warm the WASM module and bundle cache in the background upon worker creation.
+2. **Precompiled WebAssembly.Module**: Compile the WASM binary once using `WebAssembly.compileStreaming(resp)` (when `Content-Type: application/wasm` is confirmed) or `WebAssembly.compile(buf)` and cache the `WebAssembly.Module` promise. Never use `resp.clone()` with `compileStreaming` as unconsumed parent streams cause tee stream deadlocks in browser workers. Instantiating a new engine from a precompiled module takes ~1-3ms instead of recompiling bytecode from scratch (~200ms).
 3. **Automatic Engine Invalidation on Failure**: Tectonic's internal Rust/C engine enters a dirty or poisoned state when a compile errors out or traps (`RuntimeError: unreachable` or `index out of bounds` in `bridge_core`). Discard the engine instance (`currentEngine = null`) on failure so the next run starts with a clean linear memory instance.
 4. **Stderr & Stdout Diagnostics Capture**: Pass `{ onStderr, onStdout }` handlers to `TexEngine.load(wasmModule, { onStderr, onStdout })`. Parse stderr for Rust panic reasons (`panicked at ...`), fatal errors, and LaTeX job abortion messages to construct human-actionable error messages.
 5. **XeTeX Font Name Probe Resolution**: XeTeX probes fonts with specific suffixes, bracket specifiers (e.g., `[lmroman10-regular.otf]`), and mapping options (e.g., `:mapping=tex-text`). Sanitize probe requests by stripping brackets, options, and auxiliary extensions before querying the bundle cache.
-6. **Core Bundle & TikZ Preloading**: Preload essential format files (`latex.fmt`), document classes (`article.cls`, `IEEEtran.cls`), AMS packages, TikZ core (`pgf`, `tikz`, `tikz-cd`, `topaths`, `plothandlers`, `plotmarks`), and Latin Modern Roman OpenType fonts so standard documents compile in a single pass without extra roundtrips.
-7. **Package Manager Integration**: Pair compiler diagnostics with an interactive package catalog to allow one-click insertion of missing `\usepackage{...}` statements before `\begin{document}`.
-8. **Header Hygiene**: Do NOT set `Cross-Origin-Embedder-Policy: require-corp` on the server unless you strictly require `SharedArrayBuffer` (single-threaded TeX WASM does not). COEP causes browsers to silently block static bundle asset fetches (`CORP` errors) unless every static asset has explicit CORS/CORP headers.
+6. **Multi-Pass Missing File Termination Guard**: When compiling in multiple passes to resolve missing files, only trigger a subsequent pass if `newFilesAdded > 0` (files not already present in `cachedBundleFiles`). Font probes (e.g. `lmroman10-bold`) that already exist in memory must not trigger repeated recompilations, otherwise compiles will loop indefinitely and hit client timeouts.
+7. **Core Bundle, TikZ & Hyperref Preloading**: Preload essential format files (`latex.fmt`), document classes (`article.cls`, `IEEEtran.cls`), AMS packages, TikZ core, Hyperref suite (`hyperref`, `hxetex.def`, `rerunfilecheck`, `uniquecounter`, etc.), table helpers (`booktabs`, `multirow`), conditionals (`ifthen`), and Latin Modern Roman OpenType fonts so standard documents compile in a single pass without extra roundtrips.
+8. **Fontspec Compatibility Stubs**: When providing WebAssembly compatibility stubs for `fontspec.sty`, define font macros using `\DeclareDocumentCommand` with `{ o m o }` and `{ m o m o }` to swallow leading and trailing optional arguments (`\setmainfont{Font}[Options]` and `\newfontfamily\cmd[Options]{Font}`) cleanly without leaking raw brackets or script names into the document body.
+9. **Package Manager Integration**: Pair compiler diagnostics with an interactive package catalog to allow one-click insertion of missing `\usepackage{...}` statements before `\begin{document}`.
+10. **Header Hygiene**: Do NOT set `Cross-Origin-Embedder-Policy: require-corp` on the server unless you strictly require `SharedArrayBuffer` (single-threaded TeX WASM does not). COEP causes browsers to silently block static bundle asset fetches (`CORP` errors) unless every static asset has explicit CORS/CORP headers.
 
 ---
 
@@ -26,11 +28,14 @@ Compile LaTeX documents directly inside the browser using WebAssembly (Tectonic 
 |---|---|---|
 | `RuntimeError: unreachable` in `bridge_core` | Previous compilation failed, leaving dirty engine memory | Invalidate engine instance (`currentEngine = null`) on failure and recreate from cached `WebAssembly.Module` |
 | `LaTeX Error: File 'l3backend-xetex.def' not found` | Sub-resource fetch blocked by browser COEP or missing from engine virtual FS | Remove `Cross-Origin-Embedder-Policy: require-corp` from server config; preload core bundle assets in worker init |
+| `Compilation timed out after 20s/45s` | Multi-pass loop repeatedly re-fetches font probes already in cache, or stream deadlock in `compileStreaming` | Check if `resolved` is already in `cachedBundleFiles` before fetching; only loop if `newFilesAdded > 0`; avoid `.clone()` in `compileStreaming` |
+| Leaked brackets / options text on Page 1 (`[SmallCaps...]`, `Script=Bengali`) | `fontspec.sty` stubs defined with rigid optional argument ordering | Use `\DeclareDocumentCommand` with `{ o m o }` and `{ m o m o }` to absorb both leading and trailing option syntax |
 | `panicked at ...: index out of bounds` | Font shaper error or unmapped Unicode glyph | Catch in `onStderr`, diagnose invalid characters/glyphs, and reinitialize engine |
 | `Missing files: ['latex', 'latex.fmt']` | Engine initialized without format file in virtual filesystem | Add `latex.fmt` to `TexEngine` before first compile pass |
 | `operation is manually canceled` | Overlapping compiles triggered before previous pass finished | Add an `isCompiling()` concurrency guard in the client controller |
 | Font file not resolved (`[lmroman10-regular.otf]:mapping=tex-text`) | XeTeX requests font with brackets and mapping parameters | Strip brackets `[...]` and `:mapping=...` options in `resolveCandidateBundleName` |
 | TikZ compilation failure (`pgfsys`, `arrows.meta`, `plotmarks`) | Missing auxiliary TikZ libraries | Preload `tikz.code.tex`, `tikz-cd.sty`, `pgfsys-xetex.def`, and TikZ libraries in `CORE_BUNDLE_FILES` |
+| Hyperref compilation failure (`hxetex.def`, `rerunfilecheck`, `uniquecounter`) | Missing XeTeX hyperref driver & helpers | Preload `hyperref.sty`, `hxetex.def`, `rerunfilecheck.sty`, `uniquecounter.sty`, `puenc.def`, and `pzdr.tfm` |
 | Diagnostic line numbers are `0` or `null` | Global TeX engine errors (e.g., memory, format, or general packages) | Clamp line numbers with `Math.max(1, d.line ?? 1)` when projecting to Monaco markers |
 
 ---
@@ -99,11 +104,16 @@ async function getWasmModule(): Promise<WebAssembly.Module> {
   if (!wasmModulePromise) {
     wasmModulePromise = (async () => {
       const resp = await fetch('/wasm/tectonic_wasm.wasm');
-      if (typeof WebAssembly.compileStreaming === 'function') {
+      if (!resp.ok) {
+        throw new Error(`Failed to fetch tectonic_wasm.wasm: HTTP ${resp.status}`);
+      }
+      const contentType = resp.headers.get('content-type') || '';
+      if (typeof WebAssembly.compileStreaming === 'function' && contentType.includes('application/wasm')) {
         try {
           return await WebAssembly.compileStreaming(resp);
         } catch {
-          const buf = await resp.arrayBuffer();
+          const arrayResp = await fetch('/wasm/tectonic_wasm.wasm');
+          const buf = await arrayResp.arrayBuffer();
           return await WebAssembly.compile(buf);
         }
       }
@@ -181,23 +191,24 @@ self.addEventListener('message', async (event: MessageEvent) => {
     engineUsageCount++;
     let compileRes = engine.compile({ entry: req.entry, synctex: false });
 
-    // Handle missing files on-demand
+    // Handle missing files on-demand with termination guard
     let passes = 0;
-    while (compileRes.status === 'failed' && compileRes.missingFiles?.length && passes < 25) {
+    while ((compileRes.status === 'failed' || compileRes.status === 'errors') && compileRes.missingFiles?.length && passes < 10) {
       passes++;
-      let added = 0;
+      let newFilesAdded = 0;
       for (const missing of compileRes.missingFiles) {
-        const resolved = resolveCandidateBundleName(missing);
-        if (resolved && !cachedBundleFiles.has(resolved)) {
+        const resolved = resolveCandidateBundleName(missing) || missing;
+        const alreadyHad = (resolved && cachedBundleFiles.has(resolved)) || cachedBundleFiles.has(missing);
+        if (!alreadyHad) {
           const resp = await fetch(`/bundle/${encodeURIComponent(resolved)}`);
           if (resp.ok) {
             const buf = new Uint8Array(await resp.arrayBuffer());
             cachedBundleFiles.set(resolved, buf);
-            added++;
+            newFilesAdded++;
           }
         }
       }
-      if (added === 0) break;
+      if (newFilesAdded === 0) break;
 
       // Recreate engine with freshly fetched bundle files
       currentEngine = await createFreshEngine();

@@ -26,6 +26,9 @@ When modifying or expanding Torque, all agents must adhere to the following rule
 - Never introduce server-side TeX compilation endpoints or proxies.
 - Compilation must always remain isolated in a dedicated Web Worker (`src/compiler/compiler.worker.ts`) to avoid locking the UI thread.
 - Always reuse the precompiled `WebAssembly.Module` across compilations (`WebAssembly.compileStreaming` / `WebAssembly.compile`), but **always invalidate the `TexEngine` instance** on compilation failures or runtime traps to keep WASM linear memory pristine.
+- Streaming compilation with `WebAssembly.compileStreaming` must check that the response `Content-Type` contains `application/wasm` and must never pass a cloned response (`resp.clone()`) without consuming both branches to avoid tee stream deadlocks in browser Web Workers.
+- In multi-pass missing file loops in the worker, only trigger subsequent passes if `newFilesAdded > 0` (files not already present in memory). Font probes already in memory must not trigger repeated compilation passes.
+- Compatibility stubs for packages like `fontspec.sty` must use `\DeclareDocumentCommand` with optional trailing/leading arguments (`{ o m o }` and `{ m o m o }`) so options and font families do not leak onto page 1.
 - Stderr/stdout logs must be captured via `TexEngine.load(wasmModule, { onStderr, onStdout })` to extract real Rust panics, font shaper errors, and missing package messages.
 
 ### 2. Zero-Space Diagnostic Pane

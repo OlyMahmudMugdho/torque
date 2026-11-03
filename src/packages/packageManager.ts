@@ -265,19 +265,19 @@ export const DEFAULT_PACKAGE_CATALOG: readonly LatexPackage[] = [
     source: 'ctan',
     documentationUrl: 'https://ctan.org/pkg/babel',
   },
-  {
-    id: 'fontspec',
-    name: 'fontspec',
-    description: 'Advanced OpenType and TrueType font selection and feature control in XeLaTeX and LuaLaTeX.',
-    category: 'Typography',
-    version: '2.9a',
-    files: ['fontspec.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/fontspec',
-  },
 
   // Citations
+  {
+    id: 'cite',
+    name: 'cite',
+    description: 'Automatic sorting and compression of numerical citations, with clean punctuation and line break management.',
+    category: 'Citations',
+    version: '5.5',
+    files: ['cite.sty'],
+    isInstalled: true,
+    source: 'bundle',
+    documentationUrl: 'https://ctan.org/pkg/cite',
+  },
   {
     id: 'biblatex',
     name: 'biblatex',

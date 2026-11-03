@@ -259,6 +259,86 @@ Modern scientific publishing demands instant local compilation.
     expect(pdf![3]).toBe(0x46); // F
   }, 15000);
 
+  it('compiles standard document using cite package cleanly to a valid PDF', async () => {
+    const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+    const engine = await TexEngine.load(wasmBuf);
+    const bundleDir = path.resolve('public/bundle');
+    const manifest: string[] = JSON.parse(fs.readFileSync('public/bundle/manifest.json', 'utf8'));
+
+    for (const f of manifest) {
+      const p = path.join(bundleDir, f);
+      if (fs.existsSync(p)) {
+        engine.addFile(f, new Uint8Array(fs.readFileSync(p)));
+      }
+    }
+
+    const doc = `\\documentclass{article}
+\\usepackage{cite}
+\\begin{document}
+Testing cite package \\cite{test}.
+\\begin{thebibliography}{1}
+\\bibitem{test} Test Citation, 2026.
+\\end{thebibliography}
+\\end{document}`;
+
+    engine.addFile('main.tex', doc);
+    const res = engine.compile({ entry: 'main.tex', synctex: false });
+    expect(res.status).toBe('spotless');
+    expect(res.diagnostics.filter((d) => d.severity === 'error').length).toBe(0);
+
+    const pdf = engine.pdf();
+    expect(pdf).toBeDefined();
+    expect(pdf!.length).toBeGreaterThan(100);
+    expect(pdf![0]).toBe(0x25); // %
+    expect(pdf![1]).toBe(0x50); // P
+    expect(pdf![2]).toBe(0x44); // D
+    expect(pdf![3]).toBe(0x46); // F
+  }, 15000);
+
+  it('compiles IEEEtran conference document with cite package cleanly to a valid PDF', async () => {
+    const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+    const engine = await TexEngine.load(wasmBuf);
+    const bundleDir = path.resolve('public/bundle');
+    const manifest: string[] = JSON.parse(fs.readFileSync('public/bundle/manifest.json', 'utf8'));
+
+    for (const f of manifest) {
+      const p = path.join(bundleDir, f);
+      if (fs.existsSync(p)) {
+        engine.addFile(f, new Uint8Array(fs.readFileSync(p)));
+      }
+    }
+
+    const doc = `\\documentclass[conference]{IEEEtran}
+\\usepackage{cite}
+\\begin{document}
+\\title{Test Conference Paper}
+\\author{\\IEEEauthorblockN{Author Name}}
+\\maketitle
+\\begin{abstract}
+Abstract text.
+\\end{abstract}
+\\section{Introduction}
+Citation test \\cite{ref1,ref2}.
+\\begin{thebibliography}{2}
+\\bibitem{ref1} First Reference.
+\\bibitem{ref2} Second Reference.
+\\end{thebibliography}
+\\end{document}`;
+
+    engine.addFile('main.tex', doc);
+    const res = engine.compile({ entry: 'main.tex', synctex: false });
+    expect(res.status).toBe('spotless');
+    expect(res.diagnostics.filter((d) => d.severity === 'error').length).toBe(0);
+
+    const pdf = engine.pdf();
+    expect(pdf).toBeDefined();
+    expect(pdf!.length).toBeGreaterThan(100);
+    expect(pdf![0]).toBe(0x25); // %
+    expect(pdf![1]).toBe(0x50); // P
+    expect(pdf![2]).toBe(0x44); // D
+    expect(pdf![3]).toBe(0x46); // F
+  }, 15000);
+
   it('compiles TikZ document with paths and node positioning spotlessly using core bundle files', async () => {
     const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
     const engine = await TexEngine.load(wasmBuf);

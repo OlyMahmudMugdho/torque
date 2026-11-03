@@ -44,6 +44,9 @@ export const CORE_BUNDLE_FILES = [
   'mathcolor.ltx',
   'trig.sty',
 
+  // Citations & Bibliography
+  'cite.sty',
+
   // Layout & tools
   'geometry.sty',
   'fullpage.sty',

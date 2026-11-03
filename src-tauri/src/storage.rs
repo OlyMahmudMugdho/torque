@@ -414,6 +414,19 @@ pub fn tauri_save_package_file(filename: String, data: String) -> Result<(), Str
     Ok(())
 }
 
+/// Open a native "Save File" dialog and write `data` to the chosen path.
+/// Used by the frontend to export artifacts (e.g. compiled PDFs) that the
+/// browser's `<a download>` flow cannot trigger inside the Tauri WebView.
+#[tauri::command]
+pub fn save_file(filename: String, data: Vec<u8>) -> Result<(), String> {
+    let default_path = PathBuf::from(&filename).file_name().map(|n| n.to_string()).unwrap_or(filename.clone());
+    let save_path = tauri::api::dialog::save_file(&default_path).ok_or_else(|| "Save dialog cancelled".to_string())?;
+
+    std::fs::write(&save_path, data).map_err(|e| format!("Failed to write {}: {}", save_path.display(), e))?;
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn tauri_get_package_file(filename: String) -> Result<Option<String>, String> {
     let sanitized = normalize_path(&filename)?;

@@ -15,6 +15,8 @@ export interface PdfPreviewPaneProps {
   compileStatus?: CompileStatus;
 }
 
+import { isTauri } from '../storage/projectStore';
+
 export type PdfViewMode = 'canvas' | 'native';
 
 export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
@@ -143,13 +145,35 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
     };
   }, [numPages, scale, effectiveMode]);
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!pdfBytes || pdfBytes.length === 0) return;
+
+    // If running inside Tauri desktop, use the native save dialog
+    // so the file goes to the user's chosen location instead of the
+    // browser's download directory (which can be silently suppressed in WebViews).
+    if (typeof window !== 'undefined' && isTauri()) {
+      const base64 = typeof btoa !== 'undefined'
+        ? btoa(String.fromCharCode(...new Uint8Array(pdfBytes)))
+        : '';
+      try {
+        const result = await (window as any).__TAURI_INTERNALS?.invoke(
+          'storage::save_file',
+          { filename: `${projectName?.toLowerCase().replace(/\s+/g, '-')}.pdf`, data: base64 }
+        );
+        if (result && result !== 'Failed to write') {
+          return;
+        }
+      } catch (e) {
+        console.warn('[PdfPreviewPane] Tauri save dialog failed, falling back to Blob:', e);
+      }
+    }
+
+    // Browser fallback: Blob URL download
     const blob = new Blob([pdfBytes.slice()], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${projectName.toLowerCase().replace(/\s+/g, '-')}.pdf`;
+    a.download = `${projectName?.toLowerCase().replace(/\s+/g, '-')}.pdf`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

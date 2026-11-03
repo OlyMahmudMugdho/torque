@@ -140,8 +140,10 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 ---
 
 ### `src/packages/` — Package Manager Subsystem
+- [`src/packages/packageCatalog.ts`](file:///home/mugdho/codes/torque/src/packages/packageCatalog.ts):
+  - Curated registry and metadata definition (`DEFAULT_PACKAGE_CATALOG`) of 50+ popular LaTeX packages, separated from browser runtime for Web Worker compatibility.
 - [`src/packages/packageManager.ts`](file:///home/mugdho/codes/torque/src/packages/packageManager.ts):
-  - Curated registry of 50+ popular LaTeX packages with descriptions, categories, dependencies, and code snippets.
+  - Package catalog re-export and manager state.
   - Preamble analyzer: parses existing `\usepackage{}` declarations, detects missing packages, and safely inserts new packages before `\begin{document}`.
   - Manages package installation status, synchronizing with both the preloaded bundle and the persistent package cache.
 - [`src/packages/packageDownloader.ts`](file:///home/mugdho/codes/torque/src/packages/packageDownloader.ts):
@@ -153,9 +155,10 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 ---
 
 ### `src/storage/` — Persistence Subsystem
+- [`src/storage/pathUtils.ts`](file:///home/mugdho/codes/torque/src/storage/pathUtils.ts):
+  - Path normalization ensuring security against directory traversal attacks (`normalizeFilePath`), decoupled from main storage classes.
 - [`src/storage/projectStore.ts`](file:///home/mugdho/codes/torque/src/storage/projectStore.ts):
   - High-level project storage manager. Detects desktop vs web environment and routes operations to either `TauriStorage` or browser IndexedDB (`torque_latex_db`).
-  - Path normalization ensuring security against directory traversal attacks.
 - [`src/storage/packageCache.ts`](file:///home/mugdho/codes/torque/src/storage/packageCache.ts):
   - Persistent global cache for downloaded CTAN LaTeX packages.
   - In Web: IndexedDB database (`torque_package_cache`, object store `packages`).

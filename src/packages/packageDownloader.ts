@@ -3,7 +3,7 @@ import {
   defaultPackageCache,
   type PackageCache,
 } from '../storage/packageCache';
-import { DEFAULT_PACKAGE_CATALOG } from './packageManager';
+import { DEFAULT_PACKAGE_CATALOG } from './packageCatalog';
 
 export interface DownloadFileOptions {
   timeoutMs?: number;

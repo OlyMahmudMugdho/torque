@@ -6,432 +6,8 @@ import {
 
 export const PACKAGE_STORAGE_KEY = 'torque_installed_packages';
 
-export const DEFAULT_PACKAGE_CATALOG: readonly LatexPackage[] = [
-  // Math
-  {
-    id: 'amsmath',
-    name: 'amsmath',
-    description: 'AMS mathematical facilities for LaTeX, providing environments for displayed equations, matrix layouts, and advanced math structures.',
-    category: 'Math',
-    version: '2.17o',
-    files: ['amsmath.sty', 'amstext.sty', 'amsgen.sty', 'amsbsy.sty', 'amsopn.sty'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/amsmath',
-  },
-  {
-    id: 'amssymb',
-    name: 'amssymb',
-    description: 'Higher mathematics symbols and fonts from the American Mathematical Society font collection.',
-    category: 'Math',
-    version: '3.02',
-    files: ['amssymb.sty', 'amsfonts.sty'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/amssymb',
-  },
-  {
-    id: 'amsthm',
-    name: 'amsthm',
-    description: 'Typesetting theorems and proof environments with AMS formatting styles and numbered theorem layouts.',
-    category: 'Math',
-    version: '2.20.6',
-    files: ['amsthm.sty'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/amsthm',
-  },
-  {
-    id: 'mathtools',
-    name: 'mathtools',
-    description: 'Extensions to amsmath including paired delimiters, matrix enhancements, and equation spacing.',
-    category: 'Math',
-    version: '1.30',
-    files: ['mathtools.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/mathtools',
-  },
-  {
-    id: 'tikz-cd',
-    name: 'tikz-cd',
-    description: 'Create commutative diagrams and categorical graphs with a simple matrix syntax powered by TikZ.',
-    category: 'Math',
-    version: '1.0.1',
-    files: ['tikz-cd.sty', 'tikzlibrarycd.code.tex'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/tikz-cd',
-  },
-
-  // Physics
-  {
-    id: 'physics',
-    name: 'physics',
-    description: 'Flexible macros for typesetting physical quantities, derivatives, vectors, matrices, and bra-ket notation.',
-    category: 'Physics',
-    version: '1.3',
-    files: ['physics.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/physics',
-  },
-  {
-    id: 'siunitx',
-    name: 'siunitx',
-    description: 'A comprehensive (SI) units package providing consistent formatting of numbers, quantities, and physical units.',
-    category: 'Physics',
-    version: '3.3.4',
-    files: ['siunitx.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/siunitx',
-  },
-
-  // Graphics
-  {
-    id: 'graphicx',
-    name: 'graphicx',
-    description: 'Enhanced support for graphics and figure inclusion with scaling, rotation, and file format resolution.',
-    category: 'Graphics',
-    version: '1.2d',
-    files: ['graphicx.sty', 'graphics.sty'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/graphicx',
-  },
-  {
-    id: 'tikz',
-    name: 'tikz',
-    description: 'Create sophisticated vector graphics, technical drawings, flowcharts, and diagrams directly in LaTeX.',
-    category: 'Graphics',
-    version: '3.1.10',
-    files: ['tikz.sty', 'tikz.code.tex'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/pgf',
-  },
-  {
-    id: 'pgfplots',
-    name: 'pgfplots',
-    description: 'Loads, computes, and draws publication-quality 2D and 3D plots directly in LaTeX documents.',
-    category: 'Graphics',
-    version: '1.18.1',
-    files: ['pgfplots.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/pgfplots',
-  },
-  {
-    id: 'pgfsys',
-    name: 'pgfsys',
-    description: 'Portable Graphics Format system layer driver providing low-level drawing primitives, coordinate transforms, and backend specials.',
-    category: 'Graphics',
-    version: '3.1.10',
-    files: ['pgfsys.sty', 'pgfsys.code.tex', 'pgfsys-xetex.def'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/pgf',
-  },
-  {
-    id: 'pgf',
-    name: 'pgf',
-    description: 'Portable Graphics Format macro package providing path drawing, transformations, plotting, and shading.',
-    category: 'Graphics',
-    version: '3.1.10',
-    files: ['pgf.sty', 'pgfcore.sty', 'pgfkeys.sty', 'pgfmath.sty'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/pgf',
-  },
-  {
-    id: 'xcolor',
-    name: 'xcolor',
-    description: 'Driver-independent color extensions supporting rgb, cmyk, html hexadecimal colors, and tinted shades.',
-    category: 'Graphics',
-    version: '3.01',
-    files: ['xcolor.sty'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/xcolor',
-  },
-
-  // Layout
-  {
-    id: 'ieeetran',
-    name: 'IEEEtran',
-    description: 'Official LaTeX document class and template for IEEE conference papers, transactions, and symposiums.',
-    category: 'Layout',
-    version: '1.8b',
-    files: ['IEEEtran.cls', 'IEEEtran.bst'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/ieeetran',
-  },
-  {
-    id: 'geometry',
-    name: 'geometry',
-    description: 'Flexible and complete interface for customizing document page layout, margins, paper sizes, and orientation.',
-    category: 'Layout',
-    version: '5.9',
-    files: ['geometry.sty'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/geometry',
-  },
-  {
-    id: 'fullpage',
-    name: 'fullpage',
-    description: 'Simple package to set page margins to 1 inch or 1.5 cm for maximum printable area.',
-    category: 'Layout',
-    version: '1.1',
-    files: ['fullpage.sty'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/fullpage',
-  },
-  {
-    id: 'multicol',
-    name: 'multicol',
-    description: 'Intermix single and multiple columns on all or part of the page with balanced column heights.',
-    category: 'Layout',
-    version: '1.9b',
-    files: ['multicol.sty'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/multicol',
-  },
-  {
-    id: 'fancyhdr',
-    name: 'fancyhdr',
-    description: 'Extensive control and custom design of running page headers and footers in LaTeX.',
-    category: 'Layout',
-    version: '4.1',
-    files: ['fancyhdr.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/fancyhdr',
-  },
-  {
-    id: 'setspace',
-    name: 'setspace',
-    description: 'Set space between lines (single, onehalfspacing, doublespacing) dynamically in LaTeX documents.',
-    category: 'Layout',
-    version: '6.7a',
-    files: ['setspace.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/setspace',
-  },
-
-  // Typography
-  {
-    id: 'fontspec',
-    name: 'fontspec',
-    description: 'Advanced font selection and OpenType font management package for modern TeX engines.',
-    category: 'Typography',
-    version: '2.9',
-    files: ['fontspec.sty'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/fontspec',
-  },
-  {
-    id: 'microtype',
-    name: 'microtype',
-    description: 'Subliminal typographic enhancements including character protrusion, font expansion, and kerning.',
-    category: 'Typography',
-    version: '3.1b',
-    files: ['microtype.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/microtype',
-  },
-  {
-    id: 'fontenc',
-    name: 'fontenc',
-    description: 'Standard package for selecting font encodings (e.g. T1, OT1) for proper hyphenation and accented glyphs.',
-    category: 'Typography',
-    version: '2.0v',
-    files: ['fontenc.sty'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/fontenc',
-  },
-  {
-    id: 'babel',
-    name: 'babel',
-    description: 'Multilingual support for document internationalization, hyphenation, and localized section headers.',
-    category: 'Typography',
-    version: '3.98',
-    files: ['babel.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/babel',
-  },
-
-  // Citations
-  {
-    id: 'cite',
-    name: 'cite',
-    description: 'Automatic sorting and compression of numerical citations, with clean punctuation and line break management.',
-    category: 'Citations',
-    version: '5.5',
-    files: ['cite.sty'],
-    isInstalled: true,
-    source: 'bundle',
-    documentationUrl: 'https://ctan.org/pkg/cite',
-  },
-  {
-    id: 'biblatex',
-    name: 'biblatex',
-    description: 'Sophisticated bibliography and citation management system with customizable styles and sorting.',
-    category: 'Citations',
-    version: '3.19',
-    files: ['biblatex.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/biblatex',
-  },
-  {
-    id: 'natbib',
-    name: 'natbib',
-    description: 'Flexible bibliography support for author-year and numerical citations with custom formatting.',
-    category: 'Citations',
-    version: '8.31b',
-    files: ['natbib.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/natbib',
-  },
-  {
-    id: 'hyperref',
-    name: 'hyperref',
-    description: 'Extensive support for clickable hyperlinks, bookmarks, URLs, and PDF document metadata.',
-    category: 'Citations',
-    version: '7.01f',
-    files: ['hyperref.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/hyperref',
-  },
-  {
-    id: 'cleveref',
-    name: 'cleveref',
-    description: 'Intelligent cross-referencing by automatically determining type of reference (Figure, Section, Equation).',
-    category: 'Citations',
-    version: '0.22.2',
-    files: ['cleveref.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/cleveref',
-  },
-
-  // Tables
-  {
-    id: 'booktabs',
-    name: 'booktabs',
-    description: 'Publication quality tables in LaTeX with professional horizontal rules (toprule, midrule, bottomrule).',
-    category: 'Tables',
-    version: '1.61803398',
-    files: ['booktabs.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/booktabs',
-  },
-  {
-    id: 'tabularx',
-    name: 'tabularx',
-    description: 'Tabulars with adjustable-width X columns that automatically expand to fill available document width.',
-    category: 'Tables',
-    version: '2.11c',
-    files: ['tabularx.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/tabularx',
-  },
-  {
-    id: 'multirow',
-    name: 'multirow',
-    description: 'Create tabular cells spanning multiple rows with vertical centering and alignment options.',
-    category: 'Tables',
-    version: '2.9',
-    files: ['multirow.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/multirow',
-  },
-  {
-    id: 'array',
-    name: 'array',
-    description: 'Extending the array and tabular environments with column formatting directives and math tools.',
-    category: 'Tables',
-    version: '2.6g',
-    files: ['array.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/array',
-  },
-
-  // Code
-  {
-    id: 'listings',
-    name: 'listings',
-    description: 'Typeset source code listings in LaTeX with language syntax highlighting and line numbering.',
-    category: 'Code',
-    version: '1.9',
-    files: ['listings.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/listings',
-  },
-  {
-    id: 'algorithm2e',
-    name: 'algorithm2e',
-    description: 'Floating algorithm environment with structured line numbers, condition blocks, and keywords.',
-    category: 'Code',
-    version: '5.4',
-    files: ['algorithm2e.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/algorithm2e',
-  },
-  {
-    id: 'minted',
-    name: 'minted',
-    description: 'Expressive and robust source code syntax highlighting using the Pygments formatting engine.',
-    category: 'Code',
-    version: '3.0.0',
-    files: ['minted.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/minted',
-  },
-
-  // General
-  {
-    id: 'csquotes',
-    name: 'csquotes',
-    description: 'Context sensitive quotation facilities with language-dependent quote styling and nested quotations.',
-    category: 'General',
-    version: '5.2n',
-    files: ['csquotes.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/csquotes',
-  },
-  {
-    id: 'lipsum',
-    name: 'lipsum',
-    description: 'Easy generation of dummy Lorem Ipsum placeholder paragraphs for document layout prototyping.',
-    category: 'General',
-    version: '2.7',
-    files: ['lipsum.sty'],
-    isInstalled: false,
-    source: 'ctan',
-    documentationUrl: 'https://ctan.org/pkg/lipsum',
-  },
-];
+export { DEFAULT_PACKAGE_CATALOG } from './packageCatalog';
+import { DEFAULT_PACKAGE_CATALOG } from './packageCatalog';
 
 // In-memory state tracking overrides and dynamically registered packages
 let installedOverrides: Record<string, boolean> = {};
@@ -493,13 +69,23 @@ export async function syncPackageCacheStatus(
   return new Set(cachedPackageIds);
 }
 
+function getLocalStorage(): Storage | null {
+  const g = typeof globalThis !== 'undefined' ? (globalThis as any) : null;
+  try {
+    return g?.localStorage || g?.window?.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
 function loadStorageOverrides(): void {
   if (hasLoadedStorage) return;
   hasLoadedStorage = true;
 
-  if (typeof window !== 'undefined' && window.localStorage) {
+  const storage = getLocalStorage();
+  if (storage) {
     try {
-      const stored = localStorage.getItem(PACKAGE_STORAGE_KEY);
+      const stored = storage.getItem(PACKAGE_STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
         if (typeof parsed === 'object' && parsed !== null) {
@@ -513,9 +99,10 @@ function loadStorageOverrides(): void {
 }
 
 function persistStorageOverrides(): void {
-  if (typeof window !== 'undefined' && window.localStorage) {
+  const storage = getLocalStorage();
+  if (storage) {
     try {
-      localStorage.setItem(PACKAGE_STORAGE_KEY, JSON.stringify(installedOverrides));
+      storage.setItem(PACKAGE_STORAGE_KEY, JSON.stringify(installedOverrides));
     } catch {
       // Fallback if localStorage access is restricted
     }
@@ -820,9 +407,10 @@ export function resetPackageManagerState(): void {
   cachedPackageIds.clear();
   hasLoadedStorage = false;
 
-  if (typeof window !== 'undefined' && window.localStorage) {
+  const storage = getLocalStorage();
+  if (storage) {
     try {
-      localStorage.removeItem(PACKAGE_STORAGE_KEY);
+      storage.removeItem(PACKAGE_STORAGE_KEY);
     } catch {
       // Fallback if localStorage access is restricted
     }

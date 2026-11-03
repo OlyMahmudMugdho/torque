@@ -1,8 +1,9 @@
 import type { Project, ProjectFile } from '../types/workspace';
-import { normalizeFilePath } from './projectStore';
+import { normalizeFilePath } from './pathUtils';
 
 export function isTauri(): boolean {
-  return typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__);
+  const g = typeof globalThis !== 'undefined' ? (globalThis as any) : null;
+  return Boolean(g?.__TAURI_INTERNALS__ || g?.window?.__TAURI_INTERNALS__);
 }
 
 export function uint8ArrayToBase64(bytes: Uint8Array): string {
@@ -94,8 +95,12 @@ export function encodeFileForTauri(file: ProjectFile): RawTauriFile {
 export type TauriInvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
 async function defaultInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__?.invoke) {
-    return (window as any).__TAURI_INTERNALS__.invoke(cmd, args);
+  const g = typeof globalThis !== 'undefined' ? (globalThis as any) : null;
+  if (g?.__TAURI_INTERNALS__?.invoke) {
+    return g.__TAURI_INTERNALS__.invoke(cmd, args);
+  }
+  if (g?.window?.__TAURI_INTERNALS__?.invoke) {
+    return g.window.__TAURI_INTERNALS__.invoke(cmd, args);
   }
   const core = await import('@tauri-apps/api/core');
   return core.invoke<T>(cmd, args);

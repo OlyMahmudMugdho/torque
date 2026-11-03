@@ -65,8 +65,12 @@ export interface PackageCacheOptions {
 }
 
 async function defaultInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__?.invoke) {
-    return (window as any).__TAURI_INTERNALS__.invoke(cmd, args);
+  const g = typeof globalThis !== 'undefined' ? (globalThis as any) : null;
+  if (g?.__TAURI_INTERNALS__?.invoke) {
+    return g.__TAURI_INTERNALS__.invoke(cmd, args);
+  }
+  if (g?.window?.__TAURI_INTERNALS__?.invoke) {
+    return g.window.__TAURI_INTERNALS__.invoke(cmd, args);
   }
   const core = await import('@tauri-apps/api/core');
   return core.invoke<T>(cmd, args);

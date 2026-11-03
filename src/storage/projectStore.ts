@@ -1,41 +1,12 @@
 import type { Project, ProjectFile } from '../types/workspace';
 import { isTauri, TauriStorage } from './tauriStorage';
+import { normalizeFilePath } from './pathUtils';
 
-export { isTauri, TauriStorage };
+export { isTauri, TauriStorage, normalizeFilePath };
 
 export interface ProjectStoreOptions {
   useTauri?: boolean;
   tauriStorage?: TauriStorage;
-}
-
-export function normalizeFilePath(rawPath: string): string {
-  if (!rawPath || typeof rawPath !== 'string') {
-    throw new Error('Invalid path: path must be a non-empty string');
-  }
-  const trimmed = rawPath.trim();
-  if (!trimmed) {
-    throw new Error('Invalid path: empty path');
-  }
-
-  const normalizedSlashes = trimmed.replace(/\\/g, '/');
-  const rawSegments = normalizedSlashes.split('/');
-  const cleanedSegments: string[] = [];
-
-  for (const seg of rawSegments) {
-    if (seg === '' || seg === '.') {
-      continue;
-    }
-    if (seg === '..') {
-      throw new Error(`Invalid path: parent traversal not allowed in "${rawPath}"`);
-    }
-    cleanedSegments.push(seg);
-  }
-
-  if (cleanedSegments.length === 0) {
-    throw new Error(`Invalid path: resulting path is empty in "${rawPath}"`);
-  }
-
-  return cleanedSegments.join('/');
 }
 
 export class ProjectStore {

@@ -10,6 +10,7 @@ const CORE_BUNDLE_FILES = [
   // Core format & document classes
   'latex.fmt',
   'article.cls',
+  'IEEEtran.cls',
   'size10.clo',
   'size11.clo',
   'size12.clo',

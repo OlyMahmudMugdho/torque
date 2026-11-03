@@ -202,4 +202,55 @@ Test pgfsys driver
     expect(pdf![2]).toBe(0x44); // D
     expect(pdf![3]).toBe(0x46); // F
   }, 15000);
+
+  it('compiles standard IEEE conference template with IEEEtran document class', async () => {
+    const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+    const engine = await TexEngine.load(wasmBuf);
+    const bundleDir = path.resolve('public/bundle');
+    const manifest: string[] = JSON.parse(fs.readFileSync('public/bundle/manifest.json', 'utf8'));
+
+    for (const f of manifest) {
+      const p = path.join(bundleDir, f);
+      if (fs.existsSync(p)) {
+        engine.addFile(f, new Uint8Array(fs.readFileSync(p)));
+      }
+    }
+
+    const doc = `\\documentclass[conference]{IEEEtran}
+\\usepackage{amsmath,amssymb}
+\\usepackage{graphicx}
+\\title{Torque: A Client-Side WebAssembly LaTeX IDE}
+\\author{
+  \\IEEEauthorblockN{Antigravity Agent}
+  \\IEEEauthorblockA{DeepMind Systems\\\\
+  Email: agent@deepmind.com}
+}
+\\begin{document}
+\\maketitle
+\\begin{abstract}
+This paper introduces Torque, an open-source client-side LaTeX IDE.
+\\end{abstract}
+\\begin{IEEEkeywords}
+LaTeX, WebAssembly, Editor, Tectonic
+\\end{IEEEkeywords}
+\\section{Introduction}
+Modern scientific publishing demands instant local compilation.
+\\[
+  E = mc^2
+\\]
+\\end{document}`;
+
+    engine.addFile('main.tex', doc);
+    const res = engine.compile({ entry: 'main.tex', synctex: false });
+    expect(res.status).toBe('spotless');
+    expect(res.diagnostics.length).toBe(0);
+
+    const pdf = engine.pdf();
+    expect(pdf).toBeDefined();
+    expect(pdf!.length).toBeGreaterThan(100);
+    expect(pdf![0]).toBe(0x25); // %
+    expect(pdf![1]).toBe(0x50); // P
+    expect(pdf![2]).toBe(0x44); // D
+    expect(pdf![3]).toBe(0x46); // F
+  }, 15000);
 });

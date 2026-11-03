@@ -154,6 +154,17 @@ export const DEFAULT_PACKAGE_CATALOG: readonly LatexPackage[] = [
 
   // Layout
   {
+    id: 'ieeetran',
+    name: 'IEEEtran',
+    description: 'Official LaTeX document class and template for IEEE conference papers, transactions, and symposiums.',
+    category: 'Layout',
+    version: '1.8b',
+    files: ['IEEEtran.cls', 'IEEEtran.bst'],
+    isInstalled: true,
+    source: 'bundle',
+    documentationUrl: 'https://ctan.org/pkg/ieeetran',
+  },
+  {
     id: 'geometry',
     name: 'geometry',
     description: 'Flexible and complete interface for customizing document page layout, margins, paper sizes, and orientation.',

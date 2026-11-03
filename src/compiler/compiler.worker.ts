@@ -1,6 +1,8 @@
 import { TexEngine } from 'glyphtex-engine';
 import type { CompileWorkerRequest, CompileWorkerResponse } from './compilerProtocol';
 import type { Diagnostic, CompileStatus } from '../types/workspace';
+import { getPackageFile, ALLOWED_EXTENSIONS } from '../storage/packageCache';
+import { downloadSingleFile } from '../packages/packageDownloader';
 
 let wasmModulePromise: Promise<WebAssembly.Module> | null = null;
 let currentEngine: TexEngine | null = null;
@@ -8,7 +10,19 @@ let engineUsageCount = 0;
 const MAX_ENGINE_USES = 25;
 let bundlePreloadPromise: Promise<void> | null = null;
 let bundleManifest: Set<string> | null = null;
-const cachedBundleFiles = new Map<string, Uint8Array>();
+export const cachedBundleFiles = new Map<string, Uint8Array>();
+export const pendingDownloads = new Map<string, Promise<Uint8Array | null>>();
+export const JIT_DOWNLOAD_EXTENSIONS = ['.sty', '.cls', '.def', '.fd'] as const;
+
+export function clearWorkerCache(): void {
+  cachedBundleFiles.clear();
+  pendingDownloads.clear();
+}
+
+export function setBundleManifest(manifest: Set<string> | null): void {
+  bundleManifest = manifest;
+}
+
 let stderrLogs: string[] = [];
 let stdoutLogs: string[] = [];
 
@@ -305,10 +319,7 @@ export const CORE_BUNDLE_FILES = [
   'msbm7.pfb',
 ];
 
-export function resolveCandidateBundleName(
-  name: string,
-  manifest: Set<string> | null = bundleManifest
-): string | null {
+export function cleanCandidateName(name: string): string | null {
   if (!name || typeof name !== 'string') return null;
 
   let cleaned = name.trim();
@@ -328,6 +339,14 @@ export function resolveCandidateBundleName(
     cleaned = cleaned.replace(/[[\]]/g, '');
   }
 
+  return cleaned || null;
+}
+
+export function resolveCandidateBundleName(
+  name: string,
+  manifest: Set<string> | null = bundleManifest
+): string | null {
+  const cleaned = cleanCandidateName(name);
   if (!cleaned) return null;
 
   if (!manifest) {
@@ -437,15 +456,18 @@ export function resolveCandidateBundleName(
   return null;
 }
 
-async function fetchBundleFile(
+const DISALLOWED_EXTENSIONS = /\.(exe|dll|so|dylib|sh|bat|cmd|bin|js|mjs|cjs|html|htm|php|py)$/i;
+
+export async function fetchBundleFile(
   name: string
 ): Promise<{ resolvedName: string; data: Uint8Array } | null> {
+  // Priority 1: Check in-memory cache cachedBundleFiles
   if (cachedBundleFiles.has(name)) {
     return { resolvedName: name, data: cachedBundleFiles.get(name)! };
   }
 
-  const resolvedName = resolveCandidateBundleName(name);
-  if (!resolvedName) return null;
+  const resolvedName = resolveCandidateBundleName(name) || cleanCandidateName(name);
+  if (!resolvedName || DISALLOWED_EXTENSIONS.test(resolvedName)) return null;
 
   if (cachedBundleFiles.has(resolvedName)) {
     const data = cachedBundleFiles.get(resolvedName)!;
@@ -455,23 +477,84 @@ async function fetchBundleFile(
     return { resolvedName, data };
   }
 
-  try {
-    const url = `/bundle/${encodeURIComponent(resolvedName)}`;
-    const resp = await fetch(url);
-    if (!resp.ok) {
-      console.warn(`[compiler.worker] HTTP ${resp.status} fetching bundle file: ${resolvedName}`);
-      return null;
+  // Priority 2: Check local pre-bundled assets /bundle/${resolvedName}
+  const shouldTryBundle = !bundleManifest || bundleManifest.has(resolvedName);
+  if (shouldTryBundle) {
+    try {
+      const url = `/bundle/${encodeURIComponent(resolvedName)}`;
+      const resp = await fetch(url);
+      if (resp && resp.ok) {
+        const buf = new Uint8Array(await resp.arrayBuffer());
+        cachedBundleFiles.set(resolvedName, buf);
+        if (name !== resolvedName) {
+          cachedBundleFiles.set(name, buf);
+        }
+        return { resolvedName, data: buf };
+      }
+    } catch {
+      // Local fetch error or not bundled, continue to Priority 3
     }
-    const buf = new Uint8Array(await resp.arrayBuffer());
-    cachedBundleFiles.set(resolvedName, buf);
-    if (name !== resolvedName) {
-      cachedBundleFiles.set(name, buf);
+  }
+
+  const lowerResolved = resolvedName.toLowerCase();
+
+  // Priority 3: Check persistent global storage via getPackageFile(resolvedName)
+  const isCacheEligible = ALLOWED_EXTENSIONS.some((ext) => lowerResolved.endsWith(ext));
+  if (isCacheEligible) {
+    try {
+      const cached = await getPackageFile(resolvedName);
+      if (cached) {
+        cachedBundleFiles.set(resolvedName, cached);
+        if (name !== resolvedName) {
+          cachedBundleFiles.set(name, cached);
+        }
+        return { resolvedName, data: cached };
+      }
+    } catch (err) {
+      console.warn(`[compiler.worker] Error querying packageCache for ${resolvedName}:`, err);
     }
-    return { resolvedName, data: buf };
-  } catch (err) {
-    console.warn(`[compiler.worker] Network error fetching bundle file: ${resolvedName}`, err);
+  }
+
+  // Priority 4 (JIT Download): If still not found and the file is a TeX macro/font file (.sty, .cls, .def, .fd),
+  // invoke downloadSingleFile(resolvedName) with in-flight deduplication
+  const isJitEligible = JIT_DOWNLOAD_EXTENSIONS.some((ext) => lowerResolved.endsWith(ext));
+  if (!isJitEligible) {
     return null;
   }
+
+  try {
+    let downloadPromise = pendingDownloads.get(resolvedName);
+    if (!downloadPromise) {
+      downloadPromise = (async () => {
+        try {
+          const res = await downloadSingleFile(resolvedName);
+          if (res && res.success && res.data) {
+            return res.data;
+          }
+          return null;
+        } catch (downloadErr) {
+          console.warn(`[compiler.worker] JIT download failed for ${resolvedName}:`, downloadErr);
+          return null;
+        } finally {
+          pendingDownloads.delete(resolvedName);
+        }
+      })();
+      pendingDownloads.set(resolvedName, downloadPromise);
+    }
+
+    const downloadedData = await downloadPromise;
+    if (downloadedData) {
+      cachedBundleFiles.set(resolvedName, downloadedData);
+      if (name !== resolvedName) {
+        cachedBundleFiles.set(name, downloadedData);
+      }
+      return { resolvedName, data: downloadedData };
+    }
+  } catch (err) {
+    console.warn(`[compiler.worker] Unexpected error during JIT download of ${resolvedName}:`, err);
+  }
+
+  return null;
 }
 
 export function parseDiagnosticFromError(

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { TexEngine } from 'glyphtex-engine';
@@ -6,7 +6,17 @@ import {
   parseDiagnosticFromError,
   CORE_BUNDLE_FILES,
   resolveCandidateBundleName,
+  fetchBundleFile,
+  cachedBundleFiles,
+  pendingDownloads,
+  clearWorkerCache,
+  setBundleManifest,
 } from '../compiler.worker';
+import {
+  savePackageFile,
+  clearPackageCache,
+  getPackageFile,
+} from '../../storage/packageCache';
 
 describe('compilerEngine', () => {
   it('compiles standard document with geometry, amsmath, graphicx, multicol, and math in a single pass', async () => {
@@ -720,5 +730,177 @@ Testing IEEEtran fonts across 10pt, 9pt, 8pt, 7pt, 5pt sizes.
       expect(pdf).toBeDefined();
       expect(pdf!.length).toBeGreaterThan(100);
     }, 25000);
+  });
+
+  describe('persistent packageCache and JIT downloader integration', () => {
+    beforeEach(async () => {
+      clearWorkerCache();
+      const manifestList: string[] = JSON.parse(fs.readFileSync('public/bundle/manifest.json', 'utf8'));
+      setBundleManifest(new Set(manifestList));
+      await clearPackageCache();
+      vi.restoreAllMocks();
+    });
+
+    it('resolves package from packageCache when an unbundled package is requested', async () => {
+      const demoSty = new TextEncoder().encode('\\newcommand{\\customdemo}{Hello From Cached Package}\\endinput\n');
+      await savePackageFile('customdemo.sty', demoSty);
+
+      const res = await fetchBundleFile('customdemo.sty');
+      expect(res).not.toBeNull();
+      expect(res?.resolvedName).toBe('customdemo.sty');
+      expect(Array.from(res?.data!)).toEqual(Array.from(demoSty));
+      expect(cachedBundleFiles.has('customdemo.sty')).toBe(true);
+    });
+
+    it('compiles document using custom package stored in packageCache cleanly to a valid PDF', async () => {
+      const boxSty = new TextEncoder().encode(
+        '\\ProvidesPackage{custombox}[2026/11/03 Custom Box Package]\n\\newcommand{\\custombox}[1]{\\textbf{[#1]}}\n\\endinput\n'
+      );
+      await savePackageFile('custombox.sty', boxSty);
+
+      const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+      const wasmModule = await WebAssembly.compile(wasmBuf);
+      const bundleDir = path.resolve('public/bundle');
+
+      // 1. Initial pass without custombox in memory -> compile should report missing custombox.sty
+      let engine = await TexEngine.load(wasmModule);
+      for (const f of CORE_BUNDLE_FILES) {
+        const p = path.join(bundleDir, f);
+        if (fs.existsSync(p)) engine.addFile(f, new Uint8Array(fs.readFileSync(p)));
+      }
+
+      const doc = `\\documentclass{article}
+\\usepackage{custombox}
+\\begin{document}
+Testing custom cached package: \\custombox{Success!}
+\\end{document}
+`;
+      engine.addFile('main.tex', doc);
+      let compileRes = engine.compile({ entry: 'main.tex', synctex: false });
+      expect(compileRes.status).toBe('failed');
+      expect(compileRes.missingFiles).toContain('custombox.sty');
+
+      // 2. Fetch missing files via fetchBundleFile (resolves custombox.sty from packageCache)
+      let added = 0;
+      for (const missing of compileRes.missingFiles!) {
+        const fetched = await fetchBundleFile(missing);
+        if (fetched) {
+          added++;
+        }
+      }
+      expect(added).toBeGreaterThan(0);
+      expect(cachedBundleFiles.has('custombox.sty')).toBe(true);
+
+      // 3. Re-instantiate fresh engine with cached files mounted
+      engine = await TexEngine.load(wasmModule);
+      for (const f of CORE_BUNDLE_FILES) {
+        const p = path.join(bundleDir, f);
+        if (fs.existsSync(p)) engine.addFile(f, new Uint8Array(fs.readFileSync(p)));
+      }
+      for (const [name, data] of cachedBundleFiles.entries()) {
+        engine.addFile(name, data);
+      }
+
+      engine.addFile('main.tex', doc);
+      compileRes = engine.compile({ entry: 'main.tex', synctex: false });
+      expect(compileRes.status).toBe('spotless');
+      expect(compileRes.diagnostics.length).toBe(0);
+
+      const pdf = engine.pdf();
+      expect(pdf).toBeDefined();
+      expect(pdf!.length).toBeGreaterThan(100);
+      expect(pdf![0]).toBe(0x25); // %
+      expect(pdf![1]).toBe(0x50); // P
+      expect(pdf![2]).toBe(0x44); // D
+      expect(pdf![3]).toBe(0x46); // F
+    }, 25000);
+
+    it('JIT auto-downloads unbundled package from CTAN and persists to cache', async () => {
+      const mockStyContent = new TextEncoder().encode(
+        '\\ProvidesPackage{autodemo}[2026/11/03 Auto Demo]\n\\newcommand{\\autoval}{99}\n\\endinput\n'
+      );
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: any) => {
+        const urlStr = String(input);
+        if (urlStr.includes('autodemo.sty')) {
+          return new Response(mockStyContent, {
+            status: 200,
+            headers: { 'Content-Type': 'application/x-tex' },
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      });
+
+      const res = await fetchBundleFile('autodemo.sty');
+      expect(res).not.toBeNull();
+      expect(res?.resolvedName).toBe('autodemo.sty');
+      expect(Array.from(res?.data!)).toEqual(Array.from(mockStyContent));
+
+      // Verify persisted to packageCache
+      const cached = await getPackageFile('autodemo.sty');
+      expect(cached).not.toBeNull();
+      expect(Array.from(cached!)).toEqual(Array.from(mockStyContent));
+      expect(cachedBundleFiles.has('autodemo.sty')).toBe(true);
+
+      fetchSpy.mockRestore();
+    });
+
+    it('deduplicates concurrent JIT download requests for the same package', async () => {
+      const mockStyContent = new TextEncoder().encode(
+        '\\ProvidesPackage{dedupdemo}[2026/11/03 Dedup Demo]\n\\endinput\n'
+      );
+
+      let fetchCount = 0;
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: any) => {
+        const urlStr = String(input);
+        if (urlStr.includes('dedupdemo.sty')) {
+          fetchCount++;
+          // Simulate slight network latency
+          await new Promise((r) => setTimeout(r, 20));
+          return new Response(mockStyContent, {
+            status: 200,
+            headers: { 'Content-Type': 'application/x-tex' },
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      });
+
+      // Fire 2 concurrent fetch requests
+      const [res1, res2] = await Promise.all([
+        fetchBundleFile('dedupdemo.sty'),
+        fetchBundleFile('dedupdemo.sty'),
+      ]);
+
+      expect(res1).not.toBeNull();
+      expect(res2).not.toBeNull();
+      expect(Array.from(res1?.data!)).toEqual(Array.from(mockStyContent));
+      expect(Array.from(res2?.data!)).toEqual(Array.from(mockStyContent));
+      // Even though called concurrently twice, fetch must only have occurred once
+      expect(fetchCount).toBe(1);
+
+      fetchSpy.mockRestore();
+    });
+
+    it('handles JIT download failure gracefully by returning null without throwing', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        return new Response('404 Not Found', { status: 404 });
+      });
+
+      const res = await fetchBundleFile('missingnonexistent.sty');
+      expect(res).toBeNull();
+      expect(pendingDownloads.has('missingnonexistent.sty')).toBe(false);
+
+      fetchSpy.mockRestore();
+    });
+
+    it('ignores files not eligible for JIT download (e.g. non-macro extensions)', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+      const res = await fetchBundleFile('malicious.exe');
+      expect(res).toBeNull();
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      fetchSpy.mockRestore();
+    });
   });
 });

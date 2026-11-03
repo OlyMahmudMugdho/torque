@@ -45,7 +45,7 @@
       "debugApplicationIdSuffix": ".debug"
     },
     "shortDescription": "Torque - Client-Side WebAssembly LaTeX Editor",
-    "category": "Office",
+    "category": "DeveloperTool",
     "longDescription": "Torque is an open-source, client-side WebAssembly LaTeX IDE featuring IntelliJ IDEA aesthetics, instant browser compilation, and native Tauri desktop support.",
     "copyright": "Copyright © 2026 Torque Contributors",
     "linux": {

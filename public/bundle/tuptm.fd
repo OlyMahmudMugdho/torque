@@ -1,0 +1,36 @@
+%%
+%% tuptm.fd
+%%
+\ProvidesFile{tuptm.fd}[2017/01/24 v1.0 Font definitions for TU/ptm.]
+
+\DeclareFontFamily{TU}{ptm}{}
+
+\DeclareFontShape{TU}{ptm}{m}{n}{
+  <-> ssub * lmr/m/n
+}{}
+
+\DeclareFontShape{TU}{ptm}{m}{it}{
+  <-> ssub * lmr/m/it
+}{}
+
+\DeclareFontShape{TU}{ptm}{m}{sl}{
+  <-> ssub * lmr/m/sl
+}{}
+
+\DeclareFontShape{TU}{ptm}{m}{sc}{
+  <-> ssub * lmr/m/sc
+}{}
+
+\DeclareFontShape{TU}{ptm}{bx}{n}{
+  <-> ssub * lmr/bx/n
+}{}
+
+\DeclareFontShape{TU}{ptm}{bx}{it}{
+  <-> ssub * lmr/bx/it
+}{}
+
+\DeclareFontShape{TU}{ptm}{b}{n}{
+  <-> ssub * lmr/bx/n
+}{}
+
+\endinput

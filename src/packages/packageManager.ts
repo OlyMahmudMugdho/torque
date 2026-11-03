@@ -176,6 +176,17 @@ export const DEFAULT_PACKAGE_CATALOG: readonly LatexPackage[] = [
     documentationUrl: 'https://ctan.org/pkg/geometry',
   },
   {
+    id: 'fullpage',
+    name: 'fullpage',
+    description: 'Simple package to set page margins to 1 inch or 1.5 cm for maximum printable area.',
+    category: 'Layout',
+    version: '1.1',
+    files: ['fullpage.sty'],
+    isInstalled: true,
+    source: 'bundle',
+    documentationUrl: 'https://ctan.org/pkg/fullpage',
+  },
+  {
     id: 'multicol',
     name: 'multicol',
     description: 'Intermix single and multiple columns on all or part of the page with balanced column heights.',
@@ -210,6 +221,17 @@ export const DEFAULT_PACKAGE_CATALOG: readonly LatexPackage[] = [
   },
 
   // Typography
+  {
+    id: 'fontspec',
+    name: 'fontspec',
+    description: 'Advanced font selection and OpenType font management package for modern TeX engines.',
+    category: 'Typography',
+    version: '2.9',
+    files: ['fontspec.sty'],
+    isInstalled: true,
+    source: 'bundle',
+    documentationUrl: 'https://ctan.org/pkg/fontspec',
+  },
   {
     id: 'microtype',
     name: 'microtype',

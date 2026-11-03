@@ -46,12 +46,26 @@ export const CORE_BUNDLE_FILES = [
 
   // Layout & tools
   'geometry.sty',
+  'fullpage.sty',
+  'fontspec.sty',
   'keyval.sty',
   'iftex.sty',
   'ifvtex.sty',
   'multicol.sty',
   'calc.sty',
   'etoolbox.sty',
+
+  // European Computer Modern (T1/Cork) metrics for IEEEtran & fontenc
+  'ecrm1000.tfm',
+  'ecrm0900.tfm',
+  'ecrm0800.tfm',
+  'ecrm0700.tfm',
+  'ecrm0500.tfm',
+  'ecrm1095.tfm',
+  'ecrm1200.tfm',
+  'ecrm1728.tfm',
+  'ecbx1000.tfm',
+  'ecti1000.tfm',
 
   // PGF & TikZ Core Engine
   'pgf.cfg',
@@ -398,6 +412,23 @@ export function resolveCandidateBundleName(
         }
       }
     }
+  }
+
+  // 5. Intelligent mapping for European Computer Modern (ecrm, ecbx, ecti, ecbi) to available TFM
+  const ecMatch = cleaned.match(/^(ecrm|ecbx|ecti|ecbi|ecss|ectt)(\d{4})(?:\.tfm)?$/i);
+  if (ecMatch) {
+    const prefix = ecMatch[1].toLowerCase();
+    const size = parseInt(ecMatch[2], 10);
+    const exactCandidate = `${prefix}${ecMatch[2]}.tfm`;
+    if (manifest.has(exactCandidate)) return exactCandidate;
+    if (size >= 1700 && manifest.has(`${prefix}1728.tfm`)) return `${prefix}1728.tfm`;
+    if (size >= 1100 && manifest.has(`${prefix}1200.tfm`)) return `${prefix}1200.tfm`;
+    if (size >= 950 && manifest.has(`${prefix}1000.tfm`)) return `${prefix}1000.tfm`;
+    if (size >= 850 && manifest.has(`${prefix}0900.tfm`)) return `${prefix}0900.tfm`;
+    if (size >= 750 && manifest.has(`${prefix}0800.tfm`)) return `${prefix}0800.tfm`;
+    if (size >= 650 && manifest.has(`${prefix}0700.tfm`)) return `${prefix}0700.tfm`;
+    if (manifest.has(`${prefix}0500.tfm`)) return `${prefix}0500.tfm`;
+    if (manifest.has(`${prefix}1000.tfm`)) return `${prefix}1000.tfm`;
   }
 
   return null;

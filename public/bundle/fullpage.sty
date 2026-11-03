@@ -1,0 +1,36 @@
+%%
+%% fullpage.sty
+%%
+%% Sets page margins to 1 inch or 1.5 cm.
+%%
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{fullpage}[1999/02/23 1.1 (PWD) Fullpage document layout]
+
+\newlength{\FP@margin}
+\DeclareOption{in}{\setlength{\FP@margin}{1in}}
+\DeclareOption{cm}{\setlength{\FP@margin}{1.5cm}}
+\newif\ifFP@empty
+\FP@emptyfalse
+\DeclareOption{empty}{\FP@emptytrue}
+\DeclareOption{headings}{\FP@emptyfalse}
+\ExecuteOptions{in,headings}
+\ProcessOptions*
+
+\setlength{\topmargin}{\FP@margin}
+\addtolength{\topmargin}{-1in}
+\setlength{\oddsidemargin}{\FP@margin}
+\addtolength{\oddsidemargin}{-1in}
+\setlength{\evensidemargin}{\FP@margin}
+\addtolength{\evensidemargin}{-1in}
+\setlength{\textwidth}{\paperwidth}
+\addtolength{\textwidth}{-2\FP@margin}
+\setlength{\textheight}{\paperheight}
+\addtolength{\textheight}{-2\FP@margin}
+\addtolength{\topmargin}{-\headheight}
+\addtolength{\topmargin}{-\headsep}
+
+\ifFP@empty
+  \pagestyle{empty}
+\fi
+
+\endinput

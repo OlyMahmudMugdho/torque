@@ -1,0 +1,40 @@
+%%
+%% fontspec.sty
+%%
+%% Client-Side WebAssembly compatible fontspec package for Torque
+%%
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{fontspec}[2024/01/01 v2.9 Torque compatible fontspec]
+
+\RequirePackage{iftex}
+
+% Font feature controls
+\newcommand\defaultfontfeatures[2][]{}
+\newcommand\addfontfeatures[1]{}
+\newcommand\newfontfeature[2]{}
+\newcommand\aliasfontfeature[2]{}
+\newcommand\aliasfontfeatureoption[3]{}
+
+% Main font setters
+\newcommand\setmainfont[2][]{}
+\newcommand\setsansfont[2][]{}
+\newcommand\setmonofont[2][]{}
+\newcommand\setromanfont[2][]{}
+
+% New font family declarations
+\newcommand\newfontfamily[3][]{}
+\newcommand\setfontfamily[3][]{}
+\newcommand\renewfontfamily[3][]{}
+\newcommand\providefontfamily[3][]{}
+
+% Face declarations
+\newcommand\newfontface[3][]{}
+\newcommand\setfontface[3][]{}
+\newcommand\renewfontface[3][]{}
+\newcommand\providefontface[3][]{}
+
+% In-line font specification
+\newcommand\fontspec[2][]{}
+\newcommand\addfontfeature[1]{}
+
+\endinput

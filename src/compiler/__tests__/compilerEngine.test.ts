@@ -421,6 +421,11 @@ Regular 10.95pt text with \\textbf{bold text} and \\textit{italic text}.
       expect(resolveCandidateBundleName('lmroman10-regular/rsrc', manifest)).toBe(
         'lmroman10-regular.otf'
       );
+      expect(resolveCandidateBundleName('fullpage', manifest)).toBe('fullpage.sty');
+      expect(resolveCandidateBundleName('fontspec', manifest)).toBe('fontspec.sty');
+      expect(resolveCandidateBundleName('ecrm1000', manifest)).toBe('ecrm1000.tfm');
+      expect(resolveCandidateBundleName('ecrm0900.tfm', manifest)).toBe('ecrm0900.tfm');
+      expect(resolveCandidateBundleName('ecrm1095', manifest)).toBe('ecrm1095.tfm');
     });
   });
 
@@ -561,5 +566,79 @@ Valid Text Afterwards
       expect(pdf![2]).toBe(0x44); // D
       expect(pdf![3]).toBe(0x46); // F
     }, 20000);
+
+    it('compiles documents using fullpage and fontspec spotlessly', async () => {
+      const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+      const wasmModule = await WebAssembly.compile(wasmBuf);
+      const manifest: string[] = JSON.parse(fs.readFileSync('public/bundle/manifest.json', 'utf8'));
+
+      const engine = await TexEngine.load(wasmModule);
+      for (const f of manifest) {
+        const p = path.join('public/bundle', f);
+        if (fs.existsSync(p)) engine.addFile(f, new Uint8Array(fs.readFileSync(p)));
+      }
+
+      const doc = `\\documentclass{article}
+\\usepackage{fullpage}
+\\usepackage{fontspec}
+\\setmainfont{Latin Modern Roman}
+
+\\begin{document}
+\\section{Testing fullpage and fontspec}
+This document compiles cleanly with fullpage margins and fontspec commands.
+\\end{document}
+`;
+      engine.addFile('main.tex', doc);
+      const res = engine.compile({ entry: 'main.tex', synctex: false });
+
+      expect(res.status).toBe('spotless');
+      const pdf = engine.pdf();
+      expect(pdf).toBeDefined();
+      expect(pdf!.length).toBeGreaterThan(100);
+    }, 20000);
+
+    it('compiles IEEEtran conference document with T1 fontenc and EC Cork fonts without metric errors', async () => {
+      const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+      const wasmModule = await WebAssembly.compile(wasmBuf);
+      const manifest: string[] = JSON.parse(fs.readFileSync('public/bundle/manifest.json', 'utf8'));
+
+      const engine = await TexEngine.load(wasmModule);
+      for (const f of manifest) {
+        const p = path.join('public/bundle', f);
+        if (fs.existsSync(p)) engine.addFile(f, new Uint8Array(fs.readFileSync(p)));
+      }
+
+      const ieeeDoc = `\\documentclass[conference]{IEEEtran}
+\\usepackage[T1]{fontenc}
+\\usepackage{amsmath}
+
+\\title{Conference Paper with Cork T1 Fonts}
+\\author{\\IEEEauthorblockN{Author Name}}
+
+\\begin{document}
+\\maketitle
+
+\\begin{abstract}
+Abstract text using European Computer Modern T1 fonts.
+\\end{abstract}
+
+\\section{Introduction}
+Testing IEEEtran fonts across 10pt, 9pt, 8pt, 7pt, 5pt sizes.
+{\\small Small text at 9pt.}
+{\\footnotesize Footnote text at 8pt.}
+{\\scriptsize Script text at 7pt.}
+{\\tiny Tiny text at 5pt.}
+
+\\end{document}
+`;
+      engine.addFile('main.tex', ieeeDoc);
+      const res = engine.compile({ entry: 'main.tex', synctex: false });
+
+      // Build must succeed (spotless or warnings), generating valid PDF without TFM not loadable errors
+      expect(['spotless', 'warnings']).toContain(res.status);
+      const pdf = engine.pdf();
+      expect(pdf).toBeDefined();
+      expect(pdf!.length).toBeGreaterThan(100);
+    }, 25000);
   });
 });

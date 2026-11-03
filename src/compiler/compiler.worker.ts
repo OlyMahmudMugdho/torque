@@ -2,9 +2,15 @@ import { TexEngine } from 'glyphtex-engine';
 import type { CompileWorkerRequest, CompileWorkerResponse } from './compilerProtocol';
 import type { Diagnostic } from '../types/workspace';
 
-let enginePromise: Promise<TexEngine> | null = null;
+let wasmModulePromise: Promise<WebAssembly.Module> | null = null;
+let currentEngine: TexEngine | null = null;
+let engineUsageCount = 0;
+const MAX_ENGINE_USES = 25;
+let bundlePreloadPromise: Promise<void> | null = null;
 let bundleManifest: Set<string> | null = null;
 const cachedBundleFiles = new Map<string, Uint8Array>();
+let stderrLogs: string[] = [];
+let stdoutLogs: string[] = [];
 
 const CORE_BUNDLE_FILES = [
   // Core format & document classes
@@ -205,13 +211,115 @@ async function fetchBundleFile(
   }
 }
 
-async function getEngine(): Promise<TexEngine> {
-  if (!enginePromise) {
-    enginePromise = (async () => {
-      console.log('[compiler.worker] Initializing Tectonic WebAssembly...');
-      const wasmResp = await fetch('/wasm/tectonic_wasm.wasm');
-      const engine = await TexEngine.load(wasmResp);
+export function parseDiagnosticFromError(
+  error: unknown,
+  stderr: string,
+  defaultFile: string = 'main.tex'
+): Diagnostic {
+  const errMessage = error instanceof Error ? error.message : String(error);
+  const isTrap =
+    errMessage.includes('unreachable') ||
+    (error instanceof Error && error.name === 'RuntimeError');
+  const isPoisoned =
+    errMessage.includes('poisoned') ||
+    errMessage.includes('-4') ||
+    (error instanceof Error && error.name === 'EnginePoisonedError');
 
+  // Check stderr for Rust panic or fatal assertions
+  if (stderr) {
+    const panicMatch = stderr.match(/panicked at [^:]+:\d+:\d+:\s*([^\n]+)/);
+    if (panicMatch) {
+      const rawReason = panicMatch[1].trim();
+      if (rawReason.includes('index out of bounds')) {
+        return {
+          severity: 'error',
+          file: defaultFile,
+          line: 1,
+          message:
+            'LaTeX font/shaper error: Unsupported unicode character or glyph in document (index out of bounds in bridge_core). Try removing emojis or unusual unicode characters.',
+        };
+      }
+      return {
+        severity: 'error',
+        file: defaultFile,
+        line: 1,
+        message: `TeX engine panic: ${rawReason}`,
+      };
+    }
+
+    const fatalMatch = stderr.match(/fatal runtime error:\s*([^\n]+)/);
+    if (fatalMatch) {
+      return {
+        severity: 'error',
+        file: defaultFile,
+        line: 1,
+        message: `Fatal TeX runtime error: ${fatalMatch[1].trim()}`,
+      };
+    }
+
+    const abortMatch = stderr.match(/\*\*\*\s*\((job aborted[^\)]*)\)/);
+    if (abortMatch) {
+      return {
+        severity: 'error',
+        file: defaultFile,
+        line: 1,
+        message: `LaTeX job aborted: ${abortMatch[1]}`,
+      };
+    }
+  }
+
+  if (isPoisoned) {
+    return {
+      severity: 'error',
+      file: defaultFile,
+      line: 1,
+      message:
+        'TeX engine session was spent from an earlier crash and has been reinitialized. Please compile again.',
+    };
+  }
+
+  if (isTrap) {
+    return {
+      severity: 'error',
+      file: defaultFile,
+      line: 1,
+      message:
+        'TeX engine execution trapped (unreachable). The compiler engine has been automatically reset.',
+    };
+  }
+
+  return {
+    severity: 'error',
+    file: defaultFile,
+    line: 1,
+    message: errMessage || 'Compilation failed due to an internal TeX engine error.',
+  };
+}
+
+async function getWasmModule(): Promise<WebAssembly.Module> {
+  if (!wasmModulePromise) {
+    wasmModulePromise = (async () => {
+      console.log('[compiler.worker] Initializing Tectonic WebAssembly module...');
+      const wasmResp = await fetch('/wasm/tectonic_wasm.wasm');
+      if (typeof WebAssembly.compileStreaming === 'function') {
+        try {
+          return await WebAssembly.compileStreaming(wasmResp);
+        } catch {
+          const buf = await wasmResp.arrayBuffer();
+          return await WebAssembly.compile(buf);
+        }
+      } else {
+        const buf = await wasmResp.arrayBuffer();
+        return await WebAssembly.compile(buf);
+      }
+    })();
+  }
+  return wasmModulePromise;
+}
+
+async function ensureCoreBundleLoaded(): Promise<void> {
+  if (!bundlePreloadPromise) {
+    bundlePreloadPromise = (async () => {
       try {
         const manifestResp = await fetch('/bundle/manifest.json');
         if (manifestResp.ok) {
@@ -222,24 +330,46 @@ async function getEngine(): Promise<TexEngine> {
         console.warn('[compiler.worker] Could not load bundle manifest:', err);
       }
 
-      // Preload core bundle files so initial compilation is instant
       await Promise.all(
         CORE_BUNDLE_FILES.map(async (file) => {
-          const res = await fetchBundleFile(file);
-          if (res) {
-            engine.addFile(res.resolvedName, res.data);
-            if (file !== res.resolvedName) {
-              engine.addFile(file, res.data);
-            }
-          }
+          await fetchBundleFile(file);
         })
       );
-
-      console.log('[compiler.worker] Tectonic WebAssembly engine ready!');
-      return engine;
     })();
   }
-  return enginePromise;
+  return bundlePreloadPromise;
+}
+
+async function createFreshEngine(): Promise<TexEngine> {
+  const module = await getWasmModule();
+  stderrLogs = [];
+  stdoutLogs = [];
+
+  const engine = await TexEngine.load(module, {
+    onStdout: (text: string) => {
+      stdoutLogs.push(text);
+    },
+    onStderr: (text: string) => {
+      stderrLogs.push(text);
+    },
+  });
+
+  // Mount all cached bundle files into the virtual filesystem
+  for (const [name, data] of cachedBundleFiles.entries()) {
+    engine.addFile(name, data);
+  }
+
+  engineUsageCount = 0;
+  return engine;
+}
+
+async function getEngine(): Promise<TexEngine> {
+  await ensureCoreBundleLoaded();
+
+  if (!currentEngine || engineUsageCount >= MAX_ENGINE_USES) {
+    currentEngine = await createFreshEngine();
+  }
+  return currentEngine;
 }
 
 self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest>) => {
@@ -249,20 +379,35 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
   const start = performance.now();
 
   try {
-    const engine = await getEngine();
+    let engine = await getEngine();
+    stderrLogs = [];
+    stdoutLogs = [];
 
-    // Reset files in engine for clean build
-    engine.clearFiles();
+    // Clear auxiliary outputs from previous compilation jobs
+    try {
+      engine.clearOutputs();
+    } catch {
+      currentEngine = await createFreshEngine();
+      engine = currentEngine;
+    }
 
-    // Mount all cached bundle files into the virtual filesystem
-    for (const [name, data] of cachedBundleFiles.entries()) {
-      engine.addFile(name, data);
+    // Reset project files in engine for clean build
+    try {
+      engine.clearFiles();
+      for (const [name, data] of cachedBundleFiles.entries()) {
+        engine.addFile(name, data);
+      }
+    } catch {
+      currentEngine = await createFreshEngine();
+      engine = currentEngine;
     }
 
     // Mount all project files (main.tex, chapters, bib, images)
     for (const file of req.files) {
       engine.addFile(file.path, file.content);
     }
+
+    engineUsageCount++;
 
     let compileRes = engine.compile({
       entry: req.entry,
@@ -282,18 +427,31 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
       for (const missing of compileRes.missingFiles) {
         const res = await fetchBundleFile(missing);
         if (res) {
-          engine.addFile(res.resolvedName, res.data);
-          if (missing !== res.resolvedName) {
-            engine.addFile(missing, res.data);
-          }
           added++;
         }
       }
       if (added === 0) break;
+
+      // Because a failed compile leaves Tectonic in a dirty internal state that can cause
+      // bridge_core panics (index out of bounds / unreachable) on subsequent passes,
+      // recreate a fresh engine with the newly fetched bundle files mounted cleanly.
+      currentEngine = await createFreshEngine();
+      engine = currentEngine;
+
+      for (const file of req.files) {
+        engine.addFile(file.path, file.content);
+      }
+
       compileRes = engine.compile({
         entry: req.entry,
         synctex: false,
       });
+    }
+
+    // If compilation ended in failure, invalidate the engine instance so the next compile
+    // runs with a completely fresh, uncorrupted WebAssembly state
+    if (compileRes.status === 'failed') {
+      currentEngine = null;
     }
 
     const durationMs = Math.round(performance.now() - start);
@@ -314,12 +472,17 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
       pdfBytes = output;
     }
 
-    const diagnostics: Diagnostic[] = (compileRes.diagnostics || []).map((d) => ({
+    let diagnostics: Diagnostic[] = (compileRes.diagnostics || []).map((d) => ({
       severity: d.severity === 'error' ? 'error' : d.severity === 'warning' ? 'warning' : 'info',
-      file: d.file ?? undefined,
+      file: d.file ?? req.entry,
       line: d.line ?? undefined,
       message: d.message,
     }));
+
+    if (compileRes.status === 'failed' && diagnostics.length === 0) {
+      const rawStderr = stderrLogs.join('');
+      diagnostics.push(parseDiagnosticFromError(new Error('TeX compilation failed'), rawStderr, req.entry));
+    }
 
     const response: CompileWorkerResponse = {
       type: 'compile-result',
@@ -339,11 +502,12 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
       self.postMessage(response);
     }
   } catch (error) {
-    // If the engine crashed, trapped, or was poisoned, discard it so the next compile re-instantiates cleanly
-    enginePromise = null;
+    // If the engine crashed, trapped, or was poisoned, discard it completely
+    currentEngine = null;
 
     const durationMs = Math.round(performance.now() - start);
-    const errMessage = error instanceof Error ? error.message : String(error);
+    const rawStderr = stderrLogs.join('');
+    const diagnostic = parseDiagnosticFromError(error, rawStderr, req.entry);
 
     const response: CompileWorkerResponse = {
       type: 'compile-result',
@@ -351,16 +515,11 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
       result: {
         status: 'failed',
         pdfBytes: null,
-        diagnostics: [
-          {
-            severity: 'error',
-            message: errMessage,
-          },
-        ],
+        diagnostics: [diagnostic],
         missingFiles: [],
         durationMs,
       },
-      error: errMessage,
+      error: diagnostic.message,
     };
     self.postMessage(response);
   }

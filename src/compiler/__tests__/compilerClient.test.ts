@@ -5,22 +5,26 @@ import type { CompileWorkerRequest, CompileWorkerResponse } from '../compilerPro
 function createMockWorker(
   handler: (req: CompileWorkerRequest, respond: (res: CompileWorkerResponse) => void) => void
 ): WorkerLike {
-  const listeners = new Set<EventListenerOrEventListenerObject>();
+  const listeners: Record<string, Set<EventListenerOrEventListenerObject>> = {
+    message: new Set(),
+    error: new Set(),
+  };
   return {
     postMessage(msg: CompileWorkerRequest) {
       handler(msg, (res) => {
         const event = new MessageEvent('message', { data: res });
-        listeners.forEach((l) => (typeof l === 'function' ? l(event) : l.handleEvent(event)));
+        listeners.message.forEach((l) => (typeof l === 'function' ? l(event) : l.handleEvent(event)));
       });
     },
-    addEventListener(_type: string, listener: EventListenerOrEventListenerObject) {
-      listeners.add(listener);
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+      listeners[type]?.add(listener);
     },
-    removeEventListener(_type: string, listener: EventListenerOrEventListenerObject) {
-      listeners.delete(listener);
+    removeEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+      listeners[type]?.delete(listener);
     },
     terminate() {
-      listeners.clear();
+      listeners.message.clear();
+      listeners.error.clear();
     },
   };
 }
@@ -71,6 +75,40 @@ describe('CompilerClient', () => {
 
     release();
     await first;
+    expect(client.isCompiling()).toBe(false);
+  });
+
+  it('handles worker error event gracefully without hanging compilation', async () => {
+    const listeners: Record<string, Set<EventListenerOrEventListenerObject>> = {
+      message: new Set(),
+      error: new Set(),
+    };
+
+    const mockWorker: WorkerLike = {
+      postMessage(_msg: CompileWorkerRequest) {
+        setTimeout(() => {
+          const errEvent = new ErrorEvent('error', { message: 'Out of memory' });
+          listeners.error.forEach((l) => (typeof l === 'function' ? l(errEvent) : l.handleEvent(errEvent)));
+        }, 10);
+      },
+      addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+        listeners[type]?.add(listener);
+      },
+      removeEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+        listeners[type]?.delete(listener);
+      },
+      terminate() {
+        listeners.message.clear();
+        listeners.error.clear();
+      },
+    };
+
+    const client = new CompilerClient(() => mockWorker);
+    const res = await client.compile([{ path: 'main.tex', content: 'C' }], 'main.tex');
+
+    expect(res.status).toBe('failed');
+    expect(res.diagnostics.length).toBeGreaterThan(0);
+    expect(res.diagnostics[0].message).toContain('Out of memory');
     expect(client.isCompiling()).toBe(false);
   });
 });

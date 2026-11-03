@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { TexEngine } from 'glyphtex-engine';
+import { parseDiagnosticFromError } from '../compiler.worker';
 
 describe('compilerEngine', () => {
   it('compiles standard document with geometry, amsmath, graphicx, multicol, and math in a single pass', async () => {
@@ -253,4 +254,75 @@ Modern scientific publishing demands instant local compilation.
     expect(pdf![2]).toBe(0x44); // D
     expect(pdf![3]).toBe(0x46); // F
   }, 15000);
+
+  describe('error diagnostics and engine recovery', () => {
+    it('translates bridge_core index out of bounds panic into actionable unicode diagnostic', () => {
+      const err = new Error('unreachable');
+      err.name = 'RuntimeError';
+      const stderr =
+        "thread '<unnamed>' (1) panicked at tectonic/crates/bridge_core/src/lib.rs:599:41:\nindex out of bounds: the len is 0 but the index is 0\nnote: run with RUST_BACKTRACE=1";
+
+      const diag = parseDiagnosticFromError(err, stderr, 'main.tex');
+      expect(diag.severity).toBe('error');
+      expect(diag.file).toBe('main.tex');
+      expect(diag.line).toBe(1);
+      expect(diag.message).not.toContain('unreachable');
+      expect(diag.message).toMatch(/unicode character|glyph|emoji/i);
+    });
+
+    it('translates generic Rust panic into clean diagnostic message', () => {
+      const err = new Error('unreachable');
+      err.name = 'RuntimeError';
+      const stderr =
+        "thread '<unnamed>' (1) panicked at src/lib.rs:42:10:\nsomething broke badly";
+
+      const diag = parseDiagnosticFromError(err, stderr, 'doc.tex');
+      expect(diag.file).toBe('doc.tex');
+      expect(diag.message).toBe('TeX engine panic: something broke badly');
+    });
+
+    it('translates RuntimeError unreachable without stderr into descriptive reset message', () => {
+      const err = new Error('unreachable');
+      err.name = 'RuntimeError';
+
+      const diag = parseDiagnosticFromError(err, '', 'main.tex');
+      expect(diag.file).toBe('main.tex');
+      expect(diag.message).toMatch(/trapped.*unreachable/i);
+      expect(diag.message).not.toBe('unreachable');
+    });
+
+    it('recovers cleanly after a failed compile and produces valid PDF on subsequent run', async () => {
+      const wasmBuf = fs.readFileSync('node_modules/glyphtex-engine/wasm/tectonic_wasm.wasm');
+      const wasmModule = await WebAssembly.compile(wasmBuf);
+      const manifest: string[] = JSON.parse(fs.readFileSync('public/bundle/manifest.json', 'utf8'));
+
+      async function createEngine() {
+        const eng = await TexEngine.load(wasmModule);
+        for (const f of manifest) {
+          const p = path.join('public/bundle', f);
+          if (fs.existsSync(p)) eng.addFile(f, new Uint8Array(fs.readFileSync(p)));
+        }
+        return eng;
+      }
+
+      let engine = await createEngine();
+
+      // 1. Run a failed compile with nonexistent graphic
+      engine.addFile(
+        'main.tex',
+        '\\documentclass{article}\\usepackage{graphicx}\\begin{document}\\includegraphics{nonexistent_xyz.png}\\end{document}'
+      );
+      const res1 = engine.compile({ entry: 'main.tex', synctex: false });
+      expect(res1.status).toBe('failed');
+
+      // 2. Discard dirty engine and re-instantiate fresh engine
+      engine = await createEngine();
+
+      // 3. Compile clean document with emojis and math
+      engine.addFile('main.tex', '\\documentclass{article}\\begin{document}Hello 🌍🚀🎉 $E=mc^2$\\end{document}');
+      const res2 = engine.compile({ entry: 'main.tex', synctex: false });
+      expect(res2.status).toBe('spotless');
+      expect(engine.pdf()).toBeDefined();
+    }, 20000);
+  });
 });

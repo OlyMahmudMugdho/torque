@@ -58,60 +58,193 @@ describe('WelcomeHomeScreen', () => {
     return { ...renderResult, props: defaultProps };
   };
 
-  describe('Hero & Action Buttons', () => {
-    it('renders Welcome hero and action buttons (New Project, Open / Import Zip)', () => {
+  describe('Title Bar & Sidebar Branding', () => {
+    it('renders title bar with window controls and app title', () => {
+      const { props } = renderComponent();
+
+      // Window title
+      expect(screen.getByText('Welcome to Torque', { selector: 'span' })).toBeInTheDocument();
+
+      // Window controls
+      expect(screen.getByRole('button', { name: 'Minimize' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Maximize' })).toBeInTheDocument();
+      const closeBtn = screen.getByRole('button', { name: 'Close' });
+      expect(closeBtn).toBeInTheDocument();
+
+      fireEvent.click(closeBtn);
+      expect(props.onCloseWelcome).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders left sidebar branding with app name, version, and subtitle', () => {
       renderComponent();
-
-      // Window title and hero
-      expect(screen.getByText('Welcome to Torque', { selector: 'h1' })).toBeInTheDocument();
-      expect(
-        screen.getByText('Open a project, create a new LaTeX document, or import from zip.')
-      ).toBeInTheDocument();
-
-      // Action buttons
-      expect(screen.getByRole('button', { name: /new project/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /open project \/ import zip/i })).toBeInTheDocument();
 
       // Sidebar branding
       expect(screen.getByText('Torque')).toBeInTheDocument();
       expect(screen.getByText('0.1.0')).toBeInTheDocument();
-      expect(screen.getByText(/an open-source latex ide/i)).toBeInTheDocument();
+      expect(
+        screen.getByText('An open-source IDE inspired by IntelliJ IDEA')
+      ).toBeInTheDocument();
+      expect(screen.getByText('TQ')).toBeInTheDocument();
     });
 
-    it('triggers onCreateProject when New Project button is clicked and user provides a name', async () => {
-      const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('My New Thesis');
-      const { props } = renderComponent();
+    it('confirms ABSOLUTELY NO plugin section or plugins tab exists', () => {
+      renderComponent();
 
-      const newProjBtn = screen.getByRole('button', { name: /new project/i });
-      fireEvent.click(newProjBtn);
+      expect(screen.queryByText(/plugins/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /plugins/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Empty Projects State & Action Cards', () => {
+    it('renders centered welcome empty state layout with all 4 action cards', () => {
+      renderComponent({ projects: [] });
+
+      // Heading and subtitles matching IntelliJ IDEA welcome screen
+      expect(screen.getByText('Welcome to Torque', { selector: 'h1' })).toBeInTheDocument();
+      expect(
+        screen.getByText('Open a folder from disk or clone a repository from version control.')
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText('You can also drop a folder onto this window.')
+      ).toBeInTheDocument();
+      expect(screen.getByText('No recent projects')).toBeInTheDocument();
+
+      // All 4 Action Cards
+      expect(screen.getByRole('button', { name: 'New Project' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Open' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Clone Repository' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Remote Development' })).toBeInTheDocument();
+    });
+
+    it('clicking "New Project" card prompts for name and triggers onCreateProject', async () => {
+      const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('My New Thesis');
+      const { props } = renderComponent({ projects: [] });
+
+      const newProjCard = screen.getByRole('button', { name: 'New Project' });
+      fireEvent.click(newProjCard);
 
       expect(promptSpy).toHaveBeenCalledWith('Enter new project name:', 'Untitled Project');
       expect(props.onCreateProject).toHaveBeenCalledWith('My New Thesis');
     });
 
-    it('does not trigger onCreateProject if user cancels prompt', async () => {
+    it('does not trigger onCreateProject if user cancels prompt on "New Project" card', async () => {
       vi.spyOn(window, 'prompt').mockReturnValue(null);
-      const { props } = renderComponent();
+      const { props } = renderComponent({ projects: [] });
 
-      const newProjBtn = screen.getByRole('button', { name: /new project/i });
-      fireEvent.click(newProjBtn);
+      const newProjCard = screen.getByRole('button', { name: 'New Project' });
+      fireEvent.click(newProjCard);
 
       expect(props.onCreateProject).not.toHaveBeenCalled();
     });
 
-    it('triggers onImportZip when a zip file is selected via file input', async () => {
-      const { props } = renderComponent();
+    it('clicking "Open" card triggers file input click', () => {
+      renderComponent({ projects: [] });
 
-      const input = screen.getByTestId('welcome-zip-input') as HTMLInputElement;
-      const file = new File(['mock zip content'], 'project.zip', { type: 'application/zip' });
+      const zipInput = screen.getByTestId('welcome-zip-input');
+      const clickSpy = vi.spyOn(zipInput, 'click');
 
-      fireEvent.change(input, { target: { files: [file] } });
+      const openCard = screen.getByRole('button', { name: 'Open' });
+      fireEvent.click(openCard);
+
+      expect(clickSpy).toHaveBeenCalled();
+    });
+
+    it('clicking "Clone Repository" card prompts for Git URL and creates project', async () => {
+      const promptSpy = vi
+        .spyOn(window, 'prompt')
+        .mockReturnValue('https://github.com/example/quantum-mechanics.git');
+      const { props } = renderComponent({ projects: [] });
+
+      const cloneCard = screen.getByRole('button', { name: 'Clone Repository' });
+      fireEvent.click(cloneCard);
+
+      expect(promptSpy).toHaveBeenCalledWith('Enter Git repository URL:');
+      expect(props.onCreateProject).toHaveBeenCalledWith('quantum-mechanics');
+    });
+
+    it('cancelling Git URL prompt does not trigger onCreateProject', async () => {
+      vi.spyOn(window, 'prompt').mockReturnValue(null);
+      const { props } = renderComponent({ projects: [] });
+
+      const cloneCard = screen.getByRole('button', { name: 'Clone Repository' });
+      fireEvent.click(cloneCard);
+
+      expect(props.onCreateProject).not.toHaveBeenCalled();
+    });
+
+    it('clicking "Remote Development" card alerts user about coming soon', () => {
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+      renderComponent({ projects: [] });
+
+      const remoteDevCard = screen.getByRole('button', { name: 'Remote Development' });
+      fireEvent.click(remoteDevCard);
+
+      expect(alertSpy).toHaveBeenCalledWith('Remote Development is coming soon in Torque.');
+    });
+
+    it('supports drag and drop in empty state to import files', async () => {
+      const { props } = renderComponent({ projects: [] });
+
+      const emptyContainer = screen.getByTestId('welcome-empty-state');
+      const file = new File(['fake zip content'], 'project.zip', { type: 'application/zip' });
+
+      // dragOver triggers overlay
+      fireEvent.dragOver(emptyContainer);
+      expect(
+        screen.getByText('Drop folder or .zip file here to import')
+      ).toBeInTheDocument();
+
+      // dragLeave removes overlay
+      fireEvent.dragLeave(emptyContainer);
+      expect(
+        screen.queryByText('Drop folder or .zip file here to import')
+      ).not.toBeInTheDocument();
+
+      // drop calls onImportZip
+      fireEvent.drop(emptyContainer, {
+        dataTransfer: {
+          files: [file],
+        },
+      });
 
       expect(props.onImportZip).toHaveBeenCalledWith(file);
     });
   });
 
-  describe('Projects List & Search Filter', () => {
+  describe('Projects List & Search Filter (When Projects Exist)', () => {
+    it('displays top action header with New Project and Open buttons', () => {
+      renderComponent();
+
+      // Top action header buttons
+      expect(screen.getByRole('button', { name: /new project/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /open from disk/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /clone repository/i })).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('Search projects...')).toBeInTheDocument();
+    });
+
+    it('triggers onCreateProject from top header New Project button', async () => {
+      const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Another Thesis');
+      const { props } = renderComponent();
+
+      const newBtn = screen.getByRole('button', { name: /new project/i });
+      fireEvent.click(newBtn);
+
+      expect(promptSpy).toHaveBeenCalledWith('Enter new project name:', 'Untitled Project');
+      expect(props.onCreateProject).toHaveBeenCalledWith('Another Thesis');
+    });
+
+    it('triggers file input from top header Open button', () => {
+      renderComponent();
+
+      const zipInput = screen.getByTestId('welcome-zip-input');
+      const clickSpy = vi.spyOn(zipInput, 'click');
+
+      const openBtn = screen.getByRole('button', { name: /open from disk/i });
+      fireEvent.click(openBtn);
+
+      expect(clickSpy).toHaveBeenCalled();
+    });
+
     it('displays list of projects with name, root entry, and timestamp', () => {
       renderComponent();
 
@@ -198,13 +331,15 @@ describe('WelcomeHomeScreen', () => {
       expect(props.onDeleteProject).not.toHaveBeenCalled();
     });
 
-    it('displays empty state when no projects exist', () => {
-      renderComponent({ projects: [] });
+    it('triggers onImportZip when a zip file is selected via file input', async () => {
+      const { props } = renderComponent();
 
-      expect(screen.getByText('No recent projects')).toBeInTheDocument();
-      expect(
-        screen.getByText(/get started by creating a new project or importing an existing latex zip/i)
-      ).toBeInTheDocument();
+      const input = screen.getByTestId('welcome-zip-input') as HTMLInputElement;
+      const file = new File(['mock zip content'], 'project.zip', { type: 'application/zip' });
+
+      fireEvent.change(input, { target: { files: [file] } });
+
+      expect(props.onImportZip).toHaveBeenCalledWith(file);
     });
   });
 
@@ -255,17 +390,6 @@ describe('WelcomeHomeScreen', () => {
       fireEvent.click(settingsBtn);
 
       expect(screen.getByRole('heading', { name: 'Customize' })).toBeInTheDocument();
-    });
-  });
-
-  describe('Window Controls', () => {
-    it('calls onCloseWelcome when close button in title bar is clicked', () => {
-      const { props } = renderComponent();
-
-      const closeBtn = screen.getByRole('button', { name: 'Close' });
-      fireEvent.click(closeBtn);
-
-      expect(props.onCloseWelcome).toHaveBeenCalledTimes(1);
     });
   });
 

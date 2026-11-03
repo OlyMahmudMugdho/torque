@@ -145,6 +145,10 @@ export const DiagnosticsLogPanel: React.FC<DiagnosticsLogPanelProps> = ({
               diagnostics.map((d, index) => {
                 const isErr = d.severity === 'error';
                 const missingPkg = extractMissingPackageName(d.message);
+                const displayMessage =
+                  d.message === 'unreachable'
+                    ? 'Internal TeX engine error (unreachable). The compiler has been automatically reset.'
+                    : d.message;
                 return (
                   <div
                     key={index}
@@ -165,7 +169,7 @@ export const DiagnosticsLogPanel: React.FC<DiagnosticsLogPanelProps> = ({
                         <span className="text-[#3574f0] font-semibold">
                           {d.file ?? 'TeX'}:{d.line ?? 1}
                         </span>{' '}
-                        <span className={isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'}>{d.message}</span>
+                        <span className={isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'}>{displayMessage}</span>
                       </div>
                       {missingPkg && onQuickFixMissingPackage && (
                         <div className="mt-1 flex items-center">

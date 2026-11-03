@@ -16,6 +16,8 @@ import {
   Minus,
   Square,
   FileText,
+  GitBranch,
+  Terminal,
 } from 'lucide-react';
 
 export interface WelcomeHomeScreenProps {
@@ -56,12 +58,28 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
   const [activeTab, setActiveTab] = useState<'projects' | 'customize'>('projects');
   const [searchQuery, setSearchQuery] = useState('');
   const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>('medium');
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleCreateProject = async () => {
     const name = window.prompt('Enter new project name:', 'Untitled Project');
     if (name?.trim()) {
       await onCreateProject(name.trim());
+    }
+  };
+
+  const handleCloneRepository = async () => {
+    const url = window.prompt('Enter Git repository URL:');
+    if (url?.trim()) {
+      const segments = url.trim().replace(/\.git$/i, '').split('/');
+      const repoName = segments[segments.length - 1] || 'Cloned Repository';
+      await onCreateProject(repoName);
+    }
+  };
+
+  const handleRemoteDevelopment = () => {
+    if (typeof window.alert === 'function') {
+      window.alert('Remote Development is coming soon in Torque.');
     }
   };
 
@@ -72,6 +90,29 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      await onImportZip(files[0]);
     }
   };
 
@@ -97,7 +138,7 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
         isDark ? 'bg-[#1e1f22] text-[#dfe1e5]' : 'bg-[#e5e7eb] text-[#1f2328]'
       }`}
     >
-      {/* Hidden file input for zip import */}
+      {/* Hidden file input for zip or file import */}
       <input
         ref={fileInputRef}
         type="file"
@@ -108,7 +149,7 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
         aria-label="Upload Zip"
       />
 
-      {/* IntelliJ Window Container */}
+      {/* IntelliJ / OpenIDEA Window Container */}
       <div
         className={`w-full h-full sm:max-w-4xl sm:max-h-[640px] sm:rounded-lg border shadow-2xl flex flex-col overflow-hidden ${
           isDark ? 'bg-[#2b2d30] border-[#393b40]' : 'bg-[#ffffff] border-[#c9ccd6]'
@@ -120,9 +161,10 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
             isDark ? 'bg-[#1e1f22] border-[#393b40]' : 'bg-[#ebecf0] border-[#d1d5db]'
           }`}
         >
+          {/* Left Title */}
           <div className="flex items-center gap-2">
-            <div className="w-3.5 h-3.5 bg-gradient-to-tr from-[#3574f0] via-[#59a869] to-[#e2a53b] rounded flex items-center justify-center">
-              <span className="text-[7px] font-black text-black leading-none">TQ</span>
+            <div className="w-4 h-4 rounded bg-[#1e1f22] border border-[#e5a035] flex items-center justify-center">
+              <span className="text-[8px] font-black text-[#e5a035] leading-none">T</span>
             </div>
             <span
               className={`text-xs font-medium ${
@@ -173,34 +215,32 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
             }`}
           >
             <div className="flex flex-col gap-6">
-              {/* Branding */}
+              {/* Branding Badge & App Info */}
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-[#3574f0] via-[#59a869] to-[#e2a53b] flex items-center justify-center shadow-md shrink-0">
-                    <span className="text-sm font-black text-black tracking-tighter">TQ</span>
+                  <div className="w-11 h-11 rounded-xl bg-[#1e1f22] border-2 border-[#e5a035] shadow-md flex items-center justify-center shrink-0">
+                    <span className="text-base font-black tracking-tight text-[#e5a035]">TQ</span>
                   </div>
                   <div className="flex flex-col">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="font-bold text-base tracking-tight">Torque</span>
+                      <span className="font-bold text-lg tracking-tight">Torque</span>
                       <span className="text-[11px] font-mono text-[#868a91]">0.1.0</span>
                     </div>
                   </div>
                 </div>
                 <p className="text-[11px] leading-snug text-[#868a91]">
-                  An open-source LaTeX IDE inspired by IntelliJ IDEA
+                  An open-source IDE inspired by IntelliJ IDEA
                 </p>
               </div>
 
-              {/* Navigation Tabs */}
+              {/* Navigation Menu */}
               <nav aria-label="Welcome screen navigation" className="flex flex-col gap-1">
                 <button
                   type="button"
                   onClick={() => setActiveTab('projects')}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded text-xs transition ${
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition ${
                     activeTab === 'projects'
-                      ? isDark
-                        ? 'bg-[#2e436e] text-white font-medium'
-                        : 'bg-[#2e436e] text-white font-medium shadow-sm'
+                      ? 'bg-[#3574f0] text-white shadow-sm'
                       : isDark
                         ? 'text-[#dfe1e5] hover:bg-[#2b2d30]'
                         : 'text-[#1f2328] hover:bg-[#dfe1e5]'
@@ -213,11 +253,9 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveTab('customize')}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded text-xs transition ${
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition ${
                     activeTab === 'customize'
-                      ? isDark
-                        ? 'bg-[#2e436e] text-white font-medium'
-                        : 'bg-[#2e436e] text-white font-medium shadow-sm'
+                      ? 'bg-[#3574f0] text-white shadow-sm'
                       : isDark
                         ? 'text-[#dfe1e5] hover:bg-[#2b2d30]'
                         : 'text-[#1f2328] hover:bg-[#dfe1e5]'
@@ -235,7 +273,9 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                 type="button"
                 onClick={() => setActiveTab('customize')}
                 className={`flex items-center gap-2 text-xs p-1.5 rounded transition w-full ${
-                  isDark ? 'text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#2b2d30]' : 'text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
+                  isDark
+                    ? 'text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#2b2d30]'
+                    : 'text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
                 }`}
                 title="Settings"
                 aria-label="Settings"
@@ -247,51 +287,136 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
           </aside>
 
           {/* Right Main Panel */}
-          <main className="flex-1 flex flex-col overflow-hidden">
+          <main className="flex-1 flex flex-col overflow-hidden relative">
+            {/* Drag & Drop Overlay */}
+            {isDraggingOver && (
+              <div className="absolute inset-0 z-50 bg-[#3574f0]/20 border-2 border-dashed border-[#3574f0] backdrop-blur-[1px] flex flex-col items-center justify-center pointer-events-none rounded-lg">
+                <FolderOpen className="w-12 h-12 text-[#3574f0] mb-2 animate-bounce" />
+                <span className="text-sm font-semibold text-[#3574f0]">
+                  Drop folder or .zip file here to import
+                </span>
+              </div>
+            )}
+
             {activeTab === 'projects' ? (
-              <div className="flex-1 flex flex-col p-6 overflow-hidden">
-                {/* Centered Welcome Hero */}
-                <div className="flex flex-col items-center text-center mb-6">
-                  <h1 className="text-2xl font-bold tracking-tight">Welcome to Torque</h1>
-                  <p className="text-xs sm:text-sm text-[#868a91] mt-1.5 max-w-md">
-                    Open a project, create a new LaTeX document, or import from zip.
+              projects.length === 0 ? (
+                /* Empty Projects State: IntelliJ IDEA Centered Action Cards */
+                <div
+                  className="flex-1 flex flex-col items-center justify-center p-8 text-center relative select-none"
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  data-testid="welcome-empty-state"
+                >
+                  <span className="sr-only">No recent projects</span>
+
+                  <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2">
+                    Welcome to Torque
+                  </h1>
+                  <p className="text-xs sm:text-sm text-[#868a91] max-w-md">
+                    Open a folder from disk or clone a repository from version control.
+                  </p>
+                  <p className="text-xs sm:text-sm text-[#868a91] mt-1 max-w-md">
+                    You can also drop a folder onto this window.
                   </p>
 
-                  {/* Quick Action Buttons */}
-                  <div className="flex items-center gap-3 mt-4">
+                  {/* Action Cards Row */}
+                  <div className="flex flex-wrap items-center justify-center gap-6 mt-8">
+                    {/* Card 1: New Project */}
                     <button
                       type="button"
                       onClick={handleCreateProject}
-                      className="flex items-center gap-2 px-4 py-2 rounded text-xs font-semibold bg-[#3574f0] text-white hover:bg-[#3068d9] transition shadow"
+                      className="group flex flex-col items-center gap-2 focus:outline-none"
+                      aria-label="New Project"
                     >
-                      <Plus className="w-4 h-4" />
-                      <span>New Project</span>
+                      <div
+                        className={`w-18 h-18 sm:w-20 sm:h-20 rounded-xl border flex items-center justify-center transition shadow-sm ${
+                          isDark
+                            ? 'border-[#4e5157] bg-[#2b2d30] group-hover:border-[#3574f0] group-hover:bg-[#3574f0]/10 text-[#dfe1e5] group-hover:text-white'
+                            : 'border-[#c9ccd6] bg-[#ffffff] group-hover:border-[#3574f0] group-hover:bg-[#3574f0]/10 text-[#1f2328] group-hover:text-[#3574f0]'
+                        }`}
+                      >
+                        <Plus className="w-7 h-7 sm:w-8 sm:h-8" />
+                      </div>
+                      <span className="text-xs font-medium text-center">New Project</span>
                     </button>
 
+                    {/* Card 2: Open */}
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-semibold border transition shadow-sm ${
-                        isDark
-                          ? 'border-[#4e5157] text-[#dfe1e5] hover:bg-[#393b40]'
-                          : 'border-[#c9ccd6] text-[#1f2328] hover:bg-[#ebecf0]'
-                      }`}
+                      className="group flex flex-col items-center gap-2 focus:outline-none"
+                      aria-label="Open"
                     >
-                      <FolderOpen className="w-4 h-4 text-[#3574f0]" />
-                      <span>Open Project / Import Zip</span>
+                      <div
+                        className={`w-18 h-18 sm:w-20 sm:h-20 rounded-xl border flex items-center justify-center transition shadow-sm ${
+                          isDark
+                            ? 'border-[#4e5157] bg-[#2b2d30] group-hover:border-[#3574f0] group-hover:bg-[#3574f0]/10 text-[#dfe1e5] group-hover:text-white'
+                            : 'border-[#c9ccd6] bg-[#ffffff] group-hover:border-[#3574f0] group-hover:bg-[#3574f0]/10 text-[#1f2328] group-hover:text-[#3574f0]'
+                        }`}
+                      >
+                        <Folder className="w-7 h-7 sm:w-8 sm:h-8" />
+                      </div>
+                      <span className="text-xs font-medium text-center">Open</span>
+                    </button>
+
+                    {/* Card 3: Clone Repository */}
+                    <button
+                      type="button"
+                      onClick={handleCloneRepository}
+                      className="group flex flex-col items-center gap-2 focus:outline-none"
+                      aria-label="Clone Repository"
+                    >
+                      <div
+                        className={`w-18 h-18 sm:w-20 sm:h-20 rounded-xl border flex items-center justify-center transition shadow-sm ${
+                          isDark
+                            ? 'border-[#4e5157] bg-[#2b2d30] group-hover:border-[#3574f0] group-hover:bg-[#3574f0]/10 text-[#dfe1e5] group-hover:text-white'
+                            : 'border-[#c9ccd6] bg-[#ffffff] group-hover:border-[#3574f0] group-hover:bg-[#3574f0]/10 text-[#1f2328] group-hover:text-[#3574f0]'
+                        }`}
+                      >
+                        <GitBranch className="w-7 h-7 sm:w-8 sm:h-8" />
+                      </div>
+                      <span className="text-xs font-medium text-center">Clone Repository</span>
+                    </button>
+
+                    {/* Card 4: Remote Development */}
+                    <button
+                      type="button"
+                      onClick={handleRemoteDevelopment}
+                      className="group flex flex-col items-center gap-2 focus:outline-none"
+                      aria-label="Remote Development"
+                    >
+                      <div
+                        className={`w-18 h-18 sm:w-20 sm:h-20 rounded-xl border flex items-center justify-center transition shadow-sm ${
+                          isDark
+                            ? 'border-[#4e5157] bg-[#2b2d30] group-hover:border-[#3574f0] group-hover:bg-[#3574f0]/10 text-[#dfe1e5] group-hover:text-white'
+                            : 'border-[#c9ccd6] bg-[#ffffff] group-hover:border-[#3574f0] group-hover:bg-[#3574f0]/10 text-[#1f2328] group-hover:text-[#3574f0]'
+                        }`}
+                      >
+                        <Terminal className="w-7 h-7 sm:w-8 sm:h-8" />
+                      </div>
+                      <span className="text-xs font-medium text-center">Remote Development</span>
                     </button>
                   </div>
                 </div>
+              ) : (
+                /* Projects List View with Top Action Header */
+                <div
+                  className="flex-1 flex flex-col p-6 overflow-hidden relative"
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
+                  <h1 className="sr-only">Welcome to Torque</h1>
 
-                {/* Recent Projects Section */}
-                <div className="flex-1 flex flex-col overflow-hidden min-h-0 border rounded-md">
-                  {/* Search Filter Bar */}
-                  <div
-                    className={`h-10 px-3 border-b flex items-center justify-between shrink-0 ${
-                      isDark ? 'bg-[#1e1f22] border-[#393b40]' : 'bg-[#f7f8fa] border-[#d1d5db]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 flex-1 max-w-sm">
+                  {/* Top Action Header */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4 shrink-0">
+                    {/* Search Filter Bar */}
+                    <div
+                      className={`h-9 px-3 rounded-md border flex items-center gap-2 flex-1 max-w-sm ${
+                        isDark ? 'bg-[#1e1f22] border-[#393b40]' : 'bg-[#f7f8fa] border-[#d1d5db]'
+                      }`}
+                    >
                       <Search className="w-3.5 h-3.5 text-[#868a91] shrink-0" />
                       <input
                         type="text"
@@ -315,105 +440,139 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                       )}
                     </div>
 
-                    <span className="text-[11px] text-[#868a91]">
-                      {filteredProjects.length} {filteredProjects.length === 1 ? 'project' : 'projects'}
-                    </span>
+                    {/* Header Action Buttons */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCreateProject}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-[#3574f0] text-white hover:bg-[#3068d9] transition shadow-sm"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>New Project</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        aria-label="Open from disk"
+                        title="Open project from disk or zip"
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold border transition shadow-sm ${
+                          isDark
+                            ? 'border-[#4e5157] text-[#dfe1e5] hover:bg-[#393b40]'
+                            : 'border-[#c9ccd6] text-[#1f2328] hover:bg-[#ebecf0]'
+                        }`}
+                      >
+                        <Folder className="w-3.5 h-3.5 text-[#3574f0]" />
+                        <span>Open</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleCloneRepository}
+                        aria-label="Clone Repository"
+                        title="Clone repository from version control"
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold border transition shadow-sm ${
+                          isDark
+                            ? 'border-[#4e5157] text-[#dfe1e5] hover:bg-[#393b40]'
+                            : 'border-[#c9ccd6] text-[#1f2328] hover:bg-[#ebecf0]'
+                        }`}
+                      >
+                        <GitBranch className="w-3.5 h-3.5 text-[#3574f0]" />
+                        <span>Clone</span>
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Projects List View */}
-                  <div className="flex-1 overflow-y-auto">
-                    {projects.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center p-6 text-center text-[#868a91]">
-                        <Folder className="w-10 h-10 mb-2 opacity-40 text-[#3574f0]" />
-                        <span className="text-sm font-medium">No recent projects</span>
-                        <span className="text-xs mt-1 max-w-xs">
-                          Get started by creating a new project or importing an existing LaTeX zip.
-                        </span>
-                      </div>
-                    ) : filteredProjects.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center p-6 text-center text-[#868a91]">
-                        <Search className="w-8 h-8 mb-2 opacity-40" />
-                        <span className="text-xs">No projects matching &ldquo;{searchQuery}&rdquo;</span>
-                      </div>
-                    ) : (
-                      <div className="divide-y divide-inherit">
-                        {filteredProjects.map((p) => {
-                          const isCurrent = p.id === activeProjectId;
-                          return (
-                            <div
-                              key={p.id}
-                              onClick={() => onSelectProject(p.id)}
-                              className={`group px-4 py-2.5 flex items-center justify-between cursor-pointer transition ${
-                                isCurrent
-                                  ? isDark
-                                    ? 'bg-[#3574f0]/10 hover:bg-[#3574f0]/20'
-                                    : 'bg-[#3574f0]/10 hover:bg-[#3574f0]/15'
-                                  : isDark
-                                    ? 'hover:bg-[#35373c]'
-                                    : 'hover:bg-[#f2f3f5]'
-                              }`}
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-7 h-7 rounded bg-[#3574f0]/15 flex items-center justify-center shrink-0">
-                                  <FileText className="w-4 h-4 text-[#3574f0]" />
-                                </div>
-                                <div className="flex flex-col min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span
-                                      className={`text-xs font-semibold truncate ${
-                                        isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'
-                                      }`}
-                                    >
-                                      {p.name}
-                                    </span>
-                                    {isCurrent && (
-                                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#3574f0]/20 text-[#3574f0] font-medium">
-                                        Current
+                  {/* Projects List Container */}
+                  <div className="flex-1 flex flex-col overflow-hidden min-h-0 border rounded-md">
+                    <div className="flex-1 overflow-y-auto">
+                      {filteredProjects.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center p-6 text-center text-[#868a91]">
+                          <Search className="w-8 h-8 mb-2 opacity-40" />
+                          <span className="text-xs">
+                            No projects matching &ldquo;{searchQuery}&rdquo;
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-inherit">
+                          {filteredProjects.map((p) => {
+                            const isCurrent = p.id === activeProjectId;
+                            return (
+                              <div
+                                key={p.id}
+                                onClick={() => onSelectProject(p.id)}
+                                className={`group px-4 py-2.5 flex items-center justify-between cursor-pointer transition ${
+                                  isCurrent
+                                    ? isDark
+                                      ? 'bg-[#3574f0]/10 hover:bg-[#3574f0]/20'
+                                      : 'bg-[#3574f0]/10 hover:bg-[#3574f0]/15'
+                                    : isDark
+                                      ? 'hover:bg-[#35373c]'
+                                      : 'hover:bg-[#f2f3f5]'
+                                }`}
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-7 h-7 rounded bg-[#3574f0]/15 flex items-center justify-center shrink-0">
+                                    <FileText className="w-4 h-4 text-[#3574f0]" />
+                                  </div>
+                                  <div className="flex flex-col min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span
+                                        className={`text-xs font-semibold truncate ${
+                                          isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'
+                                        }`}
+                                      >
+                                        {p.name}
                                       </span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    <span className="text-[11px] font-mono text-[#868a91]">
-                                      {p.rootEntry || 'main.tex'}
-                                    </span>
+                                      {isCurrent && (
+                                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#3574f0]/20 text-[#3574f0] font-medium">
+                                          Current
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <span className="text-[11px] font-mono text-[#868a91]">
+                                        {p.rootEntry || 'main.tex'}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
+
+                                <div className="flex items-center gap-3 shrink-0">
+                                  <span className="text-[11px] text-[#868a91]">
+                                    {formatLastModified(p.updatedAt)}
+                                  </span>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onSelectProject(p.id);
+                                    }}
+                                    className="px-2.5 py-1 text-xs font-medium rounded bg-[#3574f0]/15 text-[#3574f0] hover:bg-[#3574f0] hover:text-white transition"
+                                  >
+                                    Open
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDelete(e, p.id, p.name)}
+                                    aria-label={`Delete project ${p.name}`}
+                                    title="Delete project"
+                                    className="p-1 rounded text-[#868a91] hover:text-[#e05555] hover:bg-[#e05555]/15 transition"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
-
-                              <div className="flex items-center gap-3 shrink-0">
-                                <span className="text-[11px] text-[#868a91]">
-                                  {formatLastModified(p.updatedAt)}
-                                </span>
-
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onSelectProject(p.id);
-                                  }}
-                                  className="px-2.5 py-1 text-xs font-medium rounded bg-[#3574f0]/15 text-[#3574f0] hover:bg-[#3574f0] hover:text-white transition"
-                                >
-                                  Open
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleDelete(e, p.id, p.name)}
-                                  aria-label={`Delete project ${p.name}`}
-                                  title="Delete project"
-                                  className="p-1 rounded text-[#868a91] hover:text-[#e05555] hover:bg-[#e05555]/15 transition"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )
             ) : (
               /* Customize Tab View */
               <div className="flex-1 p-6 overflow-y-auto">

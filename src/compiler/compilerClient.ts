@@ -9,6 +9,7 @@ export class CompilerClient {
   private activeResolver: ((res: CompileResult) => void) | null = null;
   private activeRequestId: string | null = null;
   private messageHandler: ((event: MessageEvent) => void) | null = null;
+  private errorHandler: ((event: Event) => void) | null = null;
 
   constructor(private createWorker?: () => WorkerLike) {}
 
@@ -42,6 +43,34 @@ export class CompilerClient {
       };
 
       this.worker.addEventListener('message', this.messageHandler as EventListener);
+
+      this.errorHandler = (event: Event) => {
+        const errorMsg = (event as ErrorEvent).message || 'Compiler worker crashed unexpectedly';
+        console.error('[CompilerClient] Worker error:', event);
+        this.compiling = false;
+        const resolve = this.activeResolver;
+        this.activeResolver = null;
+        this.activeRequestId = null;
+
+        resolve?.({
+          status: 'failed',
+          pdfBytes: null,
+          diagnostics: [
+            {
+              severity: 'error',
+              file: 'main.tex',
+              line: 1,
+              message: `Compiler worker fatal error: ${errorMsg}. Reinitializing worker.`,
+            },
+          ],
+          missingFiles: [],
+          durationMs: 0,
+        });
+
+        this.dispose();
+      };
+
+      this.worker.addEventListener('error', this.errorHandler as EventListener);
     }
     return this.worker;
   }
@@ -85,6 +114,11 @@ export class CompilerClient {
     if (this.worker) {
       if (this.messageHandler) {
         this.worker.removeEventListener('message', this.messageHandler as EventListener);
+        this.messageHandler = null;
+      }
+      if (this.errorHandler) {
+        this.worker.removeEventListener('error', this.errorHandler as EventListener);
+        this.errorHandler = null;
       }
       this.worker.terminate();
       this.worker = null;

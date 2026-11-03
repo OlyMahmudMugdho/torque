@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { FileTreeSidebar } from '../FileTreeSidebar';
 import { DiagnosticsLogPanel, extractMissingPackageName } from '../DiagnosticsLogPanel';
@@ -260,10 +260,14 @@ describe('Workspace UI Components', () => {
       const downloadBtn = screen.getByRole('button', { name: /export \/ download pdf/i });
       expect(downloadBtn).not.toBeDisabled();
 
+      // Initial render creates reactive Blob URL for preview pane
+      expect(createObjectURLMock).toHaveBeenCalledTimes(1);
+
       fireEvent.click(downloadBtn);
 
-      expect(createObjectURLMock).toHaveBeenCalledTimes(1);
-      const createdBlob = createObjectURLMock.mock.calls[0][0] as Blob;
+      // Download creates a dedicated Blob URL with deferred 10s revocation
+      expect(createObjectURLMock).toHaveBeenCalledTimes(2);
+      const createdBlob = createObjectURLMock.mock.calls[1][0] as Blob;
       expect(createdBlob).toBeInstanceOf(Blob);
       expect(createdBlob.type).toBe('application/pdf');
 
@@ -292,6 +296,90 @@ describe('Workspace UI Components', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('PdfPreviewPane: toggles between Canvas and Native iframe view mode', async () => {
+    const createObjectURLMock = vi.fn().mockReturnValue('blob:http://localhost/native-pdf-uuid');
+    const revokeObjectURLMock = vi.fn();
+    globalThis.URL.createObjectURL = createObjectURLMock;
+    globalThis.URL.revokeObjectURL = revokeObjectURLMock;
+
+    const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35]);
+
+    await act(async () => {
+      render(<PdfPreviewPane pdfBytes={pdfBytes} compiling={false} projectName="Paper" />);
+    });
+
+    const toggleBtn = screen.getByRole('button', { name: /toggle pdf view mode/i });
+    expect(toggleBtn).toBeInTheDocument();
+    expect(within(toggleBtn).getByText('Canvas')).toBeInTheDocument();
+    expect(screen.queryByTitle('PDF Preview')).not.toBeInTheDocument();
+
+    // Toggle to Native mode
+    fireEvent.click(toggleBtn);
+
+    expect(within(toggleBtn).getByText('Native')).toBeInTheDocument();
+    const iframe = screen.getByTitle('PDF Preview');
+    expect(iframe).toBeInTheDocument();
+    expect(iframe.tagName).toBe('IFRAME');
+    expect(iframe).toHaveAttribute('src', 'blob:http://localhost/native-pdf-uuid');
+    expect(iframe).toHaveClass('w-full', 'h-full', 'border-0', 'bg-white');
+
+    // Toggle back to Canvas mode
+    fireEvent.click(toggleBtn);
+    expect(within(toggleBtn).getByText('Canvas')).toBeInTheDocument();
+    expect(screen.queryByTitle('PDF Preview')).not.toBeInTheDocument();
+  });
+
+  it('PdfPreviewPane: automatically falls back to native iframe viewer when PDF.js fails', async () => {
+    const createObjectURLMock = vi.fn().mockReturnValue('blob:http://localhost/fallback-pdf-uuid');
+    globalThis.URL.createObjectURL = createObjectURLMock;
+
+    // Simulate PDF.js failure (e.g. worker 404 or corrupted font/engine trap)
+    vi.mocked(pdfjsLib.getDocument).mockImplementationOnce(() => {
+      return {
+        promise: Promise.reject(new Error('Worker script 404 / failed to fetch')),
+      } as any;
+    });
+
+    const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35]);
+
+    await act(async () => {
+      render(<PdfPreviewPane pdfBytes={pdfBytes} compiling={false} projectName="Paper" />);
+    });
+
+    // Auto-fallback renders the native iframe viewer
+    const iframe = screen.getByTitle('PDF Preview');
+    expect(iframe).toBeInTheDocument();
+    expect(iframe).toHaveAttribute('src', 'blob:http://localhost/fallback-pdf-uuid');
+    expect(screen.getByText(/native \(fallback\)/i)).toBeInTheDocument();
+  });
+
+  it('PdfPreviewPane: revokes reactive pdfUrl when component unmounts', async () => {
+    const createObjectURLMock = vi.fn().mockReturnValue('blob:http://localhost/cleanup-uuid');
+    const revokeObjectURLMock = vi.fn();
+    globalThis.URL.createObjectURL = createObjectURLMock;
+    globalThis.URL.revokeObjectURL = revokeObjectURLMock;
+
+    const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35]);
+
+    let unmountFn: () => void = () => {};
+    await act(async () => {
+      const { unmount } = render(
+        <PdfPreviewPane pdfBytes={pdfBytes} compiling={false} projectName="Paper" />
+      );
+      unmountFn = unmount;
+    });
+
+    expect(createObjectURLMock).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURLMock).not.toHaveBeenCalled();
+
+    act(() => {
+      unmountFn();
+    });
+
+    expect(revokeObjectURLMock).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:http://localhost/cleanup-uuid');
   });
 
   it('renders embedded TopMenuBar inside ProjectTopBar and triggers callbacks', () => {

@@ -111,4 +111,19 @@ describe('CompilerClient', () => {
     expect(res.diagnostics[0].message).toContain('Out of memory');
     expect(client.isCompiling()).toBe(false);
   });
+
+  it('triggers compile timeout and resets worker if worker never responds', async () => {
+    const client = new CompilerClient(
+      () =>
+        createMockWorker((_req, _respond) => {
+          // Never respond
+        }),
+      { timeoutMs: 50 }
+    );
+
+    const result = await client.compile([{ path: 'main.tex', content: 'Test' }], 'main.tex');
+    expect(result.status).toBe('failed');
+    expect(result.diagnostics[0].message).toMatch(/Compilation timed out/i);
+    expect(client.isCompiling()).toBe(false);
+  });
 });

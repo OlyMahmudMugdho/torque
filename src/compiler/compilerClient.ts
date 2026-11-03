@@ -11,7 +11,21 @@ export class CompilerClient {
   private messageHandler: ((event: MessageEvent) => void) | null = null;
   private errorHandler: ((event: Event) => void) | null = null;
 
-  constructor(private createWorker?: () => WorkerLike) {}
+  private compileTimeoutMs = 20000;
+  private compileTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(private createWorker?: () => WorkerLike, options?: { timeoutMs?: number }) {
+    if (options?.timeoutMs) {
+      this.compileTimeoutMs = options.timeoutMs;
+    }
+  }
+
+  private clearCompileTimeout(): void {
+    if (this.compileTimeoutId) {
+      clearTimeout(this.compileTimeoutId);
+      this.compileTimeoutId = null;
+    }
+  }
 
   private getWorker(): WorkerLike {
     if (!this.worker) {
@@ -29,6 +43,7 @@ export class CompilerClient {
         if (!data || data.type !== 'compile-result') return;
 
         if (data.requestId === this.activeRequestId) {
+          this.clearCompileTimeout();
           this.compiling = false;
           const resolve = this.activeResolver;
           this.activeResolver = null;
@@ -45,6 +60,7 @@ export class CompilerClient {
       this.worker.addEventListener('message', this.messageHandler as EventListener);
 
       this.errorHandler = (event: Event) => {
+        this.clearCompileTimeout();
         const errorMsg = (event as ErrorEvent).message || 'Compiler worker crashed unexpectedly';
         console.error('[CompilerClient] Worker error:', event);
         this.compiling = false;
@@ -96,6 +112,30 @@ export class CompilerClient {
     return new Promise<CompileResult>((resolve) => {
       this.activeResolver = resolve;
 
+      this.compileTimeoutId = setTimeout(() => {
+        console.warn(`[CompilerClient] Compilation timed out after ${this.compileTimeoutMs}ms. Resetting worker.`);
+        const resolver = this.activeResolver;
+        this.activeResolver = null;
+        this.activeRequestId = null;
+        this.compiling = false;
+        this.dispose();
+
+        resolver?.({
+          status: 'failed',
+          pdfBytes: null,
+          diagnostics: [
+            {
+              severity: 'error',
+              file: entry,
+              line: 1,
+              message: `Compilation timed out (${Math.round(this.compileTimeoutMs / 1000)}s). The compiler worker has been reset. Please check the browser console (F12) for logs.`,
+            },
+          ],
+          missingFiles: [],
+          durationMs: this.compileTimeoutMs,
+        });
+      }, this.compileTimeoutMs);
+
       const request: CompileWorkerRequest = {
         type: 'compile',
         requestId,
@@ -111,6 +151,7 @@ export class CompilerClient {
   }
 
   dispose(): void {
+    this.clearCompileTimeout();
     if (this.worker) {
       if (this.messageHandler) {
         this.worker.removeEventListener('message', this.messageHandler as EventListener);

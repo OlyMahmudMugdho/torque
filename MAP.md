@@ -143,6 +143,10 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 - [`src/packages/packageManager.ts`](file:///home/mugdho/codes/torque/src/packages/packageManager.ts):
   - Curated registry of 50+ popular LaTeX packages with descriptions, categories, dependencies, and code snippets.
   - Preamble analyzer: parses existing `\usepackage{}` declarations, detects missing packages, and safely inserts new packages before `\begin{document}`.
+  - Manages package installation status, synchronizing with both the preloaded bundle and the persistent package cache.
+- [`src/packages/packageDownloader.ts`](file:///home/mugdho/codes/torque/src/packages/packageDownloader.ts):
+  - CTAN and TeX Live CDN mirror downloader with resilient fallback, content validation (rejecting HTML error pages and empty responses), and multi-file package resolution.
+  - Persists retrieved files directly into `packageCache`.
 - [`src/packages/packageTypes.ts`](file:///home/mugdho/codes/torque/src/packages/packageTypes.ts):
   - Type definitions for `LatexPackage`, `PackageCategory`, and package manager events.
 
@@ -152,6 +156,11 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 - [`src/storage/projectStore.ts`](file:///home/mugdho/codes/torque/src/storage/projectStore.ts):
   - High-level project storage manager. Detects desktop vs web environment and routes operations to either `TauriStorage` or browser IndexedDB (`torque_latex_db`).
   - Path normalization ensuring security against directory traversal attacks.
+- [`src/storage/packageCache.ts`](file:///home/mugdho/codes/torque/src/storage/packageCache.ts):
+  - Persistent global cache for downloaded CTAN LaTeX packages.
+  - In Web: IndexedDB database (`torque_package_cache`, object store `packages`).
+  - In Desktop: Native filesystem storage (`~/.torque/cache/packages/`) via Tauri IPC.
+  - Enforces strict filename sanitization and extension whitelisting (`.sty`, `.cls`, `.def`, `.fd`, `.tfm`, `.tex`).
 - [`src/storage/tauriStorage.ts`](file:///home/mugdho/codes/torque/src/storage/tauriStorage.ts):
   - Desktop-specific storage bridge invoking Tauri IPC commands. Stores project files under `~/.torque/projects/<id>/`.
 

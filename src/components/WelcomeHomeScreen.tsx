@@ -15,8 +15,6 @@ import {
   Moon,
   Check,
   X,
-  Minus,
-  Square,
   FileText,
   GitBranch,
   Terminal,
@@ -35,7 +33,6 @@ export interface WelcomeHomeScreenProps {
   ) => Promise<Project> | Promise<void> | void;
   onImportZip: (file: File) => Promise<void> | void;
   onDeleteProject: (projectId: string) => Promise<void> | void;
-  onCloseWelcome?: () => void;
 }
 
 export function formatLastModified(timestamp: number): string {
@@ -60,7 +57,6 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
   onCreateProject,
   onImportZip,
   onDeleteProject,
-  onCloseWelcome,
 }) => {
   const { theme, setTheme } = useThemeSafe();
   const isDark = theme === 'dark';
@@ -173,9 +169,9 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
         aria-label="Upload Zip"
       />
 
-      {/* IntelliJ / OpenIDEA Window Container */}
+      {/* IntelliJ / OpenIDEA Window Container — full-screen, responsive */}
       <div
-        className={`w-full h-full sm:max-w-4xl sm:max-h-[640px] sm:rounded-lg border shadow-2xl flex flex-col overflow-hidden ${
+        className={`w-full h-full rounded-none sm:rounded-lg border shadow-2xl flex flex-col overflow-hidden ${
           isDark ? 'bg-[#2b2d30] border-[#393b40]' : 'bg-[#ffffff] border-[#c9ccd6]'
         }`}
       >
@@ -197,36 +193,6 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
             >
               Welcome to Torque
             </span>
-          </div>
-
-          {/* Window Control Buttons */}
-          <div className="flex items-center">
-            <button
-              type="button"
-              aria-label="Minimize"
-              className={`w-7 h-6 flex items-center justify-center rounded transition ${
-                isDark ? 'hover:bg-[#393b40] text-[#868a91]' : 'hover:bg-[#dfe1e5] text-[#6c707e]'
-              }`}
-            >
-              <Minus className="w-3 h-3" />
-            </button>
-            <button
-              type="button"
-              aria-label="Maximize"
-              className={`w-7 h-6 flex items-center justify-center rounded transition ${
-                isDark ? 'hover:bg-[#393b40] text-[#868a91]' : 'hover:bg-[#dfe1e5] text-[#6c707e]'
-              }`}
-            >
-              <Square className="w-2.5 h-2.5" />
-            </button>
-            <button
-              type="button"
-              aria-label="Close"
-              onClick={onCloseWelcome}
-              className="w-7 h-6 flex items-center justify-center rounded hover:bg-[#e05555] hover:text-white transition text-[#868a91]"
-            >
-              <X className="w-3 h-3" />
-            </button>
           </div>
         </div>
 

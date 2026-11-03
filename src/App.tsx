@@ -303,11 +303,6 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
           setIsHomeViewOpen(false);
         }}
         onDeleteProject={workspace.deleteProjectById}
-        onCloseWelcome={() => {
-          if (workspace.projects.length > 0 && workspace.activeProject) {
-            setIsHomeViewOpen(false);
-          }
-        }}
       />
     );
   }

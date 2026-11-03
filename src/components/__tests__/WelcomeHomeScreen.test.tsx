@@ -45,7 +45,6 @@ describe('WelcomeHomeScreen', () => {
       onCreateProject: vi.fn(),
       onImportZip: vi.fn(),
       onDeleteProject: vi.fn(),
-      onCloseWelcome: vi.fn(),
       ...props,
     };
 
@@ -59,20 +58,32 @@ describe('WelcomeHomeScreen', () => {
   };
 
   describe('Title Bar & Sidebar Branding', () => {
-    it('renders title bar with window controls and app title', () => {
-      const { props } = renderComponent();
+    it('renders title bar with app title and no window control buttons', () => {
+      renderComponent();
 
       // Window title
       expect(screen.getByText('Welcome to Torque', { selector: 'span' })).toBeInTheDocument();
 
-      // Window controls
-      expect(screen.getByRole('button', { name: 'Minimize' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Maximize' })).toBeInTheDocument();
-      const closeBtn = screen.getByRole('button', { name: 'Close' });
-      expect(closeBtn).toBeInTheDocument();
+      // No window control buttons (minimize/maximize/close removed)
+      expect(screen.queryByRole('button', { name: 'Minimize' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Maximize' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+    });
 
-      fireEvent.click(closeBtn);
-      expect(props.onCloseWelcome).toHaveBeenCalledTimes(1);
+    it('renders full-screen responsive window container', () => {
+      const { container } = renderComponent();
+
+      // Outer backdrop fills the viewport
+      const backdrop = container.firstChild as HTMLElement;
+      expect(backdrop.className).toContain('w-screen');
+      expect(backdrop.className).toContain('h-screen');
+
+      // Inner window container is full-width/full-height with rounded corners on sm+
+      const windowContainer = backdrop.querySelector('div') as HTMLElement;
+      expect(windowContainer.className).toContain('w-full');
+      expect(windowContainer.className).toContain('h-full');
+      expect(windowContainer.className).toContain('rounded-none');
+      expect(windowContainer.className).toContain('sm:rounded-lg');
     });
 
     it('renders left sidebar branding with app name, version, and subtitle', () => {

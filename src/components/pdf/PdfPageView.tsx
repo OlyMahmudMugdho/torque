@@ -28,15 +28,33 @@ export const PdfPageView: React.FC<PdfPageViewProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const currentRenderTaskRef = useRef<any>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     const renderPage = async () => {
       if (!canvasRef.current || !textLayerRef.current || !wrapperRef.current) return;
+
+      if (currentRenderTaskRef.current) {
+        currentRenderTaskRef.current.cancel();
+        try {
+          await currentRenderTaskRef.current.promise;
+        } catch (e: any) {
+          if (e?.name !== 'RenderingCancelledException') {
+            // ignore cancellation
+          }
+        }
+        currentRenderTaskRef.current = null;
+      }
+
+      if (cancelled) return;
 
       try {
         const viewport = page.getViewport({ scale });
 
         const canvas = canvasRef.current;
+        if (!canvas) return;
         const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
         canvas.width = Math.floor(viewport.width * dpr);
         canvas.height = Math.floor(viewport.height * dpr);
@@ -47,16 +65,34 @@ export const PdfPageView: React.FC<PdfPageViewProps> = ({
         if (!ctx) return;
         ctx.scale(dpr, dpr);
 
-        await page.render({
+        if (cancelled) return;
+
+        const renderTask = page.render({
           canvasContext: ctx,
           viewport,
-        }).promise;
-      } catch (e) {
-        console.error(`[PdfPageView] Error rendering page ${pageNumber}:`, e);
+        });
+        currentRenderTaskRef.current = renderTask;
+
+        await renderTask.promise;
+      } catch (e: any) {
+        if (e?.name !== 'RenderingCancelledException') {
+          console.error(`[PdfPageView] Error rendering page ${pageNumber}:`, e);
+        }
+      } finally {
+        if (currentRenderTaskRef.current) {
+          currentRenderTaskRef.current = null;
+        }
       }
     };
 
     renderPage();
+
+    return () => {
+      cancelled = true;
+      if (currentRenderTaskRef.current) {
+        currentRenderTaskRef.current.cancel();
+      }
+    };
   }, [page, pageNumber, scale]);
 
   const handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {

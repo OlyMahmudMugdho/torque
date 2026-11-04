@@ -488,6 +488,7 @@ export function compileLatexNative(request: ServerCompileRequest): ServerCompile
       synctexFlag,
       '-interaction=nonstopmode',
       '-file-line-error',
+      '-g',
       cleanEntry,
     ];
 

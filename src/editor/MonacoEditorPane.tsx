@@ -19,6 +19,7 @@ export interface MonacoEditorPaneProps {
 
 export interface MonacoEditorHandle {
   revealInEditor: (target: { file: string; line: number }) => void;
+  getEditorValue?: () => string | undefined;
 }
 
 export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEditorPaneProps>(
@@ -47,7 +48,12 @@ export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEdito
       if (
         reason?.type === 'cancelation' ||
         reason?.message === 'operation is manually canceled' ||
-        reason?.msg === 'operation is manually canceled'
+        reason?.msg === 'operation is manually canceled' ||
+        reason?.name === 'RenderingCancelledException' ||
+        (typeof reason === 'string' &&
+          (reason.includes('operation is manually canceled') ||
+            reason.includes('cancelation') ||
+            reason.includes('RenderingCancelledException')))
       ) {
         e.preventDefault();
       }
@@ -87,11 +93,19 @@ export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEdito
 
     // Ctrl+Enter / Cmd+Enter for compile
     editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.Enter, () => {
+      const val = editor.getValue();
+      if (typeof val === 'string') {
+        onContentChange(val);
+      }
       onCompileShortcut();
     });
 
     // Shift+F10 (IntelliJ shortcut for Run)
     editor.addCommand(m.KeyMod.Shift | m.KeyCode.F10, () => {
+      const val = editor.getValue();
+      if (typeof val === 'string') {
+        onContentChange(val);
+      }
       onCompileShortcut();
     });
   };
@@ -116,6 +130,9 @@ export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEdito
         endColumn: model.getLineLength(lineNo) + 1,
       };
       editor.setSelection(range);
+    },
+    getEditorValue: () => {
+      return editorRef.current?.getValue();
     },
   }));
 

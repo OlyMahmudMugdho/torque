@@ -455,6 +455,7 @@ export function compileProject(request) {
       synctexFlag,
       '-interaction=nonstopmode',
       '-file-line-error',
+      '-g',
       cleanEntry,
     ];
 

@@ -506,11 +506,8 @@ pub fn tauri_compile_latex_internal(
             .arg(synctex_flag)
             .arg("-interaction=nonstopmode")
             .arg("-file-line-error")
-            .arg("-recorder");
-
-        if pass > 1 {
-            cmd.arg("-g");
-        }
+            .arg("-recorder")
+            .arg("-g");
 
         cmd.arg(&clean_entry);
 

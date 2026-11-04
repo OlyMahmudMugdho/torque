@@ -168,6 +168,12 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
 
   const handleCompile = async () => {
     try {
+      if (monacoRef.current?.getEditorValue && workspace.activeFilePath) {
+        const val = monacoRef.current.getEditorValue();
+        if (typeof val === 'string') {
+          await workspace.updateActiveFileContent(val);
+        }
+      }
       await workspace.actions.compile();
     } catch {
       setLogsOpen(true);

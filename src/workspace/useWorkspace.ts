@@ -65,6 +65,8 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [activeFilePath, setActiveFilePath] = useState<string>('main.tex');
+  const activeFilePathRef = useRef<string>(activeFilePath);
+  activeFilePathRef.current = activeFilePath;
   const [openTabs, setOpenTabs] = useState<string[]>(['main.tex']);
   const [compileStatus, setCompileStatus] = useState<CompileStatus>('idle');
   const [lastResult, setLastResult] = useState<CompileResult | null>(null);
@@ -234,22 +236,40 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
     async (path: string, content: string) => {
       if (!activeProjectRef.current) return;
       const norm = normalizeFilePath(path);
+      let found = false;
+      const updated = filesRef.current.map((f) => {
+        if (f.path === norm) {
+          found = true;
+          return { ...f, content, updatedAt: Date.now() };
+        }
+        return f;
+      });
+      const finalFiles = found
+        ? updated
+        : [
+            ...updated,
+            {
+              projectId: activeProjectRef.current.id,
+              path: norm,
+              content,
+              isBinary: false,
+              updatedAt: Date.now(),
+            },
+          ];
+      filesRef.current = finalFiles;
+      setFiles(finalFiles);
       await storeRef.current.putFile(activeProjectRef.current.id, norm, content, false);
-      const updated = filesRef.current.map((f) =>
-        f.path === norm ? { ...f, content, updatedAt: Date.now() } : f
-      );
-      filesRef.current = updated;
-      setFiles(updated);
     },
     []
   );
 
   const updateActiveFileContent = useCallback(
     async (content: string) => {
-      if (!activeFilePath) return;
-      await updateFileContent(activeFilePath, content);
+      const target = activeFilePathRef.current;
+      if (!target) return;
+      await updateFileContent(target, content);
     },
-    [activeFilePath, updateFileContent]
+    [updateFileContent]
   );
 
   const renameFilePath = useCallback(
@@ -318,7 +338,28 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
 
       try {
         const entry = activeProjectRef.current.rootEntry || 'main.tex';
-        const result = await compilerRef.current.compile(filesRef.current, entry, {
+        let filesToCompile = [...filesRef.current];
+        try {
+          const storedFiles = await storeRef.current.listFiles(activeProjectRef.current.id);
+          if (storedFiles && storedFiles.length > 0) {
+            const map = new Map<string, ProjectFile>();
+            for (const f of storedFiles) {
+              map.set(f.path, f);
+            }
+            for (const f of filesRef.current) {
+              const stored = map.get(f.path);
+              if (!stored || (f.updatedAt || 0) >= (stored.updatedAt || 0)) {
+                map.set(f.path, f);
+              }
+            }
+            filesToCompile = Array.from(map.values());
+            filesRef.current = filesToCompile;
+          }
+        } catch {
+          // Fall back to filesRef.current
+        }
+
+        const result = await compilerRef.current.compile(filesToCompile, entry, {
           engine: engineToUse,
           projectId: activeProjectRef.current.id,
           synctex: true,
@@ -381,12 +422,29 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
       setFileContent: async (path: string, content: string) => {
         if (!activeProjectRef.current) throw new Error('No active project');
         const norm = normalizeFilePath(path);
+        let found = false;
+        const updated = filesRef.current.map((f) => {
+          if (f.path === norm) {
+            found = true;
+            return { ...f, content, updatedAt: Date.now() };
+          }
+          return f;
+        });
+        const finalFiles = found
+          ? updated
+          : [
+              ...updated,
+              {
+                projectId: activeProjectRef.current.id,
+                path: norm,
+                content,
+                isBinary: false,
+                updatedAt: Date.now(),
+              },
+            ];
+        filesRef.current = finalFiles;
+        setFiles(finalFiles);
         await storeRef.current.putFile(activeProjectRef.current.id, norm, content, false);
-        const updated = filesRef.current.map((f) =>
-          f.path === norm ? { ...f, content, updatedAt: Date.now() } : f
-        );
-        filesRef.current = updated;
-        setFiles(updated);
       },
       applyDiff: async (path: string, original: string, modified: string) => {
         if (!activeProjectRef.current) throw new Error('No active project');

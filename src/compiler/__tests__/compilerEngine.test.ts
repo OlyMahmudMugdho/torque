@@ -53,6 +53,7 @@ describe('compilerEngine', () => {
       'graphics.cfg',
       'color.sty',
       'color.cfg',
+      'dvipsnam.def',
       'xcolor.sty',
       'xetex.def',
       'trig.sty',
@@ -129,6 +130,7 @@ describe('compilerEngine', () => {
 \\usepackage[margin=1in]{geometry}
 \\usepackage{amsmath,amssymb}
 \\usepackage{graphicx}
+\\usepackage[dvipsnames]{xcolor}
 \\usepackage{multicol}
 \\begin{document}
 Test math: $E = mc^2$

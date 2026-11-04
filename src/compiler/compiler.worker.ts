@@ -3,6 +3,8 @@ import type { CompileWorkerRequest, CompileWorkerResponse } from './compilerProt
 import type { Diagnostic, CompileStatus } from '../types/workspace';
 import { getPackageFile, ALLOWED_EXTENSIONS } from '../storage/packageCache';
 import { downloadSingleFile } from '../packages/packageDownloader';
+import { decompressGzip } from './synctexParser';
+import { parser as syncTexJsParser } from 'synctex-js';
 
 let wasmModulePromise: Promise<WebAssembly.Module> | null = null;
 let currentEngine: TexEngine | null = null;
@@ -13,8 +15,8 @@ let bundleManifest: Set<string> | null = null;
 export const cachedBundleFiles = new Map<string, Uint8Array>();
 export const pendingDownloads = new Map<string, Promise<Uint8Array | null>>();
 export const failedDownloads = new Set<string>();
-export const JIT_DOWNLOAD_EXTENSIONS = ['.sty'] as const;
-export const JIT_PACKAGE_FILENAME_REGEX = /^[a-zA-Z0-9_-]+\.sty$/i;
+export const JIT_DOWNLOAD_EXTENSIONS = ['.sty', '.cls', '.def', '.fd', '.tfm'] as const;
+export const JIT_PACKAGE_FILENAME_REGEX = /^[a-zA-Z0-9_-]+\.(?:sty|cls|def|fd|tfm)$/i;
 
 export function clearWorkerCache(): void {
   cachedBundleFiles.clear();
@@ -28,6 +30,37 @@ export function setBundleManifest(manifest: Set<string> | null): void {
 
 let stderrLogs: string[] = [];
 let stdoutLogs: string[] = [];
+
+function parseSyncTexWithLibrary(rawText: string, fallbackFile: string) {
+  const parsed = syncTexJsParser.parseSyncTex(rawText);
+  const files = new Map<number, string>();
+  for (const [tag, file] of Object.entries(parsed.files)) {
+    files.set(Number(tag), file.name === 'texput' ? fallbackFile : file.name);
+  }
+
+  const blocks = [];
+  for (const lines of Object.values(parsed.blockNumberLine)) {
+    for (const [lineNumber, pages] of Object.entries(lines)) {
+      for (const [pageNumber, elements] of Object.entries(pages)) {
+        for (const element of elements) {
+          blocks.push({
+            file: element.file?.name === 'texput' || !element.file?.name
+              ? fallbackFile
+              : element.file.name,
+            line: element.line || Number(lineNumber),
+            x: element.left,
+            y: element.bottom,
+            width: element.width ?? 0,
+            height: element.height ?? 0,
+            page: element.page || Number(pageNumber),
+          });
+        }
+      }
+    }
+  }
+
+  return { files, blocks };
+}
 
 export const CORE_BUNDLE_FILES = [
   // Core format & document classes
@@ -56,6 +89,7 @@ export const CORE_BUNDLE_FILES = [
   'graphics.cfg',
   'color.sty',
   'color.cfg',
+  'dvipsnam.def',
   'xcolor.sty',
   'xetex.def',
   'mathcolor.ltx',
@@ -500,12 +534,145 @@ export function resolveCandidateBundleName(
 
 const DISALLOWED_EXTENSIONS = /\.(exe|dll|so|dylib|sh|bat|cmd|bin|js|mjs|cjs|html|htm|php|py)$/i;
 
+/** Font file extensions that may be uploaded alongside packages and resolved by the compiler. */
+const FONT_FILE_EXTENSIONS = ['.otf', '.ttf', '.pfb', '.pfa', '.ttc', '.dfont', '.enc', '.map', '.vf'] as const;
+
+/**
+ * Compatibility stubs for packages that use engine primitives incompatible
+ * with the client-side WebAssembly TeX engine.
+ *
+ * fontawesome5-utex-helper.sty calls \tex_XeTeXcountglyphs:D at package load
+ * time (via __fontawesome_analyze_font:nn), which causes a WASM memory access
+ * trap. This stub provides the same icon commands using TeX-native font
+ * switching (\usefont + \char) instead of XeTeX glyph introspection.
+ */
+const COMPAT_STUBS: Record<string, string> = {
+  'fontawesome5-utex-helper.sty': [
+    '% fontawesome5-utex-helper.sty — WASM-compatible stub',
+    '% Provides fontawesome5 icon support without XeTeX glyph introspection',
+    '% primitives (\tex_XeTeXcountglyphs:D) that trap in WebAssembly.',
+    '\\ProvidesExplPackage{fontawesome5-utex-helper}{2022/05/02}{5.15.4}{WASM-compatible stub}',
+    '\\RequirePackage{expl3}',
+    '',
+    '% Define the icon slot macro before loading the mapping (mirrors generic-helper)',
+    '\\cs_new_protected:Nn \\__fontawesome_def_icon:nnnnn {',
+    '  \\tl_if_empty:nF { #1 } {',
+    '    \\cs_new_protected:Npn #1 { \\faPreselectedIcon { #2 } }',
+    '  }',
+    '  \\tl_const:cn { c__fontawesome_slot_#2_tl } { { #3 } { #4 } }',
+    '}',
+    '',
+    '% Load icon-to-glyph mapping from the uploaded package files',
+    '\\file_input:n{fontawesome5-mapping.def}',
+    '',
+    '% Icon command using TeX-native font switching (no XeTeX primitives)',
+    '\\cs_new_protected:Nn \\__fontawesome_icon_at:nnnn {',
+    '  {',
+    '    \\usefont { U } { fontawesome#1 } { #3 } { n }',
+    '    \\unless \\iffontchar \\font #2',
+    '      \\fontseries { solid } \\selectfont',
+    '      \\iffontchar \\font #2',
+    '        \\msg_warning:nnxx { fontawesome5 } { style-substitution } { #4 } { #3 }',
+    '      \\else',
+    '        \\msg_error:nnxx { fontawesome5 } { icon-not-found } { #4 } { #3 }',
+    '      \\fi',
+    '    \\fi',
+    '    \\char #2',
+    '  }',
+    '}',
+    '\\cs_new_protected:Nn \\fontawesome_use_icon:nn {',
+    '  \\cs_if_exist:cTF { c__fontawesome_slot_#2_tl } {',
+    '    \\bool_if:NTF \\c__fontawesome_fixed_bool {',
+    '      \\makebox [ 1.5em ] [ c ]',
+    '    } {',
+    '      \\use:n',
+    '    }',
+    '    {',
+    '      \\exp_last_unbraced:Nv',
+    '        \\__fontawesome_icon_at:nnnn',
+    '        { c__fontawesome_slot_#2_tl }',
+    '          { #1 } { #2 }',
+    '    }',
+    '  } {',
+    '    \\msg_error:nnxx { fontawesome5 } { icon-not-found } { #2 } { #1 }',
+    '  }',
+    '}',
+  ].join('\n'),
+};
+
+/**
+ * Tries to find an uploaded font file in the persistent package cache by
+ * basename. This handles uploaded package zips where font files were stored
+ * by basename (e.g. "FontAwesome5Free-Regular-400.otf") but the engine may
+ * request them either by basename or with their original subdirectory path
+ * (e.g. "opentype/FontAwesome5Free-Regular-400.otf").
+ */
+async function resolveUploadedFontFromCache(
+  requestedName: string
+): Promise<{ resolvedName: string; data: Uint8Array } | null> {
+  const basename = requestedName.split('/').pop()!;
+  if (!basename) return null;
+
+  const lower = basename.toLowerCase();
+
+  // Determine if this could be a font file: either it has a known font
+  // extension, or it has no extension (a bare font name from a .fd file
+  // declaration, e.g. "fa5free0solid").
+  const hasFontExt = FONT_FILE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+  const noExtension = !basename.includes('.');
+  if (!hasFontExt && !noExtension) return null;
+
+  // Try exact basename first (e.g. "FontAwesome5Free-Regular-400.otf")
+  try {
+    const cached = await getPackageFile(basename);
+    if (cached) {
+      return { resolvedName: basename, data: cached };
+    }
+  } catch {
+    // Fall through
+  }
+
+  // If the requested name has no extension (e.g. "fa5free0solid" from a .fd
+  // font shape declaration), try appending known font extensions.
+  if (noExtension) {
+    for (const ext of ['.tfm', '.pfb', '.pfa', '.enc', '.map', '.vf', '.otf', '.ttf', '.ttc', '.dfont']) {
+      const candidate = basename + ext;
+      try {
+        const cached = await getPackageFile(candidate);
+        if (cached) {
+          return { resolvedName: candidate, data: cached };
+        }
+      } catch {
+        // Continue through extensions
+      }
+    }
+  }
+
+  return null;
+}
+
 export async function fetchBundleFile(
   name: string
 ): Promise<{ resolvedName: string; data: Uint8Array } | null> {
+  // Priority 0: Compatibility stubs for packages with engine-incompatible primitives
+  const stub = COMPAT_STUBS[name];
+  if (stub) {
+    const data = new TextEncoder().encode(stub);
+    cachedBundleFiles.set(name, data);
+    return { resolvedName: name, data };
+  }
+
   // Priority 1: Check in-memory cache cachedBundleFiles
   if (cachedBundleFiles.has(name)) {
     return { resolvedName: name, data: cachedBundleFiles.get(name)! };
+  }
+
+  // Priority 1b: Uploaded font files may have been stored by basename while
+  // the engine requests them with their original subdirectory path.
+  const uploadedFont = await resolveUploadedFontFromCache(name);
+  if (uploadedFont) {
+    cachedBundleFiles.set(name, uploadedFont.data);
+    return uploadedFont;
   }
 
   const resolvedName = resolveCandidateBundleName(name) || cleanCandidateName(name);
@@ -557,8 +724,8 @@ export async function fetchBundleFile(
     }
   }
 
-  // Priority 4 (JIT Download): If still not found and the file is an eligible package (.sty),
-  // invoke downloadSingleFile(resolvedName) with in-flight deduplication and short timeout.
+  // Priority 4 (JIT Download): If still not found and the file is an eligible
+  // TeX package asset, download it with in-flight deduplication.
   if (failedDownloads.has(resolvedName)) {
     return null;
   }
@@ -575,8 +742,11 @@ export async function fetchBundleFile(
     if (!downloadPromise) {
       downloadPromise = (async () => {
         try {
-          // Fast timeout (2000ms) during interactive compilation to prevent spinner hangs
-          const res = await downloadSingleFile(resolvedName, undefined, { timeoutMs: 2000 });
+          console.log(`[compiler.worker] Downloading missing package file: ${resolvedName}`);
+          const res = await downloadSingleFile(resolvedName, undefined, {
+            timeoutMs: 10000,
+            enableCtanApi: true,
+          });
           if (res && res.success && res.data) {
             return res.data;
           }
@@ -802,6 +972,9 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
     let engine = await getEngine();
     stderrLogs = [];
     stdoutLogs = [];
+    // A previous network failure must not prevent a later compile from retrying
+    // the package download.
+    failedDownloads.clear();
 
     // Clear auxiliary outputs from previous compilation jobs
     try {
@@ -831,13 +1004,12 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
 
     let compileRes = engine.compile({
       entry: req.entry,
-      synctex: false,
+      synctex: true,
     });
 
-    // Handle missing files on-demand if the compile failed or encountered recoverable missing file errors
+    // Resolve missing package files on-demand before returning any compile result.
     let passes = 0;
     while (
-      (compileRes.status === 'failed' || compileRes.status === 'errors') &&
       compileRes.missingFiles &&
       compileRes.missingFiles.length > 0 &&
       passes < 10
@@ -868,11 +1040,25 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
 
       compileRes = engine.compile({
         entry: req.entry,
-        synctex: false,
+        synctex: true,
       });
     }
 
     const durationMs = Math.round(performance.now() - start);
+
+    let syncTexIndex;
+    try {
+      const syncTexOutput = compileRes.outputs?.find((output) => output.kind === 'synctex');
+      const syncTexBytes = syncTexOutput ? engine.output(syncTexOutput.name) : undefined;
+      if (syncTexBytes && syncTexBytes.length > 0) {
+        const rawSyncTex = syncTexBytes[0] === 0x1f && syncTexBytes[1] === 0x8b
+          ? await decompressGzip(syncTexBytes)
+          : new TextDecoder().decode(syncTexBytes);
+        syncTexIndex = parseSyncTexWithLibrary(rawSyncTex, req.entry);
+      }
+    } catch (error) {
+      console.warn('[compiler.worker] Failed to parse SyncTeX output:', error);
+    }
 
     // Extract PDF output from engine if generated
     let pdfBytes: Uint8Array | null = null;
@@ -941,6 +1127,7 @@ self.addEventListener('message', async (event: MessageEvent<CompileWorkerRequest
         diagnostics,
         missingFiles: compileRes.missingFiles ?? [],
         durationMs,
+        syncTexIndex,
       },
     };
 

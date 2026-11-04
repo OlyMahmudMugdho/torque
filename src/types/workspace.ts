@@ -7,12 +7,28 @@ export interface Diagnostic {
   message: string;
 }
 
+export interface SyncTexBlock {
+  file: string;
+  line: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  page: number;
+}
+
+export interface SyncTexIndex {
+  files: Map<number, string>;
+  blocks: SyncTexBlock[];
+}
+
 export interface CompileResult {
   status: Exclude<CompileStatus, 'idle' | 'compiling'>;
   pdfBytes: Uint8Array | null;
   diagnostics: Diagnostic[];
   missingFiles: string[];
   durationMs: number;
+  syncTexIndex?: SyncTexIndex;
 }
 
 export interface Project {

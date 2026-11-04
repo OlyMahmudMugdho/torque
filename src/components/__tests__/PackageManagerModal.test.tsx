@@ -14,6 +14,7 @@ import {
 import { downloadPackage } from '../../packages/packageDownloader';
 import {
   clearPackageCache,
+  getPackageFile,
   savePackageFile,
 } from '../../storage/packageCache';
 
@@ -359,6 +360,27 @@ describe('PackageManagerModal', () => {
   });
 
   describe('CTAN Package Download and Persistent Cache Status', () => {
+    it('uploads local LaTeX package files into the persistent package cache', async () => {
+      renderModal();
+
+      const packageFile = new File(
+        ['\\ProvidesPackage{localdemo}\\n\\endinput\\n'],
+        'localdemo.sty',
+        { type: 'text/plain' }
+      );
+      Object.defineProperty(packageFile, 'arrayBuffer', {
+        value: async () => new TextEncoder().encode('\\ProvidesPackage{localdemo}\\n\\endinput\\n').buffer,
+      });
+      fireEvent.change(screen.getByTestId('package-upload-input'), {
+        target: { files: [packageFile] },
+      });
+
+      await waitFor(async () => {
+        expect(await getPackageFile('localdemo.sty')).not.toBeNull();
+      });
+      expect(screen.getByText(/uploaded 1 package file/i)).toBeInTheDocument();
+    });
+
     it('renders an active Download button and Available (CTAN) badge for uninstalled CTAN packages', () => {
       renderModal({ isOpen: true, initialSearchQuery: 'mathtools' });
 
@@ -387,7 +409,11 @@ describe('PackageManagerModal', () => {
       fireEvent.click(downloadBtn);
 
       // Verify downloadPackage was called with the package id
-      expect(downloadPackage).toHaveBeenCalledWith('mathtools', expect.any(Function));
+      expect(downloadPackage).toHaveBeenCalledWith(
+        'mathtools',
+        expect.any(Function),
+        { enableCtanApi: true }
+      );
 
       // Download button should now be disabled or showing downloading state
       expect(downloadBtn).toBeDisabled();

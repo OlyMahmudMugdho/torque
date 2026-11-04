@@ -63,7 +63,7 @@ describe('Release Workflow & Tauri Packaging Configuration', () => {
     const config = JSON.parse(fs.readFileSync(tauriConfPath, 'utf-8'));
     const bundle = config.bundle;
 
-    expect(bundle.category).toBe('Office');
+    expect(bundle.category).toBe('DeveloperTool');
     expect(bundle.shortDescription).toBeTruthy();
     expect(bundle.longDescription).toBeTruthy();
     expect(bundle.copyright).toBeTruthy();

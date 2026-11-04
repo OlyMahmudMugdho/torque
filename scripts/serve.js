@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { handleCtanRequest } from './ctanProxy.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,6 +12,7 @@ const PORT = process.env.PORT || 3000;
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json',
   '.wasm': 'application/wasm',
@@ -24,8 +26,11 @@ const MIME_TYPES = {
   '.woff2': 'font/woff2',
 };
 
-const server = http.createServer((req, res) => {
-  let reqPath = decodeURI(req.url.split('?')[0]);
+const server = http.createServer(async (req, res) => {
+  const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  if (await handleCtanRequest(req, res, requestUrl)) return;
+
+  let reqPath = decodeURI(requestUrl.pathname);
   if (reqPath === '/' || reqPath.endsWith('/')) {
     reqPath += 'index.html';
   }

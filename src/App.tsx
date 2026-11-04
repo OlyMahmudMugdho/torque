@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
 import { useWorkspace } from './workspace/useWorkspace';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ProjectTopBar } from './components/ProjectTopBar';
 import { FileTreeSidebar } from './components/FileTreeSidebar';
-import { MonacoEditorPane } from './editor/MonacoEditorPane';
+import { MonacoEditorPane, type MonacoEditorHandle } from './editor/MonacoEditorPane';
 import { PdfPreviewPane } from './components/PdfPreviewPane';
 import { DiagnosticsLogPanel } from './components/DiagnosticsLogPanel';
 import { WelcomeHomeScreen } from './components/WelcomeHomeScreen';
@@ -51,6 +51,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
   const [previewOpen, setPreviewOpen] = useState(true);
   const [isPackageManagerOpen, setPackageManagerOpen] = useState(false);
   const [packageManagerSearchQuery, setPackageManagerSearchQuery] = useState('');
+  const monacoRef = useRef<MonacoEditorHandle>(null);
 
   // Synchronize URL search params (?project=, ?id=, ?page=) on mount and popstate
   useEffect(() => {
@@ -172,6 +173,15 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
       setLogsOpen(true);
       if (!sidebarOpen) setSidebarOpen(true);
     }
+  };
+
+  const handleNavigateToSource = (target: { file: string; line: number }) => {
+    if (target.file) {
+      workspace.selectFile(target.file);
+    }
+    // Selecting another file updates Monaco on the next React render. Defer
+    // the reveal so the editor operates on the newly selected model.
+    window.setTimeout(() => monacoRef.current?.revealInEditor(target), 0);
   };
 
   const handleSelectDiagnostic = (d: Diagnostic) => {
@@ -510,6 +520,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
             {/* Center Panel: Full-height Editor without bottom dock */}
             <Panel defaultSize={previewOpen ? (sidebarOpen ? 43 : 55) : 100} minSize={25}>
               <MonacoEditorPane
+                ref={monacoRef}
                 files={workspace.files}
                 activeFilePath={workspace.activeFilePath}
                 rootEntry={workspace.activeProject?.rootEntry || 'main.tex'}
@@ -536,6 +547,8 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
                     compiling={workspace.compileStatus === 'compiling'}
                     projectName={workspace.activeProject?.name}
                     compileStatus={workspace.compileStatus}
+                    syncTexIndex={workspace.lastResult?.syncTexIndex}
+                    onNavigateToSource={handleNavigateToSource}
                   />
                 </Panel>
               </>

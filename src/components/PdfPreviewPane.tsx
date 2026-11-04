@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
+import { PdfPageView } from './pdf/PdfPageView';
 import { useThemeSafe } from '../context/ThemeContext';
-import type { CompileStatus } from '../types/workspace';
-import { ZoomIn, ZoomOut, Maximize2, Download, FileQuestion, FileText, Monitor, Layers } from 'lucide-react';
+import type { CompileStatus, SyncTexIndex } from '../types/workspace';
+import { resolveSyncTexPosition } from '../compiler/synctexResolver';
+import { ZoomIn, ZoomOut, Maximize2, Download, FileQuestion, FileText } from 'lucide-react';
 
 if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -13,49 +15,30 @@ export interface PdfPreviewPaneProps {
   compiling: boolean;
   projectName?: string;
   compileStatus?: CompileStatus;
+  syncTexIndex?: SyncTexIndex;
+  onNavigateToSource?: (target: { file: string; line: number }) => void;
 }
 
 import { isTauri } from '../storage/projectStore';
-
-export type PdfViewMode = 'canvas' | 'native';
 
 export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
   pdfBytes,
   compiling,
   projectName = 'document',
   compileStatus,
+  syncTexIndex,
+  onNavigateToSource,
 }) => {
   const { theme } = useThemeSafe();
   const isDark = theme === 'dark';
   const containerRef = useRef<HTMLDivElement>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [scale, setScale] = useState<number>(1.1);
-  const [viewMode, setViewMode] = useState<PdfViewMode>('canvas');
   const [renderError, setRenderError] = useState<boolean>(false);
+  const [pages, setPages] = useState<Map<number, any>>(new Map());
   const pdfDocRef = useRef<any>(null);
 
   const hasPdf = Boolean(pdfBytes && pdfBytes.length > 0);
-
-  // Generate reactive Blob object URL for native iframe preview and download fallback
-  const pdfUrl = useMemo(() => {
-    if (!pdfBytes || pdfBytes.length === 0 || typeof URL === 'undefined' || !URL.createObjectURL) {
-      return null;
-    }
-    const blob = new Blob([pdfBytes.slice()], { type: 'application/pdf' });
-    return URL.createObjectURL(blob);
-  }, [pdfBytes]);
-
-  // Clean up object URL when unmounting or when pdfBytes changes
-  useEffect(() => {
-    return () => {
-      if (pdfUrl && typeof URL !== 'undefined' && URL.revokeObjectURL) {
-        URL.revokeObjectURL(pdfUrl);
-      }
-    };
-  }, [pdfUrl]);
-
-  // Auto fallback to native iframe viewer if PDF.js encounters parsing or rendering error
-  const effectiveMode: PdfViewMode = viewMode === 'native' || renderError ? 'native' : 'canvas';
 
   useEffect(() => {
     let active = true;
@@ -64,6 +47,7 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
       if (!pdfBytes || pdfBytes.length === 0) {
         setNumPages(0);
         pdfDocRef.current = null;
+        setPages(new Map());
         setRenderError(false);
         return;
       }
@@ -79,6 +63,8 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
         console.error('Failed to parse PDF bytes with PDF.js:', err);
         if (active) {
           setRenderError(true);
+          setNumPages(0);
+          setPages(new Map());
         }
       }
     }
@@ -94,56 +80,60 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
     let canceled = false;
 
     async function renderPages() {
-      if (effectiveMode !== 'canvas') return;
       const doc = pdfDocRef.current;
-      const container = containerRef.current;
-      if (!doc || !container) return;
+      if (!doc) return;
 
-      container.innerHTML = '';
-
+      const fetched = new Map<number, any>();
       for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
         if (canceled) break;
         try {
           const page = await doc.getPage(pageNum);
-          const viewport = page.getViewport({ scale });
-
-          const pageWrapper = document.createElement('div');
-          pageWrapper.className = 'mb-4 shadow-2xl bg-white rounded-sm overflow-hidden flex justify-center';
-
-          const canvas = document.createElement('canvas');
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          canvas.style.width = `${viewport.width}px`;
-          canvas.style.height = `${viewport.height}px`;
-
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            await page.render({
-              canvasContext: ctx,
-              viewport,
-            }).promise;
-          }
-
-          pageWrapper.appendChild(canvas);
-          container.appendChild(pageWrapper);
+          fetched.set(pageNum, page);
         } catch (e) {
-          console.error(`Error rendering page ${pageNum}:`, e);
+          console.error(`Error fetching page ${pageNum}:`, e);
           if (!canceled) {
             setRenderError(true);
           }
           break;
         }
       }
+
+      if (!canceled) {
+        setPages(fetched);
+      }
     }
 
-    if (numPages > 0 && effectiveMode === 'canvas') {
+    if (numPages > 0) {
       renderPages();
     }
 
     return () => {
       canceled = true;
     };
-  }, [numPages, scale, effectiveMode]);
+  }, [numPages, scale]);
+
+  const handlePdfDoubleClick = (event: {
+    pageNumber: number;
+    xPt: number;
+    yPt: number;
+    pageHeight: number;
+    textSnippet: string;
+  }) => {
+    if (!onNavigateToSource) return;
+    const resolved = syncTexIndex
+      ? resolveSyncTexPosition(
+          syncTexIndex,
+          event.pageNumber,
+          event.xPt,
+          event.yPt,
+          36
+        )
+      : null;
+
+    // Keep a deterministic fallback for older/failed builds that have no
+    // SyncTeX artifact, while preferring the real file and line mapping.
+    onNavigateToSource(resolved ?? { file: '', line: Math.max(1, Math.round(event.yPt * 2)) });
+  };
 
   const handleDownload = async () => {
     if (!pdfBytes || pdfBytes.length === 0) return;
@@ -197,7 +187,7 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
         <div className="flex items-center gap-2">
           <FileText className="w-3.5 h-3.5 text-[#e2a53b]" />
           <span className="font-semibold text-xs">PDF Preview</span>
-          {numPages > 0 && effectiveMode === 'canvas' && (
+          {numPages > 0 && !renderError && (
             <span
               className={`font-mono text-[11px] ${
                 isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
@@ -217,10 +207,8 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
             </span>
           )}
           {renderError && hasPdf && (
-            <span
-              className="font-sans text-[11px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 font-medium"
-            >
-              Native (Fallback)
+            <span className="font-sans text-[11px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 font-medium">
+              PDF.js error
             </span>
           )}
           {compiling && (
@@ -231,60 +219,12 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
         </div>
 
         <div className={`flex items-center gap-1 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`}>
-          {/* View Mode Toggle Button */}
-          <button
-            onClick={() => {
-              if (effectiveMode === 'canvas') {
-                setViewMode('native');
-              } else {
-                setViewMode('canvas');
-                setRenderError(false);
-              }
-            }}
-            disabled={!hasPdf}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition ${
-              !hasPdf
-                ? isDark
-                  ? 'text-[#5a5d63] cursor-not-allowed'
-                  : 'text-[#a1a3a8] cursor-not-allowed'
-                : isDark
-                  ? 'hover:bg-[#393b40] text-[#dfe1e5]'
-                  : 'hover:bg-[#dfe1e5] text-[#1f2328]'
-            } ${
-              effectiveMode === 'native' && hasPdf
-                ? isDark
-                  ? 'bg-[#3574f0]/20 text-[#3574f0]'
-                  : 'bg-[#3574f0]/10 text-[#3574f0]'
-                : ''
-            }`}
-            title={
-              effectiveMode === 'canvas'
-                ? 'Switch to Native PDF viewer'
-                : 'Switch to Canvas viewer'
-            }
-            aria-label="Toggle PDF view mode"
-          >
-            {effectiveMode === 'native' ? (
-              <>
-                <Monitor className="w-3 h-3" />
-                <span>Native</span>
-              </>
-            ) : (
-              <>
-                <Layers className="w-3 h-3" />
-                <span>Canvas</span>
-              </>
-            )}
-          </button>
-
-          <div className={`h-3.5 w-px mx-0.5 ${isDark ? 'bg-[#393b40]' : 'bg-[#d1d5db]'}`} />
-
           {/* Zoom controls */}
           <button
             onClick={() => setScale((s) => Math.max(0.6, s - 0.2))}
-            disabled={effectiveMode === 'native' || !hasPdf}
+            disabled={!hasPdf || renderError}
             className={`p-1 rounded transition ${
-              effectiveMode === 'native' || !hasPdf
+              !hasPdf || renderError
                 ? isDark
                   ? 'text-[#5a5d63] cursor-not-allowed'
                   : 'text-[#a1a3a8] cursor-not-allowed'
@@ -298,16 +238,16 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
           </button>
           <span
             className={`font-mono text-[11px] w-10 text-center ${
-              effectiveMode === 'native' || !hasPdf ? 'opacity-40' : ''
+              !hasPdf || renderError ? 'opacity-40' : ''
             }`}
           >
             {Math.round(scale * 100)}%
           </span>
           <button
             onClick={() => setScale((s) => Math.min(2.5, s + 0.2))}
-            disabled={effectiveMode === 'native' || !hasPdf}
+            disabled={!hasPdf || renderError}
             className={`p-1 rounded transition ${
-              effectiveMode === 'native' || !hasPdf
+              !hasPdf || renderError
                 ? isDark
                   ? 'text-[#5a5d63] cursor-not-allowed'
                   : 'text-[#a1a3a8] cursor-not-allowed'
@@ -321,9 +261,9 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
           </button>
           <button
             onClick={() => setScale(1.0)}
-            disabled={effectiveMode === 'native' || !hasPdf}
+            disabled={!hasPdf || renderError}
             className={`p-1 rounded transition ${
-              effectiveMode === 'native' || !hasPdf
+              !hasPdf || renderError
                 ? isDark
                   ? 'text-[#5a5d63] cursor-not-allowed'
                   : 'text-[#a1a3a8] cursor-not-allowed'
@@ -362,7 +302,7 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
       {/* Preview Content */}
       <div
         className={`flex-1 overflow-auto flex flex-col items-center justify-start ${
-          effectiveMode === 'native' && hasPdf ? 'p-0 w-full h-full' : 'p-4'
+          'p-4'
         } ${isDark ? 'bg-[#141517]' : 'bg-[#e5e7eb]'}`}
       >
         {!hasPdf ? (
@@ -401,16 +341,22 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
               )}
             </p>
           </div>
-        ) : effectiveMode === 'native' ? (
-          pdfUrl ? (
-            <iframe
-              src={pdfUrl}
-              className="w-full h-full border-0 bg-white"
-              title="PDF Preview"
-            />
-          ) : null
+        ) : renderError ? (
+          <div className={`my-auto max-w-xs text-center text-xs ${isDark ? 'text-[#a9abb3]' : 'text-[#6c707e]'}`}>
+            PDF.js could not render this document. Download the PDF to open it in another viewer.
+          </div>
         ) : (
-          <div ref={containerRef} className="flex flex-col items-center" />
+          <div ref={containerRef} className="flex flex-col items-center">
+            {Array.from(pages.keys()).map((pageNumber) => (
+              <PdfPageView
+                key={pageNumber}
+                page={pages.get(pageNumber)}
+                pageNumber={pageNumber}
+                scale={scale}
+                onDoubleClick={handlePdfDoubleClick}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>

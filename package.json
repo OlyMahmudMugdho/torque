@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev.js",
     "build": "next build",
     "start": "node scripts/serve.js",
     "test": "vitest run",
@@ -22,7 +22,8 @@
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-resizable-panels": "^2.1.7"
+    "react-resizable-panels": "^2.1.7",
+    "synctex-js": "^1.0.0"
   },
   "devDependencies": {
     "@tauri-apps/api": "^2.12.4",

@@ -4,6 +4,7 @@ import {
   type PackageCache,
 } from '../storage/packageCache';
 import { DEFAULT_PACKAGE_CATALOG } from './packageCatalog';
+import JSZip from 'jszip';
 
 export interface DownloadFileOptions {
   timeoutMs?: number;
@@ -13,11 +14,108 @@ export interface DownloadFileOptions {
     getPackageFile?: (filename: string) => Promise<Uint8Array | null>;
     isPackageFileCached?: (filename: string) => Promise<boolean>;
   };
-  customMirrors?: string[];
   skipIfCached?: boolean;
+  /** Use CTAN's official JSON catalogue after direct mirror lookup. */
+  enableCtanApi?: boolean;
 }
 
 export interface DownloadPackageOptions extends DownloadFileOptions {}
+
+const CTAN_API_BASE = 'https://www.ctan.org';
+
+function getCtanProxyBase(): string {
+  // The development proxy runs beside Next on port 8787. The production
+  // static server routes /api/ctan itself, so it remains same-origin.
+  if (typeof window !== 'undefined' && window.location.port === '3000') {
+    return `${window.location.protocol}//${window.location.hostname}:8787`;
+  }
+  return '';
+}
+
+function getCtanApiUrl(path: string): string {
+  return `${getCtanProxyBase()}${path}`;
+}
+
+function getCtanDownloadUrl(url: string): string {
+  const proxyBase = getCtanProxyBase();
+  if (proxyBase) {
+    return `${proxyBase}/api/ctan/download?url=${encodeURIComponent(url)}`;
+  }
+  // Fall back to direct CTAN URL when the development proxy is not running
+  // (e.g. production static export, or proxy server not started).
+  return url;
+}
+
+export interface CtanSearchHit {
+  title: string;
+  path: string;
+  text: string | null;
+}
+
+export interface CtanSearchResponse {
+  numberOfHits: number;
+  hits: CtanSearchHit[];
+}
+
+export interface CtanPackageMetadata {
+  id: string;
+  name: string;
+  ctan?: { path: string; file?: boolean };
+  install?: { path: string };
+  texlive?: string | { location: string };
+}
+
+/** Query CTAN's official package search endpoint. */
+export async function searchCtanPackages(
+  phrase: string,
+  fetchFn: typeof fetch = globalThis.fetch
+): Promise<CtanSearchHit[]> {
+  const query = phrase.trim();
+  if (!query) return [];
+  const path = `/api/ctan/search?phrase=${encodeURIComponent(query)}&max=32&ext=true&PKG=true`;
+  const url = typeof window === 'undefined'
+    ? `${CTAN_API_BASE}/search/json?phrase=${encodeURIComponent(query)}&max=32&ext=true&PKG=true`
+    : getCtanApiUrl(path);
+  const response = await fetchFn(url);
+  if (!response.ok) throw new Error(`CTAN search failed with HTTP ${response.status}`);
+  const body = (await response.json()) as CtanSearchResponse;
+  return Array.isArray(body.hits) ? body.hits : [];
+}
+
+/** Query metadata for a specific CTAN package. */
+export async function getCtanPackageMetadata(
+  packageId: string,
+  fetchFn: typeof fetch = globalThis.fetch
+): Promise<CtanPackageMetadata | null> {
+  const id = packageId.trim().toLowerCase();
+  if (!id) return null;
+  const officialUrl = `${CTAN_API_BASE}/json/3.0/pkg/${encodeURIComponent(id)}`;
+  const url = typeof window === 'undefined'
+    ? officialUrl
+    : getCtanApiUrl(`/api/ctan/package/${encodeURIComponent(id)}`);
+  const response = await fetchFn(url);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`CTAN metadata lookup failed with HTTP ${response.status}`);
+  return (await response.json()) as CtanPackageMetadata;
+}
+
+function resolveOfficialCtanUrls(metadata: CtanPackageMetadata, filename: string): string[] {
+  const ctanPath = metadata.ctan?.path?.replace(/\/$/, '');
+  if (!ctanPath) return [];
+  return [
+    `https://mirrors.ctan.org${ctanPath}/${encodeURIComponent(filename)}`,
+    `https://www.ctan.org/tex-archive${ctanPath}/${encodeURIComponent(filename)}`,
+    ...(metadata.ctan?.file ? [`https://mirrors.ctan.org${ctanPath}.zip`] : []),
+  ];
+}
+
+async function extractPackageFile(archive: Uint8Array, filename: string): Promise<Uint8Array | null> {
+  const zip = await JSZip.loadAsync(archive);
+  const match = Object.values(zip.files).find((entry) =>
+    !entry.dir && entry.name.split('/').pop()?.toLowerCase() === filename.toLowerCase()
+  );
+  return match ? new Uint8Array(await match.async('uint8array')) : null;
+}
 
 export interface ContentValidationResult {
   valid: boolean;
@@ -77,22 +175,14 @@ export function inferPackageId(filename: string): string {
  */
 export function resolveCtanUrls(
   filename: string,
-  packageId?: string,
-  customMirrors?: string[]
+  packageId?: string
 ): string[] {
   const sanitizedFilename = sanitizePackageFilename(filename);
   const pkgId = (packageId || inferPackageId(sanitizedFilename)).trim().toLowerCase();
 
-  if (customMirrors && customMirrors.length > 0) {
-    return customMirrors.map((m) =>
-      m.replace(/\$\{packageId\}/g, pkgId).replace(/\$\{filename\}/g, sanitizedFilename)
-    );
-  }
-
   return [
     `https://mirrors.ctan.org/macros/latex/contrib/${pkgId}/${sanitizedFilename}`,
-    `https://raw.githubusercontent.com/texlive/texlive/trunk/Master/texmf-dist/tex/latex/${pkgId}/${sanitizedFilename}`,
-    `https://ctan.math.washington.edu/tex-archive/macros/latex/contrib/${pkgId}/${sanitizedFilename}`,
+    `https://www.ctan.org/tex-archive/macros/latex/contrib/${pkgId}/${sanitizedFilename}`,
   ];
 }
 
@@ -113,7 +203,7 @@ export async function downloadSingleFile(
   }
 
   const pkgId = (packageId || inferPackageId(sanitizedFilename)).trim().toLowerCase();
-  const urls = resolveCtanUrls(sanitizedFilename, pkgId, options?.customMirrors);
+  const urls = resolveCtanUrls(sanitizedFilename, pkgId);
   const fetchFn = options?.fetchFn ?? globalThis.fetch;
   const timeoutMs = options?.timeoutMs ?? 3000;
   const cache = options?.packageCache ?? defaultPackageCache;
@@ -132,7 +222,7 @@ export async function downloadSingleFile(
     const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
     try {
-      const resp = await fetchFn(url, {
+      const resp = await fetchFn(getCtanDownloadUrl(url), {
         signal: controller ? controller.signal : undefined,
       });
 
@@ -169,6 +259,37 @@ export async function downloadSingleFile(
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
+    }
+  }
+
+  // The filename-based mirror paths above are only guesses. When enabled,
+  // resolve the package's authoritative CTAN path before giving up.
+  if (options?.enableCtanApi) {
+    try {
+      const metadata = await getCtanPackageMetadata(pkgId, fetchFn);
+      if (metadata) {
+        for (const url of resolveOfficialCtanUrls(metadata, sanitizedFilename)) {
+          try {
+            // CTAN downloads from the browser must pass through our backend;
+            // direct CTAN URLs are not consistently CORS-enabled.
+            const response = await fetchFn(getCtanDownloadUrl(url));
+            if (!response.ok) continue;
+            const contentType = response.headers?.get('content-type')?.toLowerCase();
+            if (contentType?.includes('text/html')) continue;
+            const payload = new Uint8Array(await response.arrayBuffer());
+            const data = url.endsWith('.zip')
+              ? await extractPackageFile(payload, sanitizedFilename)
+              : payload;
+            if (!data || !isValidPackageContent(data).valid) continue;
+            await cache.savePackageFile(sanitizedFilename, data, pkgId);
+            return { success: true, data };
+          } catch {
+            // Continue through the official CTAN URLs.
+          }
+        }
+      }
+    } catch (error: any) {
+      lastError = error?.message || 'CTAN API lookup failed';
     }
   }
 

@@ -33,8 +33,7 @@ describe('resolveCtanUrls', () => {
     const urls = resolveCtanUrls('physics.sty', 'physics');
     expect(urls).toEqual([
       'https://mirrors.ctan.org/macros/latex/contrib/physics/physics.sty',
-      'https://raw.githubusercontent.com/texlive/texlive/trunk/Master/texmf-dist/tex/latex/physics/physics.sty',
-      'https://ctan.math.washington.edu/tex-archive/macros/latex/contrib/physics/physics.sty',
+      'https://www.ctan.org/tex-archive/macros/latex/contrib/physics/physics.sty',
     ]);
   });
 
@@ -42,20 +41,13 @@ describe('resolveCtanUrls', () => {
     const urls = resolveCtanUrls('mathtools.sty');
     expect(urls).toEqual([
       'https://mirrors.ctan.org/macros/latex/contrib/mathtools/mathtools.sty',
-      'https://raw.githubusercontent.com/texlive/texlive/trunk/Master/texmf-dist/tex/latex/mathtools/mathtools.sty',
-      'https://ctan.math.washington.edu/tex-archive/macros/latex/contrib/mathtools/mathtools.sty',
+      'https://www.ctan.org/tex-archive/macros/latex/contrib/mathtools/mathtools.sty',
     ]);
   });
 
   it('sanitizes filename to prevent directory traversal', () => {
     const urls = resolveCtanUrls('../../../physics.sty', 'physics');
     expect(urls[0]).toBe('https://mirrors.ctan.org/macros/latex/contrib/physics/physics.sty');
-  });
-
-  it('supports custom mirrors if provided', () => {
-    const custom = ['https://my-custom-mirror.example.com/${packageId}/${filename}'];
-    const urls = resolveCtanUrls('physics.sty', 'physics', custom);
-    expect(urls).toEqual(['https://my-custom-mirror.example.com/physics/physics.sty']);
   });
 
   it('throws on invalid package extensions', () => {
@@ -217,7 +209,7 @@ describe('downloadSingleFile', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/failed/i);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
     const cached = await mockCache.getPackageFile('nonexistent.sty');
     expect(cached).toBeNull();

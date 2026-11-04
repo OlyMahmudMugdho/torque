@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useImperativeHandle, useRef } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
 import type { ProjectFile, Diagnostic } from '../types/workspace';
 import { useThemeSafe } from '../context/ThemeContext';
@@ -17,17 +17,25 @@ export interface MonacoEditorPaneProps {
   onCompileShortcut: () => void;
 }
 
-export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
-  files,
-  activeFilePath,
-  rootEntry,
-  openTabs,
-  diagnostics,
-  onSelectTab,
-  onCloseTab,
-  onContentChange,
-  onCompileShortcut,
-}) => {
+export interface MonacoEditorHandle {
+  revealInEditor: (target: { file: string; line: number }) => void;
+}
+
+export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEditorPaneProps>(
+  (
+    {
+      files,
+      activeFilePath,
+      rootEntry,
+      openTabs,
+      diagnostics,
+      onSelectTab,
+      onCloseTab,
+      onContentChange,
+      onCompileShortcut,
+    },
+    ref
+  ) => {
   const { theme } = useThemeSafe();
   const isDark = theme === 'dark';
   const monaco = useMonaco();
@@ -72,6 +80,27 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
   };
 
   const pathParts = activeFilePath.split('/');
+
+  useImperativeHandle(ref, () => ({
+    revealInEditor: (target: { file: string; line: number }) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      const model = editor.getModel();
+      if (!model) return;
+      const lineNo = Math.max(1, Math.min(model.getLineCount(), target.line || 1));
+      const position = { lineNumber: lineNo, column: 1 };
+      editor.setPosition(position);
+      editor.revealLineInCenter(lineNo);
+      editor.focus();
+      const range = {
+        startLineNumber: lineNo,
+        startColumn: 1,
+        endLineNumber: lineNo,
+        endColumn: model.getLineLength(lineNo) + 1,
+      };
+      editor.setSelection(range);
+    },
+  }));
 
   return (
     <div
@@ -211,4 +240,5 @@ export const MonacoEditorPane: React.FC<MonacoEditorPaneProps> = ({
       </div>
     </div>
   );
-};
+
+});

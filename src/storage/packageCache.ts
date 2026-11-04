@@ -5,7 +5,16 @@ import {
   type TauriInvokeFn,
 } from './tauriStorage';
 
-export const ALLOWED_EXTENSIONS = ['.sty', '.cls', '.def', '.fd', '.tfm', '.tex'] as const;
+export const ALLOWED_EXTENSIONS = [
+  '.sty', '.cls', '.def', '.fd', '.tfm', '.tex',
+  // Documented source (.dtx) and installation scripts (.ins) distributed
+  // by packages such as ragged2e that ship source rather than compiled .sty.
+  '.dtx', '.ins',
+  // Font files (uploaded alongside packages, e.g. fontawesome5 .ttf assets)
+  '.otf', '.ttf', '.pfb', '.pfa', '.ttc', '.dfont',
+  // Font support files (encoding, map, etc.)
+  '.enc', '.map', '.vf',
+] as const;
 
 /**
  * Sanitizes a LaTeX package filename:

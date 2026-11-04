@@ -10,15 +10,19 @@ export interface PdfPageViewProps {
   page: PDFPageProxy;
   pageNumber: number;
   scale: number;
-  searchQuery?: string;
-  onDoubleClick?: (event: { pageNumber: number; xPt: number; yPt: number; textSnippet: string }) => void;
+  onDoubleClick?: (event: {
+    pageNumber: number;
+    xPt: number;
+    yPt: number;
+    pageHeight: number;
+    textSnippet: string;
+  }) => void;
 }
 
 export const PdfPageView: React.FC<PdfPageViewProps> = ({
   page,
   pageNumber,
   scale,
-  searchQuery,
   onDoubleClick,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -26,8 +30,6 @@ export const PdfPageView: React.FC<PdfPageViewProps> = ({
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let cancelled = false;
-
     const renderPage = async () => {
       if (!canvasRef.current || !textLayerRef.current || !wrapperRef.current) return;
 
@@ -55,25 +57,30 @@ export const PdfPageView: React.FC<PdfPageViewProps> = ({
     };
 
     renderPage();
-
-    return () => {
-      cancelled = true;
-    };
   }, [page, pageNumber, scale]);
 
   const handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!onDoubleClick || !textLayerRef.current) return;
 
     const rect = textLayerRef.current.getBoundingClientRect();
-    const xPt = (e.clientX - rect.left) / scale;
-    const yPt = (e.clientY - rect.top) / scale;
+    const viewport = page.getViewport({ scale });
+    const viewportX = e.clientX - rect.left;
+    const viewportY = e.clientY - rect.top;
+    const pageHeight = page.getViewport({ scale: 1 }).height;
+    const [pdfX, pdfY] = typeof viewport.convertToPdfPoint === 'function'
+      ? viewport.convertToPdfPoint(viewportX, viewportY)
+      : [viewportX / scale, pageHeight - viewportY / scale];
+    // SyncTeX is top-left-origin; PDF.js PDF coordinates are bottom-left.
+    const xPt = pdfX;
+    const yPt = pageHeight - pdfY;
 
-    onDoubleClick({ pageNumber, xPt, yPt, textSnippet: '' });
+    onDoubleClick({ pageNumber, xPt, yPt, pageHeight, textSnippet: '' });
   };
 
   return (
     <div
       ref={wrapperRef}
+      data-testid={`pdf-page-${pageNumber}`}
       className="mb-4 shadow-2xl bg-white rounded-sm overflow-hidden flex justify-center relative"
       onDoubleClick={handleDoubleClick}
       style={{ cursor: 'crosshair' }}

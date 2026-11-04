@@ -1,9 +1,9 @@
 pub mod storage;
 
 use storage::{
-  get_torque_dir, tauri_clear_package_cache, tauri_delete_project, tauri_get_package_file,
-  tauri_list_package_files, tauri_list_projects, tauri_load_project, tauri_save_package_file,
-  tauri_save_project,
+  get_torque_dir, save_file, tauri_clear_package_cache, tauri_delete_project,
+  tauri_get_package_file, tauri_list_package_files, tauri_list_projects, tauri_load_project,
+  tauri_save_package_file, tauri_save_project,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -21,6 +21,7 @@ pub fn run() {
     })
     .invoke_handler(tauri::generate_handler![
       get_torque_dir,
+      save_file,
       tauri_list_projects,
       tauri_save_project,
       tauri_load_project,

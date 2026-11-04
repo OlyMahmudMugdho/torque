@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "torque",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.torque.editor",
   "build": {
     "frontendDist": "../out",
@@ -46,7 +46,7 @@
     },
     "shortDescription": "Torque - Native TeX Live LaTeX IDE",
     "category": "DeveloperTool",
-    "longDescription": "Torque is an open-source LaTeX IDE featuring IntelliJ IDEA aesthetics, native host TeX Live execution (latexmk/xelatex/pdflatex/lualatex), automated CTAN package resolution, and native Tauri desktop support.",
+    "longDescription": "Torque is an open-source LaTeX IDE featuring native host TeX Live execution, automated CTAN package resolution, and native Tauri desktop support.",
     "copyright": "Copyright © 2026 Torque Contributors",
     "linux": {
       "deb": {

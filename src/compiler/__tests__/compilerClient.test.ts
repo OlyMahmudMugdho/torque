@@ -126,4 +126,98 @@ describe('CompilerClient', () => {
     expect(result.diagnostics[0].message).toMatch(/Compilation timed out/i);
     expect(client.isCompiling()).toBe(false);
   });
+
+  describe('with CompilerDriver implementation', () => {
+    it('compiles via custom CompilerDriver and maps status and PDF bytes', async () => {
+      const mockDriver = {
+        detectEnvironment: async () => ({
+          available: true,
+          latexmk: true,
+          pdflatex: true,
+          xelatex: false,
+          lualatex: false,
+          texhash: true,
+          synctex: true,
+          version: 'pdfTeX 1.40',
+        }),
+        compile: async () => ({
+          status: 'spotless' as const,
+          pdfBytes: new Uint8Array([37, 80, 68, 70]),
+          synctexBytes: null,
+          diagnostics: [],
+          missingFiles: [],
+          resolvedPackages: ['graphicx'],
+          durationMs: 88,
+          stdout: 'ok',
+          stderr: '',
+        }),
+      };
+
+      const client = new CompilerClient(mockDriver);
+      const res = await client.compile([{ path: 'main.tex', content: 'Hello' }], 'main.tex');
+
+      expect(res.status).toBe('spotless');
+      expect(res.pdfBytes).toEqual(new Uint8Array([37, 80, 68, 70]));
+      expect(res.durationMs).toBe(88);
+      expect(client.isCompiling()).toBe(false);
+    });
+
+    it('decompresses and parses SyncTeX data if synctexBytes is returned', async () => {
+      const synctexText = `SyncTeX Version:1\nInput:1:main.tex\n{1\n[1,1:0,0:100,100:0\nh 1,1:655360,1310720\n}\n`;
+      const synctexBytes = new TextEncoder().encode(synctexText);
+
+      const mockDriver = {
+        detectEnvironment: async () => ({
+          available: true,
+          latexmk: true,
+          pdflatex: true,
+          xelatex: false,
+          lualatex: false,
+          texhash: true,
+          synctex: true,
+          version: 'pdfTeX 1.40',
+        }),
+        compile: async () => ({
+          status: 'spotless' as const,
+          pdfBytes: new Uint8Array([37, 80, 68, 70]),
+          synctexBytes,
+          diagnostics: [],
+          missingFiles: [],
+          resolvedPackages: [],
+          durationMs: 50,
+          stdout: '',
+          stderr: '',
+        }),
+      };
+
+      const client = new CompilerClient(mockDriver);
+      const res = await client.compile([{ path: 'main.tex', content: 'Hello' }], 'main.tex');
+
+      expect(res.status).toBe('spotless');
+      expect(res.syncTexIndex).toBeDefined();
+      expect(res.syncTexIndex?.blocks.length).toBeGreaterThan(0);
+    });
+
+    it('handles compilation timeout with CompilerDriver', async () => {
+      const slowDriver = {
+        detectEnvironment: async () => ({
+          available: true,
+          latexmk: true,
+          pdflatex: true,
+          xelatex: false,
+          lualatex: false,
+          texhash: false,
+          synctex: false,
+        }),
+        compile: async () => new Promise<any>(() => {}), // never resolves
+      };
+
+      const client = new CompilerClient(slowDriver, { timeoutMs: 40 });
+      const res = await client.compile([{ path: 'main.tex', content: 'Test' }], 'main.tex');
+
+      expect(res.status).toBe('failed');
+      expect(res.diagnostics[0].message).toMatch(/Compilation timed out/i);
+      expect(client.isCompiling()).toBe(false);
+    });
+  });
 });

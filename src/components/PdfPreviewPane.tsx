@@ -206,11 +206,6 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
               Warnings
             </span>
           )}
-          {compileStatus === 'errors' && hasPdf && (
-            <span className="font-sans text-[11px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 font-medium">
-              Built with Warnings
-            </span>
-          )}
           {renderError && hasPdf && (
             <span className="font-sans text-[11px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 font-medium">
               PDF.js error

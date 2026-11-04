@@ -194,7 +194,7 @@ describe('Workspace UI Components', () => {
         onCompile={vi.fn()}
       />
     );
-    expect(screen.getByText('Built with Warnings')).toBeInTheDocument();
+    expect(screen.queryByText('Built with Warnings')).not.toBeInTheDocument();
 
     rerender(
       <ProjectTopBar
@@ -225,30 +225,6 @@ describe('Workspace UI Components', () => {
 
     fireEvent.click(item);
     expect(onSelect).toHaveBeenCalledWith(diagnostics[0]);
-  });
-
-  it('renders quick-fix action button for missing package and triggers onQuickFixMissingPackage', () => {
-    const onQuickFix = vi.fn();
-    const onSelect = vi.fn();
-    const diagnostics: Diagnostic[] = [
-      { severity: 'error', file: 'main.tex', line: 5, message: "LaTeX Error: File 'tcolorbox.sty' not found." },
-    ];
-
-    render(
-      <DiagnosticsLogPanel
-        diagnostics={diagnostics}
-        onSelectDiagnostic={onSelect}
-        onQuickFixMissingPackage={onQuickFix}
-      />
-    );
-
-    const quickFixBtn = screen.getByRole('button', { name: /install package "tcolorbox"/i });
-    expect(quickFixBtn).toBeInTheDocument();
-
-    fireEvent.click(quickFixBtn);
-    expect(onQuickFix).toHaveBeenCalledWith('tcolorbox');
-    // Ensure clicking quick-fix button does not trigger selectDiagnostic due to stopPropagation
-    expect(onSelect).not.toHaveBeenCalled();
   });
 
   describe('extractMissingPackageName helper', () => {
@@ -319,7 +295,7 @@ describe('Workspace UI Components', () => {
     });
     expect(screen.queryByText(/no pdf compiled/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/build failed/i)).not.toBeInTheDocument();
-    expect(screen.getByText('Built with Warnings')).toBeInTheDocument();
+    expect(screen.queryByText('Built with Warnings')).not.toBeInTheDocument();
   });
 
   it('clones pdfBytes buffer when loading in pdfjs to prevent detachment of original buffer', async () => {
@@ -528,7 +504,7 @@ describe('Workspace UI Components', () => {
     expect(onNewFile).toHaveBeenCalledTimes(1);
   });
 
-  it('toggles theme between dark and light mode via ProjectTopBar theme button', () => {
+  it('does not render direct theme toggle button in ProjectTopBar and toggles theme via View menu', () => {
     render(
       <ThemeProvider defaultTheme="dark">
         <ProjectTopBar
@@ -546,14 +522,16 @@ describe('Workspace UI Components', () => {
       </ThemeProvider>
     );
 
-    const toggleBtn = screen.getByRole('button', { name: /toggle theme/i });
-    expect(toggleBtn).toBeInTheDocument();
+    const toggleBtn = screen.queryByRole('button', { name: /toggle theme/i });
+    expect(toggleBtn).not.toBeInTheDocument();
     expect(document.documentElement.classList.contains('dark')).toBe(true);
 
-    fireEvent.click(toggleBtn);
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+    fireEvent.click(screen.getByText('Light Mode'));
     expect(document.documentElement.classList.contains('light')).toBe(true);
 
-    fireEvent.click(toggleBtn);
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+    fireEvent.click(screen.getByText('Dark Mode'));
     expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
 
@@ -678,120 +656,6 @@ describe('Workspace UI Components', () => {
     });
     expect(mockWorkspaceState.selectProject).toHaveBeenCalledWith('p1');
     expect(screen.queryByText('Welcome to Torque', { selector: 'h1' })).not.toBeInTheDocument();
-  });
-
-  it('WorkspaceUI: opens LaTeX Package Manager modal from left activity stripe icon', () => {
-    render(
-      <ThemeProvider>
-        <WorkspaceUI />
-      </ThemeProvider>
-    );
-
-    const pkgBtn = screen.getByRole('button', { name: 'LaTeX Packages' });
-    expect(pkgBtn).toBeInTheDocument();
-
-    fireEvent.click(pkgBtn);
-
-    expect(screen.getByText('LaTeX Package Manager')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/search packages/i)).toBeInTheDocument();
-  });
-
-  it('WorkspaceUI: opens LaTeX Package Manager modal from Tools menu in TopMenuBar', () => {
-    render(
-      <ThemeProvider>
-        <WorkspaceUI />
-      </ThemeProvider>
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Tools' }));
-    fireEvent.click(screen.getByText('LaTeX Package Manager...'));
-
-    expect(screen.getByText('LaTeX Package Manager')).toBeInTheDocument();
-  });
-
-  it('WorkspaceUI: toggles LaTeX Package Manager modal via keyboard shortcut Shift+Alt+P', () => {
-    render(
-      <ThemeProvider>
-        <WorkspaceUI />
-      </ThemeProvider>
-    );
-
-    expect(screen.queryByText('LaTeX Package Manager')).not.toBeInTheDocument();
-
-    fireEvent.keyDown(window, { key: 'p', shiftKey: true, altKey: true });
-    expect(screen.getByText('LaTeX Package Manager')).toBeInTheDocument();
-
-    fireEvent.keyDown(window, { key: 'p', shiftKey: true, altKey: true });
-    expect(screen.queryByText('LaTeX Package Manager')).not.toBeInTheDocument();
-  });
-
-  it('WorkspaceUI: missing package diagnostic displays quick-fix button and opens modal pre-populated with package name', () => {
-    mockWorkspaceState.lastResult = {
-      status: 'failed',
-      diagnostics: [
-        {
-          severity: 'error',
-          file: 'main.tex',
-          line: 12,
-          message: "LaTeX Error: File 'mathtools.sty' not found.",
-        },
-      ],
-      pdfBytes: null,
-      missingFiles: [],
-      durationMs: 45,
-    };
-
-    render(
-      <ThemeProvider>
-        <WorkspaceUI />
-      </ThemeProvider>
-    );
-
-    const quickFixBtn = screen.getByRole('button', { name: /install package "mathtools"/i });
-    expect(quickFixBtn).toBeInTheDocument();
-
-    fireEvent.click(quickFixBtn);
-
-    expect(screen.getByText('LaTeX Package Manager')).toBeInTheDocument();
-    const searchInput = screen.getByPlaceholderText(/search packages/i) as HTMLInputElement;
-    expect(searchInput.value).toBe('mathtools');
-  });
-
-  it('WorkspaceUI: inserting a package updates file content via workspace.updateFileContent', () => {
-    mockWorkspaceState.files = [
-      {
-        projectId: 'p1',
-        path: 'main.tex',
-        content: '\\documentclass{article}\n\\begin{document}\nHello world\n\\end{document}',
-        isBinary: false,
-        updatedAt: 1,
-      },
-    ];
-    mockWorkspaceState.activeFilePath = 'main.tex';
-
-    render(
-      <ThemeProvider>
-        <WorkspaceUI />
-      </ThemeProvider>
-    );
-
-    // Open Package Manager
-    fireEvent.click(screen.getByRole('button', { name: 'LaTeX Packages' }));
-    expect(screen.getByText('LaTeX Package Manager')).toBeInTheDocument();
-
-    // Select amsmath from catalog list and click Insert \usepackage
-    const amsmathItem = screen.getByRole('button', { name: /amsmath/i });
-    fireEvent.click(amsmathItem);
-
-    const insertBtn = screen.getByRole('button', { name: /insert \\usepackage/i });
-    fireEvent.click(insertBtn);
-
-    expect(mockWorkspaceState.updateFileContent).toHaveBeenCalledWith(
-      'main.tex',
-      '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nHello world\n\\end{document}'
-    );
-    // Modal should close upon insertion
-    expect(screen.queryByText('LaTeX Package Manager')).not.toBeInTheDocument();
   });
 
   it('renders TeX Engine selector and triggers engine selection', () => {

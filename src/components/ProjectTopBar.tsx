@@ -15,8 +15,6 @@ import {
   Edit2,
   ChevronDown,
   Check,
-  Sun,
-  Moon,
   Package,
 } from 'lucide-react';
 
@@ -40,6 +38,8 @@ export interface ProjectTopBarProps {
   onExportZip: () => Promise<void>;
   onImportZip: (file: File) => Promise<void>;
   onCompile: () => Promise<void>;
+  onSave?: () => void;
+  onOpenSettings?: () => void;
   onCloseProject?: () => void;
   onNewFile?: () => void;
   onToggleSidebar?: () => void;
@@ -49,7 +49,6 @@ export interface ProjectTopBarProps {
   onRedo?: () => void;
   onShortcuts?: () => void;
   onAbout?: () => void;
-  onOpenPackageManager?: () => void;
 }
 
 export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
@@ -68,6 +67,8 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
   onExportZip,
   onImportZip,
   onCompile,
+  onSave,
+  onOpenSettings,
   onCloseProject,
   onNewFile,
   onToggleSidebar,
@@ -77,9 +78,8 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
   onRedo,
   onShortcuts,
   onAbout,
-  onOpenPackageManager,
 }) => {
-  const { theme, toggleTheme } = useThemeSafe();
+  const { theme } = useThemeSafe();
   const isDark = theme === 'dark';
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
@@ -156,6 +156,8 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
           onExportZip={onExportZip}
           onCloseProject={onCloseProject}
           onCompile={onCompile}
+          onSave={onSave}
+          onOpenSettings={onOpenSettings}
           onToggleSidebar={onToggleSidebar}
           onToggleProblems={onToggleProblems}
           onTogglePreview={onTogglePreview}
@@ -163,7 +165,6 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
           onRedo={onRedo}
           onShortcuts={onShortcuts}
           onAbout={onAbout}
-          onOpenPackageManager={onOpenPackageManager}
           selectedEngine={selectedEngine}
           onSelectEngine={onSelectEngine}
           className="border-b-0 h-8 px-0"
@@ -405,11 +406,6 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
             Build Failed
           </span>
         )}
-        {compileStatus === 'errors' && (
-          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#e2a53b]/20 text-[#e2a53b] font-medium border border-[#e2a53b]/40">
-            Built with Warnings
-          </span>
-        )}
         {compileStatus === 'warnings' && (
           <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#e2a53b]/20 text-[#e2a53b] font-medium border border-[#e2a53b]/40">
             Warnings
@@ -422,27 +418,8 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
         )}
       </div>
 
-      {/* Right: Theme Toggle & Actions */}
+      {/* Right: Actions */}
       <div className="flex items-center gap-1.5 shrink-0">
-        {/* Quick Theme Toggle Button */}
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className={`p-1.5 rounded transition ${
-            isDark
-              ? 'text-[#dfe1e5] hover:bg-[#393b40]'
-              : 'text-[#1f2328] hover:bg-[#dfe1e5]'
-          }`}
-          title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          aria-label="Toggle theme"
-        >
-          {isDark ? (
-            <Sun className="w-3.5 h-3.5 text-[#e2a53b]" />
-          ) : (
-            <Moon className="w-3.5 h-3.5 text-[#3574f0]" />
-          )}
-        </button>
-
         <button
           onClick={onExportZip}
           className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition ${

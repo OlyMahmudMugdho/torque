@@ -11,10 +11,9 @@ import { PdfPreviewPane } from './components/PdfPreviewPane';
 import { DiagnosticsLogPanel } from './components/DiagnosticsLogPanel';
 import { WelcomeHomeScreen } from './components/WelcomeHomeScreen';
 import { TexSetupGuide } from './components/TexSetupGuide';
-import { PackageManagerModal } from './components/PackageManagerModal';
-import { insertPackageDeclaration } from './packages/packageManager';
+import { SettingsModal } from './components/SettingsModal';
 import type { Diagnostic } from './types/workspace';
-import { Folder, Terminal, Settings, GitBranch, CheckCircle2, Sun, Moon, Package } from 'lucide-react';
+import { Folder, Terminal, Settings, GitBranch, CheckCircle2, Package } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -32,7 +31,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
   projectId: propProjectId,
 }) => {
   const workspace = useWorkspace();
-  const { theme, toggleTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const isDark = theme === 'dark';
 
   const [welcomeTab, setWelcomeTab] = useState<'projects' | 'customize'>('projects');
@@ -52,8 +51,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
   const [createRequest, setCreateRequest] = useState<{ kind: "file" | "folder"; nonce: number } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(true);
   const [dismissedSetupResult, setDismissedSetupResult] = useState<unknown>(null);
-  const [isPackageManagerOpen, setPackageManagerOpen] = useState(false);
-  const [packageManagerSearchQuery, setPackageManagerSearchQuery] = useState('');
+  const [isSettingsOpen, setSettingsOpen] = useState(false);
   const monacoRef = useRef<MonacoEditorHandle>(null);
 
   // Synchronize URL search params (?project=, ?id=, ?page=) on mount and popstate
@@ -103,21 +101,6 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, [workspace.selectProject]);
-
-  // Keyboard shortcut listener for LaTeX Package Manager (Shift+Alt+P or Ctrl+Alt+P)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        (e.shiftKey && e.altKey && e.key.toLowerCase() === 'p') ||
-        (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'p')
-      ) {
-        e.preventDefault();
-        setPackageManagerOpen((prev) => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   // Expose WorkspaceActions for automation
   useEffect(() => {
@@ -210,42 +193,6 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
     if (d.file) {
       workspace.selectFile(d.file);
     }
-  };
-
-  const handleOpenPackageManager = (query = '') => {
-    setPackageManagerSearchQuery(query);
-    setPackageManagerOpen(true);
-  };
-
-  const handleClosePackageManager = () => {
-    setPackageManagerOpen(false);
-    setPackageManagerSearchQuery('');
-  };
-
-  const handleInsertPackage = async (packageName: string) => {
-    const rootEntry = workspace.activeProject?.rootEntry || 'main.tex';
-    let targetPath = workspace.activeFilePath || rootEntry;
-    if (!targetPath.endsWith('.tex')) {
-      targetPath = rootEntry;
-    }
-
-    const targetFile = workspace.files.find((f) => f.path === targetPath);
-    const currentContent = typeof targetFile?.content === 'string'
-      ? targetFile.content
-      : targetFile?.content
-        ? new TextDecoder().decode(targetFile.content)
-        : '';
-
-    const updatedContent = insertPackageDeclaration(currentContent, packageName);
-    if (workspace.updateFileContent) {
-      await workspace.updateFileContent(targetPath, updatedContent);
-    } else {
-      await workspace.updateActiveFileContent(updatedContent);
-    }
-  };
-
-  const handleQuickFixMissingPackage = (packageName: string) => {
-    handleOpenPackageManager(packageName);
   };
 
   if (!workspace.ready) {
@@ -388,7 +335,6 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         onAbout={() => {
           alert('Torque LaTeX Editor\nHigh-Performance LaTeX IDE with Native TeX Live & Auto-Package Resolution');
         }}
-        onOpenPackageManager={() => handleOpenPackageManager('')}
       />
 
       {/* Main Area: Activity Bar + Resizable Workspace */}
@@ -419,24 +365,6 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
               <Folder className="w-4 h-4" />
             </button>
 
-            {/* LaTeX Package Manager button */}
-            <button
-              onClick={() => handleOpenPackageManager('')}
-              className={`p-2 rounded transition ${
-                isPackageManagerOpen
-                  ? isDark
-                    ? 'text-[#3574f0] bg-[#1e1f22]'
-                    : 'text-[#3574f0] bg-[#ffffff]'
-                  : isDark
-                    ? 'text-[#868a91] hover:bg-[#393b40]'
-                    : 'text-[#6c707e] hover:bg-[#dfe1e5]'
-              }`}
-              title="LaTeX Packages (Shift+Alt+P)"
-              aria-label="LaTeX Packages"
-            >
-              <Package className="w-4 h-4" />
-            </button>
-
             {/* Problems button - only show when diagnostics exist */}
             {hasProblems && (
               <button
@@ -464,22 +392,6 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
 
           <div className="flex flex-col items-center gap-2">
             <button
-              onClick={toggleTheme}
-              className={`p-2 rounded transition ${
-                isDark
-                  ? 'hover:text-[#dfe1e5] hover:bg-[#393b40]'
-                  : 'hover:text-[#1f2328] hover:bg-[#dfe1e5]'
-              }`}
-              title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              aria-label="Toggle Theme"
-            >
-              {isDark ? (
-                <Sun className="w-4 h-4 text-[#e2a53b]" />
-              ) : (
-                <Moon className="w-4 h-4 text-[#3574f0]" />
-              )}
-            </button>
-            <button
               className={`p-2 rounded transition ${
                 isDark
                   ? 'hover:text-[#dfe1e5] hover:bg-[#393b40]'
@@ -499,7 +411,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
             {/* Left Panel: Sidebar containing File Explorer + Problems Panel at bottom (only when problems exist) */}
             {sidebarOpen && (
               <>
-                <Panel defaultSize={22} minSize={14} maxSize={35}>
+                <Panel defaultSize={22} minSize={10} maxSize={50}>
                   <div className="w-full h-full flex flex-col overflow-hidden">
                     <div className="flex-1 overflow-hidden min-h-0">
                       <FileTreeSidebar
@@ -533,16 +445,16 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
                           onToggle={() => setLogsOpen(false)}
                           onClose={() => setLogsOpen(false)}
                           onSelectDiagnostic={handleSelectDiagnostic}
-                          onQuickFixMissingPackage={handleQuickFixMissingPackage}
                         />
                       </div>
                     )}
                   </div>
                 </Panel>
                 <PanelResizeHandle
-                  className={`w-1 hover:bg-[#3574f0] transition cursor-col-resize ${
-                    isDark ? 'bg-[#1e1f22]' : 'bg-[#d1d5db]'
+                  className={`w-1.5 hover:w-1.5 hover:bg-[#3574f0] active:bg-[#3574f0] transition-colors cursor-col-resize z-10 shrink-0 ${
+                    isDark ? 'bg-[#1e1f22] border-r border-[#2b2d30]' : 'bg-[#d1d5db] border-r border-[#c4c7c5]'
                   }`}
+                  aria-label="Resize sidebar"
                 />
               </>
             )}
@@ -567,9 +479,10 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
             {previewOpen && (
               <>
                 <PanelResizeHandle
-                  className={`w-1 hover:bg-[#3574f0] transition cursor-col-resize ${
-                    isDark ? 'bg-[#1e1f22]' : 'bg-[#d1d5db]'
+                  className={`w-1.5 hover:w-1.5 hover:bg-[#3574f0] active:bg-[#3574f0] transition-colors cursor-col-resize z-10 shrink-0 ${
+                    isDark ? 'bg-[#1e1f22] border-r border-[#2b2d30]' : 'bg-[#d1d5db] border-r border-[#c4c7c5]'
                   }`}
+                  aria-label="Resize sidebar"
                 />
                 <Panel defaultSize={sidebarOpen ? 35 : 45} minSize={25}>
                   <PdfPreviewPane
@@ -640,16 +553,6 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         onClose={() => setDismissedSetupResult(workspace.lastResult)}
         missingRequirements={missingRequirements}
       />
-
-      {/* IntelliJ LaTeX Package Manager Modal Dialog */}
-      {isPackageManagerOpen && (
-        <PackageManagerModal
-          isOpen={isPackageManagerOpen}
-          onClose={handleClosePackageManager}
-          onInsertPackage={handleInsertPackage}
-          initialSearchQuery={packageManagerSearchQuery}
-        />
-      )}
     </div>
   );
 };

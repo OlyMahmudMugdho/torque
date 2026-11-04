@@ -28,3 +28,36 @@ export const resolveSyncTexPosition = (
 
   return bestMatch ? { file: bestMatch.file, line: bestMatch.line } : null;
 };
+
+export const resolveSyncTexSource = (
+  index: SyncTexIndex,
+  file: string,
+  line: number
+): { page: number; x: number; y: number } | null => {
+  if (!index?.blocks || index.blocks.length === 0) return null;
+
+  const normalize = (f: string) => f.replace(/^\.\//, '').trim();
+  const targetNorm = normalize(file);
+
+  const fileBlocks = index.blocks.filter((b) => {
+    const bNorm = normalize(b.file);
+    return bNorm === targetNorm || bNorm.endsWith('/' + targetNorm) || targetNorm.endsWith('/' + bNorm);
+  });
+
+  const searchBlocks = fileBlocks.length > 0 ? fileBlocks : index.blocks;
+
+  let bestBlock: (typeof index.blocks)[0] | null = null;
+  let minDiff = Infinity;
+
+  for (const block of searchBlocks) {
+    const diff = Math.abs(block.line - line);
+    if (diff < minDiff) {
+      minDiff = diff;
+      bestBlock = block;
+      if (diff === 0) break;
+    }
+  }
+
+  if (!bestBlock) return null;
+  return { page: bestBlock.page, x: bestBlock.x, y: bestBlock.y };
+};

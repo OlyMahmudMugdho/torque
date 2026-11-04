@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import type { Project, ProjectFile, CompileStatus } from '../types/workspace';
+import type { Project, ProjectFile, CompileStatus, LatexEngine } from '../types/workspace';
 import { useThemeSafe } from '../context/ThemeContext';
 import { TopMenuBar } from './TopMenuBar';
 import { NewProjectModal } from './NewProjectModal';
@@ -17,6 +17,7 @@ import {
   Check,
   Sun,
   Moon,
+  Package,
 } from 'lucide-react';
 
 export interface ProjectTopBarProps {
@@ -24,6 +25,10 @@ export interface ProjectTopBarProps {
   activeProject: Project | null;
   compileStatus: CompileStatus;
   lastDurationMs?: number;
+  selectedEngine?: LatexEngine;
+  onSelectEngine?: (engine: LatexEngine) => void;
+  resolvingPackage?: string | null;
+  resolvedPackages?: string[];
   onSelectProject: (projectId: string) => Promise<void>;
   onCreateProject: (
     name: string,
@@ -52,6 +57,10 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
   activeProject,
   compileStatus,
   lastDurationMs,
+  selectedEngine = 'pdflatex',
+  onSelectEngine,
+  resolvingPackage,
+  resolvedPackages,
   onSelectProject,
   onCreateProject,
   onRenameProject,
@@ -73,6 +82,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
   const { theme, toggleTheme } = useThemeSafe();
   const isDark = theme === 'dark';
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -154,6 +164,8 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
           onShortcuts={onShortcuts}
           onAbout={onAbout}
           onOpenPackageManager={onOpenPackageManager}
+          selectedEngine={selectedEngine}
+          onSelectEngine={onSelectEngine}
           className="border-b-0 h-8 px-0"
         />
 
@@ -261,6 +273,71 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
             isDark ? 'bg-[#1e1f22] border-[#393b40]' : 'bg-[#ffffff] border-[#d1d5db]'
           }`}
         >
+          {/* Engine Selector Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setEngineDropdownOpen(!engineDropdownOpen)}
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono transition cursor-pointer ${
+                isDark
+                  ? 'hover:bg-[#2b2d30] text-[#dfe1e5]'
+                  : 'hover:bg-[#ebecf0] text-[#1f2328]'
+              }`}
+              title="Select TeX Engine"
+              aria-label="Select TeX Engine"
+            >
+              <span className="font-semibold">{selectedEngine}</span>
+              <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+            </button>
+
+            {engineDropdownOpen && (
+              <div
+                role="menu"
+                aria-label="TeX Engine menu"
+                className={`absolute left-0 top-full mt-1 w-44 border rounded shadow-2xl z-50 py-1 text-xs ${
+                  isDark
+                    ? 'bg-[#2b2d30] border-[#4e5157] text-[#dfe1e5]'
+                    : 'bg-[#ffffff] border-[#d1d5db] text-[#1f2328]'
+                }`}
+              >
+                <div
+                  className={`px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${
+                    isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
+                  }`}
+                >
+                  TeX Engine
+                </div>
+                {(['pdflatex', 'xelatex', 'lualatex'] as const).map((eng) => (
+                  <button
+                    key={eng}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onSelectEngine?.(eng);
+                      setEngineDropdownOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-left cursor-pointer transition-colors ${
+                      selectedEngine === eng
+                        ? isDark
+                          ? 'bg-[#3574f0]/20 text-white font-medium'
+                          : 'bg-[#3574f0]/10 text-[#1750eb] font-medium'
+                        : isDark
+                          ? 'hover:bg-[#393b40] text-[#dfe1e5]'
+                          : 'hover:bg-[#ebecf0] text-[#1f2328]'
+                    }`}
+                  >
+                    <span>latexmk ({eng})</span>
+                    {selectedEngine === eng && (
+                      <Check className="w-3 h-3 text-[#3574f0]" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className={`h-3 w-px ${isDark ? 'bg-[#393b40]' : 'bg-[#d1d5db]'}`} />
+
           <span
             className={`text-[11px] font-mono truncate max-w-[120px] ${
               isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
@@ -280,6 +357,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
                 : 'text-[#59a869] hover:bg-[#59a869]/20 hover:text-[#499c5a]'
             }`}
             title="Compile (Shift+F10 / Ctrl+Enter)"
+            aria-label="Compile"
           >
             {compileStatus === 'compiling' ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin text-[#3574f0]" />
@@ -288,6 +366,28 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
             )}
           </button>
         </div>
+
+        {/* Auto-Download / Package Resolution Status Pill */}
+        {resolvingPackage && (
+          <span
+            data-testid="status-resolving-package"
+            className="text-[11px] px-2 py-0.5 rounded bg-[#3574f0]/20 text-[#3574f0] font-medium border border-[#3574f0]/40 flex items-center gap-1.5 animate-pulse"
+          >
+            <Loader2 className="w-3 h-3 animate-spin" />
+            <span>Resolving package: {resolvingPackage}...</span>
+          </span>
+        )}
+
+        {!resolvingPackage && resolvedPackages && resolvedPackages.length > 0 && (
+          <span
+            data-testid="status-resolved-packages"
+            className="text-[11px] px-2 py-0.5 rounded bg-[#3574f0]/15 text-[#3574f0] font-medium border border-[#3574f0]/30 flex items-center gap-1.5"
+            title={`Downloaded: ${resolvedPackages.join(', ')}`}
+          >
+            <Package className="w-3 h-3 text-[#3574f0]" />
+            <span>Downloaded {resolvedPackages.join(', ')}</span>
+          </span>
+        )}
 
         {/* Status Pills */}
         {lastDurationMs !== undefined && (

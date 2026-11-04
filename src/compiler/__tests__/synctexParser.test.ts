@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSyncTex, resolveSyncTexPosition, decompressGzip } from '../synctexParser';
+import { parseSyncTex, resolveSyncTexPosition, resolveSyncTexSource, decompressGzip } from '../synctexParser';
 
 const SAMPLE_SYNCTEX = `Input:1:main.tex
 Input:2:chapters/intro.tex
@@ -48,6 +48,27 @@ describe('resolveSyncTexPosition', () => {
   it('returns null when no block matches', () => {
     const result = parseSyncTex(SAMPLE_SYNCTEX);
     const found = resolveSyncTexPosition(result, 99, 0, 0, 1);
+    expect(found).toBeNull();
+  });
+});
+
+describe('resolveSyncTexSource', () => {
+  it('finds corresponding PDF page for source file and line', () => {
+    const result = parseSyncTex(SAMPLE_SYNCTEX);
+    const found = resolveSyncTexSource(result, 'chapters/intro.tex', 10);
+    expect(found).not.toBeNull();
+    expect(found?.page).toBe(1);
+    expect(found?.x).toBeCloseTo(0);
+  });
+
+  it('matches closest line when exact line is not recorded', () => {
+    const result = parseSyncTex(SAMPLE_SYNCTEX);
+    const found = resolveSyncTexSource(result, 'chapters/intro.tex', 12);
+    expect(found?.page).toBe(1);
+  });
+
+  it('returns null when index is empty or has no matching blocks', () => {
+    const found = resolveSyncTexSource({ files: new Map(), blocks: [] }, 'main.tex', 1);
     expect(found).toBeNull();
   });
 });

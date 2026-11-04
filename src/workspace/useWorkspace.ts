@@ -5,15 +5,18 @@ import type {
   CompileStatus,
   CompileResult,
   WorkspaceActions,
+  LatexEngine,
 } from '../types/workspace';
 import { ProjectStore, normalizeFilePath } from '../storage/projectStore';
 import { CompilerClient } from '../compiler/compilerClient';
+import type { CompilerDriver } from '../compiler/compilerDriver';
 import { exportProjectZip, importProjectZip } from '../archive/zipArchive';
 import { applyTextDiff } from '../editor/latexLanguage';
 
 export interface UseWorkspaceOptions {
   store?: ProjectStore;
   compiler?: CompilerClient;
+  driver?: CompilerDriver;
 }
 
 export interface WorkspaceState {
@@ -25,6 +28,11 @@ export interface WorkspaceState {
   openTabs: string[];
   compileStatus: CompileStatus;
   lastResult: CompileResult | null;
+  selectedEngine: LatexEngine;
+  setSelectedEngine: (engine: LatexEngine) => void;
+  resolvingPackage: string | null;
+  resolvedPackages: string[];
+  clearResolvedPackages: () => void;
   selectProject: (projectId: string) => Promise<void>;
   createNewProject: (
     name: string,
@@ -48,7 +56,9 @@ export interface WorkspaceState {
 
 export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
   const storeRef = useRef<ProjectStore>(options?.store ?? new ProjectStore());
-  const compilerRef = useRef<CompilerClient>(options?.compiler ?? new CompilerClient());
+  const compilerRef = useRef<CompilerClient>(
+    options?.compiler ?? (options?.driver ? new CompilerClient(options.driver) : new CompilerClient())
+  );
 
   const [ready, setReady] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -58,6 +68,23 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
   const [openTabs, setOpenTabs] = useState<string[]>(['main.tex']);
   const [compileStatus, setCompileStatus] = useState<CompileStatus>('idle');
   const [lastResult, setLastResult] = useState<CompileResult | null>(null);
+
+  const [selectedEngine, setSelectedEngineState] = useState<LatexEngine>('pdflatex');
+  const selectedEngineRef = useRef<LatexEngine>(selectedEngine);
+  selectedEngineRef.current = selectedEngine;
+
+  const [resolvingPackage, setResolvingPackage] = useState<string | null>(null);
+  const [resolvedPackages, setResolvedPackages] = useState<string[]>([]);
+
+  const setSelectedEngine = useCallback((engine: LatexEngine) => {
+    selectedEngineRef.current = engine;
+    setSelectedEngineState(engine);
+  }, []);
+
+  const clearResolvedPackages = useCallback(() => {
+    setResolvedPackages([]);
+    setResolvingPackage(null);
+  }, []);
 
   // Keep a ref of files so actions always access up-to-date content
   const filesRef = useRef<ProjectFile[]>(files);
@@ -99,6 +126,9 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
         const root = current.rootEntry || 'main.tex';
         setActiveFilePath(root);
         setOpenTabs([root]);
+        if (current.engine) {
+          setSelectedEngine(current.engine);
+        }
         setReady(true);
       }
     }
@@ -108,7 +138,7 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [setSelectedEngine]);
 
   const selectProject = useCallback(
     async (projectId: string) => {
@@ -122,8 +152,13 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
       setOpenTabs([root]);
       setLastResult(null);
       setCompileStatus('idle');
+      setResolvingPackage(null);
+      setResolvedPackages([]);
+      if (p.engine) {
+        setSelectedEngine(p.engine);
+      }
     },
-    [projects]
+    [projects, setSelectedEngine]
   );
 
   const createNewProject = useCallback(
@@ -271,41 +306,68 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
     [refreshProjects, selectProject]
   );
 
-  const compileAction = useCallback(async (): Promise<CompileResult> => {
-    if (!activeProjectRef.current) {
-      throw new Error('No active project to compile');
-    }
-
-    setCompileStatus('compiling');
-    try {
-      const entry = activeProjectRef.current.rootEntry || 'main.tex';
-      const result = await compilerRef.current.compile(filesRef.current, entry);
-      // Ensure that if a PDF was produced, it is not marked as failed
-      if (result.status === 'failed' && result.pdfBytes) {
-        const hasErrors = result.diagnostics.some((d) => d.severity === 'error');
-        result.status = hasErrors ? 'errors' : 'warnings';
+  const compileAction = useCallback(
+    async (compileOpts?: { engine?: LatexEngine }): Promise<CompileResult> => {
+      if (!activeProjectRef.current) {
+        throw new Error('No active project to compile');
       }
-      setCompileStatus(result.status);
-      setLastResult(result);
-      return result;
-    } catch (err) {
-      setCompileStatus('failed');
-      const errRes: CompileResult = {
-        status: 'failed',
-        pdfBytes: null,
-        diagnostics: [
-          {
-            severity: 'error',
-            message: err instanceof Error ? err.message : String(err),
+
+      const engineToUse = compileOpts?.engine || selectedEngineRef.current || 'pdflatex';
+      setCompileStatus('compiling');
+      setResolvingPackage(null);
+
+      try {
+        const entry = activeProjectRef.current.rootEntry || 'main.tex';
+        const result = await compilerRef.current.compile(filesRef.current, entry, {
+          engine: engineToUse,
+          projectId: activeProjectRef.current.id,
+          synctex: true,
+          onProgress: (progress) => {
+            if (progress.stage === 'resolving') {
+              setResolvingPackage(progress.package || progress.message || 'Resolving package...');
+            } else {
+              setResolvingPackage(null);
+            }
           },
-        ],
-        missingFiles: [],
-        durationMs: 0,
-      };
-      setLastResult(errRes);
-      throw err;
-    }
-  }, []);
+        });
+
+        // Ensure that if a PDF was produced, it is not marked as failed
+        if (result.status === 'failed' && result.pdfBytes) {
+          const hasErrors = result.diagnostics.some((d) => d.severity === 'error');
+          result.status = hasErrors ? 'errors' : 'warnings';
+        }
+        setCompileStatus(result.status);
+        setLastResult(result);
+        setResolvingPackage(null);
+
+        if (result.resolvedPackages && result.resolvedPackages.length > 0) {
+          setResolvedPackages(result.resolvedPackages);
+        }
+
+        return result;
+      } catch (err) {
+        setCompileStatus('failed');
+        setResolvingPackage(null);
+        const errRes: CompileResult = {
+          status: 'failed',
+          pdfBytes: null,
+          diagnostics: [
+            {
+              severity: 'error',
+              message: err instanceof Error ? err.message : String(err),
+            },
+          ],
+          missingFiles: [],
+          durationMs: 0,
+          resolvedPackages: [],
+          engine: engineToUse,
+        };
+        setLastResult(errRes);
+        throw err;
+      }
+    },
+    []
+  );
 
   const actions = useMemo<WorkspaceActions>(() => {
     return {
@@ -355,6 +417,11 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
     openTabs,
     compileStatus,
     lastResult,
+    selectedEngine,
+    setSelectedEngine,
+    resolvingPackage,
+    resolvedPackages,
+    clearResolvedPackages,
     selectProject,
     createNewProject,
     renameActiveProject,

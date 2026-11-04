@@ -46,7 +46,91 @@ describe('useWorkspace', () => {
     expect(result.current.actions.getDiagnostics()).toHaveLength(1);
     expect(mockCompiler.compile).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ path: 'main.tex' })]),
-      'main.tex'
+      'main.tex',
+      expect.objectContaining({
+        engine: 'pdflatex',
+        synctex: true,
+      })
     );
+  });
+
+  it('supports selecting TeX engine and passing engine to compilation', async () => {
+    const store = new ProjectStore(`ws-test-eng-${crypto.randomUUID()}`);
+    const mockCompiler = {
+      isCompiling: () => false,
+      compile: vi.fn().mockResolvedValue({
+        status: 'spotless',
+        pdfBytes: new Uint8Array([1, 2, 3]),
+        diagnostics: [],
+        missingFiles: [],
+        resolvedPackages: ['tikz'],
+        durationMs: 40,
+      }),
+      dispose: vi.fn(),
+    } as unknown as CompilerClient;
+
+    const { result } = renderHook(() => useWorkspace({ store, compiler: mockCompiler }));
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.selectedEngine).toBe('pdflatex');
+
+    act(() => {
+      result.current.setSelectedEngine('xelatex');
+    });
+    expect(result.current.selectedEngine).toBe('xelatex');
+
+    await act(async () => {
+      await result.current.actions.compile();
+    });
+
+    expect(mockCompiler.compile).toHaveBeenCalledWith(
+      expect.any(Array),
+      'main.tex',
+      expect.objectContaining({
+        engine: 'xelatex',
+      })
+    );
+
+    // Verify resolved packages are stored in state
+    expect(result.current.resolvedPackages).toEqual(['tikz']);
+
+    act(() => {
+      result.current.clearResolvedPackages();
+    });
+    expect(result.current.resolvedPackages).toEqual([]);
+  });
+
+  it('wires into CompilerDriver via options.driver', async () => {
+    const store = new ProjectStore(`ws-test-drv-${crypto.randomUUID()}`);
+    const mockDriver = {
+      detectEnvironment: vi.fn().mockResolvedValue({ available: true, latexmk: true }),
+      compile: vi.fn().mockResolvedValue({
+        status: 'spotless',
+        pdfBytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+        synctexBytes: null,
+        diagnostics: [],
+        missingFiles: [],
+        resolvedPackages: ['amsmath'],
+        durationMs: 30,
+        stdout: '',
+        stderr: '',
+      }),
+    };
+
+    const { result } = renderHook(() => useWorkspace({ store, driver: mockDriver as any }));
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    await act(async () => {
+      await result.current.actions.compile();
+    });
+
+    expect(mockDriver.compile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entry: 'main.tex',
+        engine: 'pdflatex',
+      })
+    );
+    expect(result.current.resolvedPackages).toEqual(['amsmath']);
   });
 });

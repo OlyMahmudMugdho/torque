@@ -74,6 +74,11 @@ describe('Workspace UI Components', () => {
       openTabs: ['main.tex'],
       compileStatus: 'spotless',
       lastResult: null,
+      selectedEngine: 'pdflatex',
+      setSelectedEngine: vi.fn(),
+      resolvingPackage: null,
+      resolvedPackages: [],
+      clearResolvedPackages: vi.fn(),
       actions: { compile: vi.fn() },
       selectProject: vi.fn().mockResolvedValue(undefined),
       createNewProject: vi.fn().mockResolvedValue(sampleProject),
@@ -739,5 +744,78 @@ describe('Workspace UI Components', () => {
     );
     // Modal should close upon insertion
     expect(screen.queryByText('LaTeX Package Manager')).not.toBeInTheDocument();
+  });
+
+  it('renders TeX Engine selector and triggers engine selection', () => {
+    const onSelectEngine = vi.fn();
+    render(
+      <ProjectTopBar
+        projects={[sampleProject]}
+        activeProject={sampleProject}
+        compileStatus="spotless"
+        selectedEngine="pdflatex"
+        onSelectEngine={onSelectEngine}
+        onSelectProject={vi.fn()}
+        onCreateProject={vi.fn()}
+        onRenameProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onExportZip={vi.fn()}
+        onImportZip={vi.fn()}
+        onCompile={vi.fn()}
+      />
+    );
+
+    const engineButton = screen.getByRole('button', { name: /select tex engine/i });
+    expect(engineButton).toHaveTextContent('pdflatex');
+
+    fireEvent.click(engineButton);
+
+    const xelatexOption = screen.getByText('latexmk (xelatex)');
+    expect(xelatexOption).toBeInTheDocument();
+
+    fireEvent.click(xelatexOption);
+    expect(onSelectEngine).toHaveBeenCalledWith('xelatex');
+  });
+
+  it('displays resolving package status pill and resolved packages pill', () => {
+    const { rerender } = render(
+      <ProjectTopBar
+        projects={[sampleProject]}
+        activeProject={sampleProject}
+        compileStatus="compiling"
+        resolvingPackage="algorithm2e"
+        onSelectProject={vi.fn()}
+        onCreateProject={vi.fn()}
+        onRenameProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onExportZip={vi.fn()}
+        onImportZip={vi.fn()}
+        onCompile={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('status-resolving-package')).toHaveTextContent(
+      'Resolving package: algorithm2e...'
+    );
+
+    rerender(
+      <ProjectTopBar
+        projects={[sampleProject]}
+        activeProject={sampleProject}
+        compileStatus="spotless"
+        resolvedPackages={['pgf', 'algorithm2e']}
+        onSelectProject={vi.fn()}
+        onCreateProject={vi.fn()}
+        onRenameProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onExportZip={vi.fn()}
+        onImportZip={vi.fn()}
+        onCompile={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('status-resolved-packages')).toHaveTextContent(
+      'Downloaded pgf, algorithm2e'
+    );
   });
 });

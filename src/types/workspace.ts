@@ -1,5 +1,7 @@
 export type CompileStatus = 'idle' | 'compiling' | 'spotless' | 'warnings' | 'errors' | 'failed';
 
+export type LatexEngine = 'pdflatex' | 'xelatex' | 'lualatex';
+
 export interface Diagnostic {
   severity: 'error' | 'warning' | 'info';
   file?: string;
@@ -29,6 +31,8 @@ export interface CompileResult {
   missingFiles: string[];
   durationMs: number;
   syncTexIndex?: SyncTexIndex;
+  resolvedPackages?: string[];
+  engine?: LatexEngine;
 }
 
 export interface Project {
@@ -37,6 +41,7 @@ export interface Project {
   rootEntry: string;
   createdAt: number;
   updatedAt: number;
+  engine?: LatexEngine;
 }
 
 export interface ProjectFile {
@@ -48,7 +53,7 @@ export interface ProjectFile {
 }
 
 export interface WorkspaceActions {
-  compile: () => Promise<CompileResult>;
+  compile: (options?: { engine?: LatexEngine }) => Promise<CompileResult>;
   getFileContent: (path: string) => Promise<string>;
   setFileContent: (path: string, content: string) => Promise<void>;
   applyDiff: (path: string, original: string, modified: string) => Promise<void>;

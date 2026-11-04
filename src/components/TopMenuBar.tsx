@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useThemeSafe } from '../context/ThemeContext';
 import { Check } from 'lucide-react';
+import type { LatexEngine } from '../types/workspace';
 
 export interface TopMenuBarProps {
   onNewFile?: () => void;
@@ -19,6 +20,8 @@ export interface TopMenuBarProps {
   onShortcuts?: () => void;
   onAbout?: () => void;
   onOpenPackageManager?: () => void;
+  selectedEngine?: LatexEngine;
+  onSelectEngine?: (engine: LatexEngine) => void;
   className?: string;
 }
 
@@ -52,6 +55,8 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onShortcuts,
   onAbout,
   onOpenPackageManager,
+  selectedEngine = 'pdflatex',
+  onSelectEngine,
   className = '',
 }) => {
   const { theme, setTheme } = useThemeSafe();
@@ -147,6 +152,22 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
           label: 'LaTeX Package Manager...',
           shortcut: 'Shift+Alt+P',
           onClick: onOpenPackageManager,
+        },
+        { type: 'separator' },
+        {
+          label: 'Engine: latexmk (pdflatex)',
+          checked: selectedEngine === 'pdflatex',
+          onClick: () => onSelectEngine?.('pdflatex'),
+        },
+        {
+          label: 'Engine: latexmk (xelatex)',
+          checked: selectedEngine === 'xelatex',
+          onClick: () => onSelectEngine?.('xelatex'),
+        },
+        {
+          label: 'Engine: latexmk (lualatex)',
+          checked: selectedEngine === 'lualatex',
+          onClick: () => onSelectEngine?.('lualatex'),
         },
       ],
     },

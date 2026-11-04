@@ -11,7 +11,7 @@
 import type { SyncTexBlock, SyncTexIndex } from '../types/workspace';
 
 export type { SyncTexIndex } from '../types/workspace';
-export { resolveSyncTexPosition } from './synctexResolver';
+export { resolveSyncTexPosition, resolveSyncTexSource } from './synctexResolver';
 
 const FIXED_POINT = 65536;
 

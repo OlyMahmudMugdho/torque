@@ -334,6 +334,10 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         activeProject={workspace.activeProject}
         compileStatus={workspace.compileStatus}
         lastDurationMs={workspace.lastResult?.durationMs}
+        selectedEngine={workspace.selectedEngine}
+        onSelectEngine={workspace.setSelectedEngine}
+        resolvingPackage={workspace.resolvingPackage}
+        resolvedPackages={workspace.resolvedPackages}
         onSelectProject={handleSelectProject}
         onCreateProject={handleCreateProject}
         onRenameProject={workspace.renameActiveProject}
@@ -359,7 +363,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
           alert('Keyboard Shortcuts:\n• Ctrl+B / Shift+F10: Compile\n• Alt+1: Toggle Sidebar\n• Alt+6: Toggle Problems\n• Ctrl+Z: Undo\n• Ctrl+Y: Redo');
         }}
         onAbout={() => {
-          alert('Torque LaTeX Editor\nHigh-Performance WebAssembly LaTeX IDE');
+          alert('Torque LaTeX Editor\nHigh-Performance LaTeX IDE with Native TeX Live & Auto-Package Resolution');
         }}
         onOpenPackageManager={() => handleOpenPackageManager('')}
       />
@@ -590,7 +594,16 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         </div>
 
         <div className="flex items-center gap-4">
-          <span>LaTeX (WASM)</span>
+          <span className="flex items-center gap-1 font-mono">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#59a869]" />
+            <span>latexmk ({workspace.selectedEngine || 'pdflatex'})</span>
+          </span>
+          {workspace.resolvedPackages && workspace.resolvedPackages.length > 0 && (
+            <span className="text-[#3574f0] flex items-center gap-1">
+              <Package className="w-3 h-3" />
+              <span>Packages: {workspace.resolvedPackages.join(', ')}</span>
+            </span>
+          )}
           <span>UTF-8</span>
           <span>2 spaces</span>
         </div>

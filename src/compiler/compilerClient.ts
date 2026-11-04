@@ -11,6 +11,21 @@ import { parser as syncTexJsParser } from 'synctex-js';
 
 export type WorkerLike = Pick<Worker, 'postMessage' | 'addEventListener' | 'removeEventListener' | 'terminate'>;
 
+export interface CompileProgressEvent {
+  stage: 'compiling' | 'resolving';
+  package?: string;
+  message?: string;
+}
+
+export type CompileProgressCallback = (event: CompileProgressEvent) => void;
+
+export interface CompileClientOptions {
+  engine?: 'pdflatex' | 'xelatex' | 'lualatex';
+  synctex?: boolean;
+  projectId?: string;
+  onProgress?: CompileProgressCallback;
+}
+
 export function parseSyncTexWithLibrary(rawText: string, fallbackFile: string): SyncTexIndex {
   try {
     const parsed = syncTexJsParser.parseSyncTex(rawText);
@@ -239,17 +254,17 @@ export class CompilerClient {
   async compile(
     files: Array<Pick<ProjectFile, 'path' | 'content'>>,
     entry: string,
-    options?: {
-      engine?: 'pdflatex' | 'xelatex' | 'lualatex';
-      synctex?: boolean;
-      projectId?: string;
-    }
+    options?: CompileClientOptions
   ): Promise<CompileResult> {
     if (this.compiling) {
       throw new Error('Compilation already in progress');
     }
 
     this.compiling = true;
+    options?.onProgress?.({
+      stage: 'compiling',
+      message: `Compiling with ${options?.engine || 'pdflatex'}...`,
+    });
 
     const filesMap: Record<string, Uint8Array | string> = {};
     for (const f of files) {
@@ -291,6 +306,14 @@ export class CompilerClient {
       const res = await Promise.race([this.driver.compile(driverReq), timeoutPromise]);
       this.clearCompileTimeout();
 
+      if (res.resolvedPackages && res.resolvedPackages.length > 0) {
+        options?.onProgress?.({
+          stage: 'resolving',
+          package: res.resolvedPackages.join(', '),
+          message: `Resolved packages: ${res.resolvedPackages.join(', ')}`,
+        });
+      }
+
       let syncTexIndex: SyncTexIndex | undefined;
       if (res.synctexBytes && res.synctexBytes.length > 0) {
         try {
@@ -321,6 +344,8 @@ export class CompilerClient {
         missingFiles: res.missingFiles,
         durationMs: res.durationMs,
         syncTexIndex,
+        resolvedPackages: res.resolvedPackages || [],
+        engine: options?.engine || 'pdflatex',
       };
     } finally {
       this.clearCompileTimeout();

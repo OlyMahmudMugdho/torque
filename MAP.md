@@ -140,6 +140,8 @@ Torque provides a full-featured LaTeX authoring environment powered by the host'
   - Category filters (*Math*, *Physics*, *Graphics*, *Layout*, *Typography*, *Citations*, *Code*, *Tables*).
   - Search by package name or description.
   - One-click *Insert \usepackage* inserting required declaration directly into root entry preamble.
+- [`src/components/TexSetupGuide.tsx`](file:///home/mugdho/codes/torque/src/components/TexSetupGuide.tsx):
+  Modal shown when a compile result has `missingRequirements` (TeX Live / latexmk / engine missing). Lists what is missing, per-OS install commands (detected OS highlighted), and a Re-check button. Backed by a requirement preflight in Rust `compiler.rs` (`compute_missing_requirements`, `ensure_tex_path`) and Node `serverCompiler.ts` / `scripts/compiler-server.js` (`computeMissingRequirements`, `ensureTexPath`) that returns a failed result immediately.
 - [`src/components/DiagnosticsLogPanel.tsx`](file:///home/mugdho/codes/torque/src/components/DiagnosticsLogPanel.tsx):
   - IntelliJ-style bottom *Problems / Build Output* tool window.
   - Zero-space dismissal: collapses to 0 height when closed without consuming editor space.

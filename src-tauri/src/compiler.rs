@@ -37,6 +37,8 @@ pub struct CompileResultPayload {
     pub missing_files: Vec<String>,
     #[serde(default)]
     pub resolved_packages: Vec<String>,
+    #[serde(default)]
+    pub missing_requirements: Vec<String>,
     pub duration_ms: u64,
     pub stdout: String,
     pub stderr: String,
@@ -112,12 +114,102 @@ mod base64_utils {
     }
 }
 
+/// Discovers common TeX installation directories and prepends them to this process's PATH
+/// so child processes (detection and compilation) can find latexmk / engines.
+pub fn ensure_tex_path() {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            dirs.push(PathBuf::from(local).join("Programs\\MiKTeX\\miktex\\bin\\x64"));
+        }
+        dirs.push(PathBuf::from("C:\\Program Files\\MiKTeX\\miktex\\bin\\x64"));
+        if let Ok(rd) = std::fs::read_dir("C:\\texlive") {
+            for e in rd.flatten() {
+                dirs.push(e.path().join("bin\\windows"));
+                dirs.push(e.path().join("bin\\win64"));
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        dirs.push(PathBuf::from("/Library/TeX/texbin"));
+        dirs.push(PathBuf::from("/opt/homebrew/bin"));
+        dirs.push(PathBuf::from("/usr/local/bin"));
+        if let Ok(rd) = std::fs::read_dir("/usr/local/texlive") {
+            for y in rd.flatten() {
+                let bin = y.path().join("bin");
+                if let Ok(archs) = std::fs::read_dir(&bin) {
+                    for a in archs.flatten() {
+                        dirs.push(a.path());
+                    }
+                }
+            }
+        }
+    }
+    let current = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths: Vec<PathBuf> = std::env::split_paths(&current).collect();
+    let mut prepend: Vec<PathBuf> = Vec::new();
+    for d in dirs {
+        if d.is_dir() && !paths.contains(&d) && !prepend.contains(&d) {
+            prepend.push(d);
+        }
+    }
+    if prepend.is_empty() {
+        return;
+    }
+    prepend.append(&mut paths);
+    if let Ok(joined) = std::env::join_paths(prepend) {
+        // SAFETY: only called from compile/detect paths before spawning children.
+        unsafe { std::env::set_var("PATH", joined) };
+    }
+}
+
 pub fn check_binary_available(cmd_name: &str) -> bool {
+    ensure_tex_path();
     let check_arg = if cmd_name == "latexmk" { "-v" } else { "--version" };
     match Command::new(cmd_name).arg(check_arg).output() {
         Ok(output) => output.status.success(),
         Err(_) => false,
     }
+}
+
+/// Pure requirement check: returns the list of missing requirements for the chosen engine.
+pub fn compute_missing_requirements(
+    latexmk: bool,
+    pdflatex: bool,
+    xelatex: bool,
+    lualatex: bool,
+    engine: &str,
+) -> Vec<String> {
+    let mut missing = Vec::new();
+    if !latexmk {
+        missing.push("latexmk".to_string());
+    }
+    if !(pdflatex || xelatex || lualatex) {
+        missing.push("a TeX engine (pdflatex, xelatex or lualatex)".to_string());
+    } else {
+        let ok = match engine {
+            "xelatex" => xelatex,
+            "lualatex" => lualatex,
+            _ => pdflatex,
+        };
+        if !ok {
+            let name = match engine {
+                "xelatex" | "lualatex" => engine,
+                _ => "pdflatex",
+            };
+            missing.push(name.to_string());
+        }
+    }
+    missing
+}
+
+pub fn missing_requirements_message(missing: &[String]) -> String {
+    format!(
+        "TeX Live is not fully installed. Missing: {}. Setup: install TeX Live (or MiKTeX on Windows) with latexmk and make sure it is on your PATH, then re-check.",
+        missing.join(", ")
+    )
 }
 
 pub fn get_texlive_version_string() -> Option<String> {
@@ -471,6 +563,35 @@ pub fn tauri_compile_latex_internal(
         _ => "-pdf",
     };
 
+    {
+        let missing = compute_missing_requirements(
+            check_binary_available("latexmk"),
+            check_binary_available("pdflatex"),
+            check_binary_available("xelatex"),
+            check_binary_available("lualatex"),
+            &chosen_engine,
+        );
+        if !missing.is_empty() {
+            return Ok(CompileResultPayload {
+                status: "failed".to_string(),
+                pdf: None,
+                synctex: None,
+                diagnostics: vec![Diagnostic {
+                    severity: "error".to_string(),
+                    file: None,
+                    line: None,
+                    message: missing_requirements_message(&missing),
+                }],
+                missing_files: Vec::new(),
+                resolved_packages: Vec::new(),
+                missing_requirements: missing,
+                duration_ms: start_time.elapsed().as_millis() as u64,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        }
+    }
+
     let synctex_flag = if synctex.unwrap_or(true) { "-synctex=1" } else { "-synctex=0" };
 
     // 4. Initialize package resolver and environment
@@ -532,6 +653,7 @@ pub fn tauri_compile_latex_internal(
                     }],
                     missing_files: Vec::new(),
                     resolved_packages: all_installed_packages,
+                    missing_requirements: Vec::new(),
                     duration_ms: start_time.elapsed().as_millis() as u64,
                     stdout: String::new(),
                     stderr: e.to_string(),
@@ -641,6 +763,7 @@ pub fn tauri_compile_latex_internal(
         diagnostics,
         missing_files: outcome.missing_files,
         resolved_packages: all_installed_packages,
+        missing_requirements: Vec::new(),
         duration_ms: start_time.elapsed().as_millis() as u64,
         stdout: outcome.stdout_str,
         stderr: outcome.stderr_str,
@@ -650,6 +773,16 @@ pub fn tauri_compile_latex_internal(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_requirements_helper() {
+        assert!(compute_missing_requirements(true, true, false, false, "pdflatex").is_empty());
+        assert_eq!(compute_missing_requirements(false, true, false, false, "pdflatex"), vec!["latexmk"]);
+        assert_eq!(compute_missing_requirements(true, true, false, false, "xelatex"), vec!["xelatex"]);
+        let m = compute_missing_requirements(false, false, false, false, "pdflatex");
+        assert_eq!(m.len(), 2);
+        assert!(missing_requirements_message(&m).contains("latexmk"));
+    }
 
     #[test]
     fn test_extract_missing_files_from_log() {

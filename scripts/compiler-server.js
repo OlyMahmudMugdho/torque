@@ -21,7 +21,43 @@ import { fileURLToPath } from 'node:url';
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 
+/** Discover common TeX install dirs (macOS texbin, TeX Live, MiKTeX) and prepend them to PATH. */
+export function ensureTexPath() {
+  const dirs = [];
+  const exists = (d) => { try { return fs.statSync(d).isDirectory(); } catch { return false; } };
+  const listDirs = (base) => { try { return fs.readdirSync(base).map((n) => path.join(base, n)); } catch { return []; } };
+  if (process.platform === 'win32') {
+    if (process.env.LOCALAPPDATA) dirs.push(path.join(process.env.LOCALAPPDATA, 'Programs', 'MiKTeX', 'miktex', 'bin', 'x64'));
+    dirs.push('C:\\Program Files\\MiKTeX\\miktex\\bin\\x64');
+    for (const y of listDirs('C:\\texlive')) dirs.push(path.join(y, 'bin', 'windows'), path.join(y, 'bin', 'win64'));
+  } else {
+    dirs.push('/Library/TeX/texbin', '/opt/homebrew/bin', '/usr/local/bin');
+    for (const y of listDirs('/usr/local/texlive')) for (const a of listDirs(path.join(y, 'bin'))) dirs.push(a);
+  }
+  const sep = path.delimiter;
+  const current = (process.env.PATH || '').split(sep);
+  const add = dirs.filter((d, i) => exists(d) && !current.includes(d) && dirs.indexOf(d) === i);
+  if (add.length) process.env.PATH = [...add, ...current].filter(Boolean).join(sep);
+}
+
+/** Pure requirement check; returns list of missing requirements for the chosen engine. */
+export function computeMissingRequirements(env, engine) {
+  const missing = [];
+  if (!env.latexmk) missing.push('latexmk');
+  if (!(env.pdflatex || env.xelatex || env.lualatex)) {
+    missing.push('a TeX engine (pdflatex, xelatex or lualatex)');
+  } else if (!env[engine === 'xelatex' || engine === 'lualatex' ? engine : 'pdflatex']) {
+    missing.push(engine === 'xelatex' || engine === 'lualatex' ? engine : 'pdflatex');
+  }
+  return missing;
+}
+
+export function missingRequirementsMessage(missing) {
+  return `TeX Live is not fully installed. Missing: ${missing.join(', ')}. Setup: install TeX Live (or MiKTeX on Windows) with latexmk and make sure it is on your PATH, then re-check.`;
+}
+
 export function checkBinaryAvailable(cmd) {
+  ensureTexPath();
   try {
     const checkArg = cmd === 'latexmk' ? '-v' : '--version';
     const res = spawnSync(cmd, [checkArg], { stdio: 'ignore', timeout: 3000 });
@@ -442,6 +478,37 @@ export function compileProject(request) {
   const chosenEngine = (request.engine || 'pdflatex').toLowerCase();
   const engineFlag = chosenEngine === 'xelatex' ? '-xelatex' : chosenEngine === 'lualatex' ? '-lualatex' : '-pdf';
   const synctexFlag = request.synctex !== false ? '-synctex=1' : '-synctex=0';
+
+  {
+    const missing = computeMissingRequirements(
+      {
+        latexmk: checkBinaryAvailable('latexmk'),
+        pdflatex: checkBinaryAvailable('pdflatex'),
+        xelatex: checkBinaryAvailable('xelatex'),
+        lualatex: checkBinaryAvailable('lualatex'),
+      },
+      chosenEngine,
+    );
+    if (missing.length > 0) {
+      const elapsed = Date.now() - startTime;
+      return {
+        status: 'failed',
+        pdf: null,
+        synctex: null,
+        diagnostics: [{ severity: 'error', message: missingRequirementsMessage(missing) }],
+        missing_files: [],
+        missingFiles: [],
+        resolved_packages: [],
+        resolvedPackages: [],
+        missing_requirements: missing,
+        missingRequirements: missing,
+        duration_ms: elapsed,
+        durationMs: elapsed,
+        stdout: '',
+        stderr: '',
+      };
+    }
+  }
 
   let resolvedPackages = [];
   let allStdout = '';

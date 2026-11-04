@@ -25,13 +25,51 @@ export interface ServerCompileResult {
   missingFiles: string[];
   resolved_packages: string[];
   resolvedPackages: string[];
+  missing_requirements?: string[];
+  missingRequirements?: string[];
   duration_ms: number;
   durationMs: number;
   stdout: string;
   stderr: string;
 }
 
+/** Discover common TeX install dirs (macOS texbin, TeX Live, MiKTeX) and prepend them to PATH. */
+export function ensureTexPath(): void {
+  const dirs: string[] = [];
+  const exists = (d: string) => { try { return fs.statSync(d).isDirectory(); } catch { return false; } };
+  const listDirs = (base: string) => { try { return fs.readdirSync(base).map((n) => path.join(base, n)); } catch { return []; } };
+  if (process.platform === 'win32') {
+    if (process.env.LOCALAPPDATA) dirs.push(path.join(process.env.LOCALAPPDATA, 'Programs', 'MiKTeX', 'miktex', 'bin', 'x64'));
+    dirs.push('C:\\Program Files\\MiKTeX\\miktex\\bin\\x64');
+    for (const y of listDirs('C:\\texlive')) dirs.push(path.join(y, 'bin', 'windows'), path.join(y, 'bin', 'win64'));
+  } else {
+    dirs.push('/Library/TeX/texbin', '/opt/homebrew/bin', '/usr/local/bin');
+    for (const y of listDirs('/usr/local/texlive')) for (const a of listDirs(path.join(y, 'bin'))) dirs.push(a);
+  }
+  const sep = path.delimiter;
+  const current = (process.env.PATH || '').split(sep);
+  const add = dirs.filter((d, i) => exists(d) && !current.includes(d) && dirs.indexOf(d) === i);
+  if (add.length) process.env.PATH = [...add, ...current].filter(Boolean).join(sep);
+}
+
+/** Pure requirement check; returns list of missing requirements for the chosen engine. */
+export function computeMissingRequirements(env: { latexmk: boolean; pdflatex: boolean; xelatex: boolean; lualatex: boolean }, engine: string): string[] {
+  const missing: string[] = [];
+  if (!env.latexmk) missing.push('latexmk');
+  if (!(env.pdflatex || env.xelatex || env.lualatex)) {
+    missing.push('a TeX engine (pdflatex, xelatex or lualatex)');
+  } else if (!env[engine === 'xelatex' || engine === 'lualatex' ? engine : 'pdflatex']) {
+    missing.push(engine === 'xelatex' || engine === 'lualatex' ? engine : 'pdflatex');
+  }
+  return missing;
+}
+
+export function missingRequirementsMessage(missing: string[]): string {
+  return `TeX Live is not fully installed. Missing: ${missing.join(', ')}. Setup: install TeX Live (or MiKTeX on Windows) with latexmk and make sure it is on your PATH, then re-check.`;
+}
+
 export function checkBinaryAvailable(cmd: string): boolean {
+  ensureTexPath();
   try {
     const checkArg = cmd === 'latexmk' ? '-v' : '--version';
     const res = spawnSync(cmd, [checkArg], { stdio: 'ignore', timeout: 3000 });
@@ -475,6 +513,37 @@ export function compileLatexNative(request: ServerCompileRequest): ServerCompile
   const chosenEngine = (request.engine || 'pdflatex').toLowerCase();
   const engineFlag = chosenEngine === 'xelatex' ? '-xelatex' : chosenEngine === 'lualatex' ? '-lualatex' : '-pdf';
   const synctexFlag = request.synctex !== false ? '-synctex=1' : '-synctex=0';
+
+  {
+    const missing = computeMissingRequirements(
+      {
+        latexmk: checkBinaryAvailable('latexmk'),
+        pdflatex: checkBinaryAvailable('pdflatex'),
+        xelatex: checkBinaryAvailable('xelatex'),
+        lualatex: checkBinaryAvailable('lualatex'),
+      },
+      chosenEngine,
+    );
+    if (missing.length > 0) {
+      const elapsed = Date.now() - startTime;
+      return {
+        status: 'failed',
+        pdf: null,
+        synctex: null,
+        diagnostics: [{ severity: 'error', message: missingRequirementsMessage(missing) }],
+        missing_files: [],
+        missingFiles: [],
+        resolved_packages: [],
+        resolvedPackages: [],
+        missing_requirements: missing,
+        missingRequirements: missing,
+        duration_ms: elapsed,
+        durationMs: elapsed,
+        stdout: '',
+        stderr: '',
+      };
+    }
+  }
 
   let resolvedPackages: string[] = [];
   let allStdout = '';

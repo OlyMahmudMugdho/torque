@@ -10,6 +10,7 @@ import { MonacoEditorPane, type MonacoEditorHandle } from './editor/MonacoEditor
 import { PdfPreviewPane } from './components/PdfPreviewPane';
 import { DiagnosticsLogPanel } from './components/DiagnosticsLogPanel';
 import { WelcomeHomeScreen } from './components/WelcomeHomeScreen';
+import { TexSetupGuide } from './components/TexSetupGuide';
 import { PackageManagerModal } from './components/PackageManagerModal';
 import { insertPackageDeclaration } from './packages/packageManager';
 import type { Diagnostic } from './types/workspace';
@@ -49,6 +50,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
   const [logsOpen, setLogsOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [previewOpen, setPreviewOpen] = useState(true);
+  const [dismissedSetupResult, setDismissedSetupResult] = useState<unknown>(null);
   const [isPackageManagerOpen, setPackageManagerOpen] = useState(false);
   const [packageManagerSearchQuery, setPackageManagerSearchQuery] = useState('');
   const monacoRef = useRef<MonacoEditorHandle>(null);
@@ -323,6 +325,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
     );
   }
 
+  const missingRequirements = workspace.lastResult?.missingRequirements ?? [];
   const diagnostics = workspace.lastResult?.diagnostics ?? [];
   const hasProblems = diagnostics.length > 0 || workspace.compileStatus === 'failed';
   const errorCount = diagnostics.filter((d) => d.severity === 'error').length;
@@ -614,6 +617,12 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
           <span>2 spaces</span>
         </div>
       </footer>
+
+      <TexSetupGuide
+        isOpen={missingRequirements.length > 0 && dismissedSetupResult !== workspace.lastResult}
+        onClose={() => setDismissedSetupResult(workspace.lastResult)}
+        missingRequirements={missingRequirements}
+      />
 
       {/* IntelliJ LaTeX Package Manager Modal Dialog */}
       {isPackageManagerOpen && (

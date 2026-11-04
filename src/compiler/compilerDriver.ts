@@ -27,6 +27,7 @@ export interface CompileDriverResponse {
   diagnostics: Diagnostic[];
   missingFiles: string[];
   resolvedPackages: string[];
+  missingRequirements?: string[];
   durationMs: number;
   stdout: string;
   stderr: string;
@@ -97,6 +98,10 @@ function normalizeResponsePayload(raw: any): CompileDriverResponse {
     ? raw.resolvedPackages
     : [];
 
+  const rawReq = raw?.missing_requirements ?? raw?.missingRequirements;
+  const missingRequirements: string[] | undefined =
+    Array.isArray(rawReq) && rawReq.length > 0 ? rawReq.map(String) : undefined;
+
   const durationMs = Number(raw?.duration_ms ?? raw?.durationMs ?? 0);
   const stdout = String(raw?.stdout || '');
   const stderr = String(raw?.stderr || '');
@@ -108,6 +113,7 @@ function normalizeResponsePayload(raw: any): CompileDriverResponse {
     diagnostics,
     missingFiles,
     resolvedPackages,
+    ...(missingRequirements ? { missingRequirements } : {}),
     durationMs,
     stdout,
     stderr,

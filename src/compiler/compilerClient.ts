@@ -345,6 +345,7 @@ export class CompilerClient {
         durationMs: res.durationMs,
         syncTexIndex,
         resolvedPackages: res.resolvedPackages || [],
+        ...(res.missingRequirements?.length ? { missingRequirements: res.missingRequirements } : {}),
         engine: options?.engine || 'pdflatex',
       };
     } finally {

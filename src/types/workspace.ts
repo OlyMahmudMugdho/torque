@@ -32,6 +32,7 @@ export interface CompileResult {
   durationMs: number;
   syncTexIndex?: SyncTexIndex;
   resolvedPackages?: string[];
+  missingRequirements?: string[];
   engine?: LatexEngine;
 }
 

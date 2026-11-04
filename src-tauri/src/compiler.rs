@@ -35,6 +35,8 @@ pub struct CompileResultPayload {
     pub synctex: Option<String>, // base64-encoded synctex.gz bytes
     pub diagnostics: Vec<Diagnostic>,
     pub missing_files: Vec<String>,
+    #[serde(default)]
+    pub resolved_packages: Vec<String>,
     pub duration_ms: u64,
     pub stdout: String,
     pub stderr: String,
@@ -391,6 +393,26 @@ pub fn tauri_compile_latex(
     synctex: Option<bool>,
     build_dir: Option<String>,
 ) -> Result<CompileResultPayload, String> {
+    tauri_compile_latex_internal(
+        project_id,
+        files,
+        entry,
+        engine,
+        synctex,
+        build_dir,
+        None,
+    )
+}
+
+pub fn tauri_compile_latex_internal(
+    project_id: String,
+    files: Vec<ProjectFile>,
+    entry: String,
+    engine: Option<String>,
+    synctex: Option<bool>,
+    build_dir: Option<String>,
+    custom_resolver: Option<crate::package_resolver::PackageResolver>,
+) -> Result<CompileResultPayload, String> {
     let start_time = Instant::now();
 
     // 1. Resolve build directory
@@ -441,76 +463,149 @@ pub fn tauri_compile_latex(
 
     let synctex_flag = if synctex.unwrap_or(true) { "-synctex=1" } else { "-synctex=0" };
 
-    // 4. Run latexmk
-    let mut cmd = Command::new("latexmk");
-    cmd.current_dir(&target_dir)
-        .arg(engine_flag)
-        .arg(synctex_flag)
-        .arg("-interaction=nonstopmode")
-        .arg("-file-line-error")
-        .arg("-recorder")
-        .arg(&clean_entry);
+    // 4. Initialize package resolver and environment
+    let mut resolver = custom_resolver.unwrap_or_else(crate::package_resolver::PackageResolver::new);
+    let texmf_home = resolver.texmf_home().to_path_buf();
+    let texinputs_val = format!(".:{}//:", texmf_home.join("tex").display());
 
-    let output_result = cmd.output();
-    let duration_ms = start_time.elapsed().as_millis() as u64;
+    let mut all_installed_packages = Vec::new();
+    let max_compilation_passes = 5;
+    let mut pass = 0;
 
-    let (stdout_str, stderr_str, exit_success) = match output_result {
-        Ok(output) => {
-            let out = String::from_utf8_lossy(&output.stdout).to_string();
-            let err = String::from_utf8_lossy(&output.stderr).to_string();
-            (out, err, output.status.success())
+    struct PassOutcome {
+        stdout_str: String,
+        stderr_str: String,
+        missing_files: Vec<String>,
+        diagnostics: Vec<Diagnostic>,
+        pdf_b64: Option<String>,
+        synctex_b64: Option<String>,
+        exit_success: bool,
+    }
+
+    let mut last_outcome: Option<PassOutcome>;
+
+    // 5. Compilation loop with automated missing package resolution
+    loop {
+        pass += 1;
+
+        let mut cmd = Command::new("latexmk");
+        cmd.current_dir(&target_dir)
+            .env("TEXMFHOME", texmf_home.to_string_lossy().to_string())
+            .env("TEXINPUTS", &texinputs_val)
+            .arg(engine_flag)
+            .arg(synctex_flag)
+            .arg("-interaction=nonstopmode")
+            .arg("-file-line-error")
+            .arg("-recorder");
+
+        if pass > 1 {
+            cmd.arg("-g");
         }
-        Err(e) => {
-            return Ok(CompileResultPayload {
-                status: "failed".to_string(),
-                pdf: None,
-                synctex: None,
-                diagnostics: vec![Diagnostic {
-                    severity: "error".to_string(),
-                    file: Some(clean_entry.clone()),
-                    line: None,
-                    message: format!("Failed to spawn latexmk: {}. Is TeX Live installed?", e),
-                }],
-                missing_files: Vec::new(),
-                duration_ms,
-                stdout: String::new(),
-                stderr: e.to_string(),
-            });
+
+        cmd.arg(&clean_entry);
+
+        let output_result = cmd.output();
+
+        let (stdout_str, stderr_str, exit_success) = match output_result {
+            Ok(output) => {
+                let out = String::from_utf8_lossy(&output.stdout).to_string();
+                let err = String::from_utf8_lossy(&output.stderr).to_string();
+                (out, err, output.status.success())
+            }
+            Err(e) => {
+                return Ok(CompileResultPayload {
+                    status: "failed".to_string(),
+                    pdf: None,
+                    synctex: None,
+                    diagnostics: vec![Diagnostic {
+                        severity: "error".to_string(),
+                        file: Some(clean_entry.clone()),
+                        line: None,
+                        message: format!("Failed to spawn latexmk: {}. Is TeX Live installed?", e),
+                    }],
+                    missing_files: Vec::new(),
+                    resolved_packages: all_installed_packages,
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                    stdout: String::new(),
+                    stderr: e.to_string(),
+                });
+            }
+        };
+
+        let log_file_path = target_dir.join(format!("{}.log", stem));
+        let log_content = if log_file_path.exists() {
+            std::fs::read_to_string(&log_file_path).unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        let missing_files = extract_missing_files_from_log(&log_content, &stdout_str);
+        let diagnostics = parse_diagnostics_from_log(&log_content, &stdout_str, &clean_entry);
+
+        let pdf_file_path = target_dir.join(format!("{}.pdf", stem));
+        let pdf_b64 = if pdf_file_path.exists() {
+            std::fs::read(&pdf_file_path).ok().map(|b| base64_utils::encode(&b))
+        } else {
+            None
+        };
+
+        let synctex_file_path = target_dir.join(format!("{}.synctex.gz", stem));
+        let synctex_b64 = if synctex_file_path.exists() {
+            std::fs::read(&synctex_file_path).ok().map(|b| base64_utils::encode(&b))
+        } else {
+            None
+        };
+
+        let outcome = PassOutcome {
+            stdout_str,
+            stderr_str,
+            missing_files: missing_files.clone(),
+            diagnostics,
+            pdf_b64,
+            synctex_b64,
+            exit_success,
+        };
+
+        let stop = (outcome.exit_success && outcome.pdf_b64.is_some())
+            || missing_files.is_empty()
+            || pass >= max_compilation_passes;
+
+        last_outcome = Some(outcome);
+
+        if stop {
+            break;
         }
-    };
 
-    // 5. Read generated log file if present
-    let log_file_path = target_dir.join(format!("{}.log", stem));
-    let log_content = if log_file_path.exists() {
-        std::fs::read_to_string(&log_file_path).unwrap_or_default()
-    } else {
-        String::new()
-    };
+        // Attempt automated missing package resolution
+        let newly_installed = resolver.resolve_all(&missing_files);
+        if newly_installed.is_empty() {
+            // No new packages could be resolved/installed; stop further attempts
+            break;
+        }
 
-    // 6. Extract missing files and diagnostics
-    let missing_files = extract_missing_files_from_log(&log_content, &stdout_str);
-    let diagnostics = parse_diagnostics_from_log(&log_content, &stdout_str, &clean_entry);
+        // Clean out latexmk failure state file so the next pass executes fresh
+        let fdb_path = target_dir.join(format!("{}.fdb_latexmk", stem));
+        let _ = std::fs::remove_file(&fdb_path);
 
-    // 7. Check for generated PDF and SyncTeX
-    let pdf_file_path = target_dir.join(format!("{}.pdf", stem));
-    let pdf_b64 = if pdf_file_path.exists() {
-        std::fs::read(&pdf_file_path).ok().map(|b| base64_utils::encode(&b))
-    } else {
-        None
-    };
+        all_installed_packages.extend(newly_installed);
+        // Loop continues, re-running latexmk with newly installed packages in texmf
+    }
 
-    let synctex_file_path = target_dir.join(format!("{}.synctex.gz", stem));
-    let synctex_b64 = if synctex_file_path.exists() {
-        std::fs::read(&synctex_file_path).ok().map(|b| base64_utils::encode(&b))
-    } else {
-        None
-    };
+    let outcome = last_outcome.unwrap_or_else(|| PassOutcome {
+        stdout_str: String::new(),
+        stderr_str: String::new(),
+        missing_files: Vec::new(),
+        diagnostics: Vec::new(),
+        pdf_b64: None,
+        synctex_b64: None,
+        exit_success: false,
+    });
 
-    // 8. Determine status
+    let mut diagnostics = outcome.diagnostics;
     let has_errors = diagnostics.iter().any(|d| d.severity == "error");
     let has_warnings = diagnostics.iter().any(|d| d.severity == "warning");
 
-    let status = if !exit_success && pdf_b64.is_none() {
+    let status = if !outcome.exit_success && outcome.pdf_b64.is_none() {
         if has_errors { "errors" } else { "failed" }
     } else if has_errors {
         "errors"
@@ -520,15 +615,28 @@ pub fn tauri_compile_latex(
         "spotless"
     };
 
+    if !all_installed_packages.is_empty() {
+        diagnostics.insert(0, Diagnostic {
+            severity: "info".to_string(),
+            file: Some(clean_entry),
+            line: None,
+            message: format!(
+                "Automatically installed LaTeX packages: {}",
+                all_installed_packages.join(", ")
+            ),
+        });
+    }
+
     Ok(CompileResultPayload {
         status: status.to_string(),
-        pdf: pdf_b64,
-        synctex: synctex_b64,
+        pdf: outcome.pdf_b64,
+        synctex: outcome.synctex_b64,
         diagnostics,
-        missing_files,
-        duration_ms,
-        stdout: stdout_str,
-        stderr: stderr_str,
+        missing_files: outcome.missing_files,
+        resolved_packages: all_installed_packages,
+        duration_ms: start_time.elapsed().as_millis() as u64,
+        stdout: outcome.stdout_str,
+        stderr: outcome.stderr_str,
     })
 }
 
@@ -670,5 +778,58 @@ Hello from Native TeX Live!
         assert!(!res.diagnostics.is_empty());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_tauri_compile_latex_auto_resolves_missing_package() {
+        let temp_build_dir = std::env::temp_dir().join(format!("torque-autores-bld-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let temp_texmf_dir = std::env::temp_dir().join(format!("torque-autores-txmf-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&temp_build_dir).unwrap();
+        std::fs::create_dir_all(&temp_texmf_dir).unwrap();
+
+        let mock_downloader = crate::package_resolver::tests::MockDownloader::new();
+        let target_url = "https://mirrors.ctan.org/macros/latex/contrib/autoresolvedpkg/autoresolvedpkg.sty";
+        let sty_content = b"\\ProvidesPackage{autoresolvedpkg}[2026/11/04 v1.0]\\newcommand{\\autoreply}{Auto Resolution Success!}\\endinput\n";
+        mock_downloader.add_response(target_url, sty_content);
+
+        let resolver = crate::package_resolver::PackageResolver::with_texmf_and_downloader(
+            temp_texmf_dir.clone(),
+            Box::new(mock_downloader),
+        );
+
+        let doc_content = r#"\documentclass{article}
+\usepackage{autoresolvedpkg}
+\begin{document}
+Testing dynamic package fetching: \autoreply
+\end{document}
+"#;
+        let files = vec![
+            ProjectFile {
+                project_id: "test-autores-proj".to_string(),
+                path: "main.tex".to_string(),
+                content: serde_json::Value::String(doc_content.to_string()),
+                is_binary: false,
+                updated_at: 1000,
+            }
+        ];
+
+        let res = tauri_compile_latex_internal(
+            "test-autores-proj".to_string(),
+            files,
+            "main.tex".to_string(),
+            Some("pdflatex".to_string()),
+            Some(true),
+            Some(temp_build_dir.to_string_lossy().to_string()),
+            Some(resolver),
+        ).expect("compilation with auto-resolution failed");
+
+        assert_eq!(res.status, "spotless");
+        assert!(res.pdf.is_some());
+        assert!(res.synctex.is_some());
+        assert_eq!(res.resolved_packages, vec!["autoresolvedpkg".to_string()]);
+        assert!(temp_texmf_dir.join("tex").join("latex").join("autoresolvedpkg").join("autoresolvedpkg.sty").exists());
+
+        let _ = std::fs::remove_dir_all(&temp_build_dir);
+        let _ = std::fs::remove_dir_all(&temp_texmf_dir);
     }
 }

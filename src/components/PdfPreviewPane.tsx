@@ -19,7 +19,7 @@ export interface PdfPreviewPaneProps {
   onNavigateToSource?: (target: { file: string; line: number }) => void;
 }
 
-import { isTauri } from '../storage/projectStore';
+import { isTauri, uint8ArrayToBase64 } from '../storage/tauriStorage';
 
 export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
   pdfBytes,
@@ -151,19 +151,19 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
     // so the file goes to the user's chosen location instead of the
     // browser's download directory (which can be silently suppressed in WebViews).
     if (typeof window !== 'undefined' && isTauri()) {
-      const base64 = typeof btoa !== 'undefined'
-        ? btoa(String.fromCharCode(...new Uint8Array(pdfBytes)))
-        : '';
       try {
-        const result = await (window as any).__TAURI_INTERNALS?.invoke(
-          'storage::save_file',
-          { filename: `${projectName?.toLowerCase().replace(/\s+/g, '-')}.pdf`, data: base64 }
-        );
-        if (result && result !== 'Failed to write') {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const base64 = uint8ArrayToBase64(pdfBytes);
+        await invoke('save_file', {
+          filename: `${projectName?.toLowerCase().replace(/\s+/g, '-') || 'document'}.pdf`,
+          data: base64,
+        });
+        return;
+      } catch (e: any) {
+        if (e === 'Save dialog cancelled' || e?.message?.includes('cancelled')) {
           return;
         }
-      } catch (e) {
-        console.warn('[PdfPreviewPane] Tauri save dialog failed, falling back to Blob:', e);
+        console.warn('[PdfPreviewPane] Tauri save_file failed, falling back to Blob:', e);
       }
     }
 

@@ -418,37 +418,38 @@ pub fn tauri_save_package_file(filename: String, data: String) -> Result<(), Str
 /// Open a native "Save File" dialog and write `data` to the chosen path.
 /// Used by the frontend to export artifacts (e.g. compiled PDFs) that the
 /// browser's `<a download>` flow cannot trigger inside the Tauri WebView.
-/// Open a native "Save File" dialog and write `data` to the chosen path.
-/// Used by the frontend to export artifacts (e.g. compiled PDFs) that the
-/// browser's `<a download>` flow cannot trigger inside the Tauri WebView.
 /// `data` is a base64-encoded string (the standard transport for binary
 /// payloads from the frontend).
 #[tauri::command]
-pub fn save_file(
+pub async fn save_file(
     app: tauri::AppHandle,
     filename: String,
     data: String,
 ) -> Result<(), String> {
-    let decoded = base64_utils::decode(&data)
-        .ok_or_else(|| "Invalid base64 payload".to_string())?;
-    let default_path = PathBuf::from(&filename)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or(filename.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        let decoded = base64_utils::decode(&data)
+            .ok_or_else(|| "Invalid base64 payload".to_string())?;
+        let default_path = PathBuf::from(&filename)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or(filename.clone());
 
-    let save_path = app
-        .dialog()
-        .file()
-        .set_file_name(&default_path)
-        .blocking_save_file()
-        .ok_or_else(|| "Save dialog cancelled".to_string())?
-        .into_path()
-        .map_err(|e| format!("Invalid save path: {}", e))?;
+        let save_path = app
+            .dialog()
+            .file()
+            .set_file_name(&default_path)
+            .blocking_save_file()
+            .ok_or_else(|| "Save dialog cancelled".to_string())?
+            .into_path()
+            .map_err(|e| format!("Invalid save path: {}", e))?;
 
-    std::fs::write(&save_path, decoded)
-        .map_err(|e| format!("Failed to write {}: {}", save_path.display(), e))?;
+        std::fs::write(&save_path, decoded)
+            .map_err(|e| format!("Failed to write {}: {}", save_path.display(), e))?;
 
-    Ok(())
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))?
 }
 
 #[tauri::command]

@@ -132,8 +132,7 @@ pub fn get_texlive_version_string() -> Option<String> {
     None
 }
 
-#[tauri::command]
-pub fn tauri_detect_texlive() -> Result<TexLiveDetection, String> {
+pub fn detect_texlive_sync() -> Result<TexLiveDetection, String> {
     let latexmk = check_binary_available("latexmk");
     let pdflatex = check_binary_available("pdflatex");
     let xelatex = check_binary_available("xelatex");
@@ -154,6 +153,13 @@ pub fn tauri_detect_texlive() -> Result<TexLiveDetection, String> {
         synctex,
         version,
     })
+}
+
+#[tauri::command]
+pub async fn tauri_detect_texlive() -> Result<TexLiveDetection, String> {
+    tauri::async_runtime::spawn_blocking(detect_texlive_sync)
+        .await
+        .map_err(|e| format!("Failed to execute detect_texlive task: {}", e))?
 }
 
 pub fn extract_file_bytes_from_project_file(file: &ProjectFile) -> Result<Vec<u8>, String> {
@@ -385,7 +391,7 @@ pub fn get_build_directory(project_id: &str) -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
-pub fn tauri_compile_latex(
+pub async fn tauri_compile_latex(
     project_id: String,
     files: Vec<ProjectFile>,
     entry: String,
@@ -393,15 +399,19 @@ pub fn tauri_compile_latex(
     synctex: Option<bool>,
     build_dir: Option<String>,
 ) -> Result<CompileResultPayload, String> {
-    tauri_compile_latex_internal(
-        project_id,
-        files,
-        entry,
-        engine,
-        synctex,
-        build_dir,
-        None,
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        tauri_compile_latex_internal(
+            project_id,
+            files,
+            entry,
+            engine,
+            synctex,
+            build_dir,
+            None,
+        )
+    })
+    .await
+    .map_err(|e| format!("Compilation task join error: {}", e))?
 }
 
 pub fn tauri_compile_latex_internal(
@@ -698,7 +708,7 @@ LaTeX Warning: Reference `undefinedref' on page 1 undefined on input line 10.
 
     #[test]
     fn test_tauri_detect_texlive() {
-        let result = tauri_detect_texlive().expect("detection failed");
+        let result = tauri::async_runtime::block_on(tauri_detect_texlive()).expect("detection failed");
         // On systems where texlive is installed, check fields
         assert!(result.latexmk);
         assert!(result.pdflatex);
@@ -725,14 +735,14 @@ Hello from Native TeX Live!
             }
         ];
 
-        let res = tauri_compile_latex(
+        let res = tauri::async_runtime::block_on(tauri_compile_latex(
             "test-compile-proj".to_string(),
             files,
             "main.tex".to_string(),
             Some("pdflatex".to_string()),
             Some(true),
             Some(temp_dir.to_string_lossy().to_string()),
-        ).expect("compilation failed");
+        )).expect("compilation failed");
 
         assert_eq!(res.status, "spotless");
         assert!(res.pdf.is_some());
@@ -764,14 +774,14 @@ Hello from Native TeX Live!
             }
         ];
 
-        let res = tauri_compile_latex(
+        let res = tauri::async_runtime::block_on(tauri_compile_latex(
             "test-err-proj".to_string(),
             files,
             "main.tex".to_string(),
             Some("pdflatex".to_string()),
             Some(true),
             Some(temp_dir.to_string_lossy().to_string()),
-        ).expect("compilation execution failed");
+        )).expect("compilation execution failed");
 
         assert_eq!(res.status, "errors");
         assert!(res.missing_files.contains(&"nonexistentfake123.sty".to_string()));

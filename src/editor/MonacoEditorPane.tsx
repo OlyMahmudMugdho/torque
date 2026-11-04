@@ -42,6 +42,23 @@ export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEdito
   const editorRef = useRef<any>(null);
 
   useEffect(() => {
+    const handleUnhandledRejection = (e: PromiseRejectionEvent) => {
+      const reason = e.reason;
+      if (
+        reason?.type === 'cancelation' ||
+        reason?.message === 'operation is manually canceled' ||
+        reason?.msg === 'operation is manually canceled'
+      ) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    return () => {
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
+  useEffect(() => {
     if (monaco) {
       registerLatexLanguage(monaco);
       monaco.editor.setTheme(theme === 'dark' ? 'intellij-dark' : 'intellij-light');

@@ -573,10 +573,14 @@ fn is_zip_file(path: &Path) -> bool {
 
 /// Tauri command to manually or proactively resolve a list of missing package files.
 #[tauri::command]
-pub fn tauri_resolve_missing_packages(missing_files: Vec<String>) -> Result<Vec<String>, String> {
-    let mut resolver = PackageResolver::new();
-    let installed = resolver.resolve_all(&missing_files);
-    Ok(installed)
+pub async fn tauri_resolve_missing_packages(missing_files: Vec<String>) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut resolver = PackageResolver::new();
+        let installed = resolver.resolve_all(&missing_files);
+        Ok(installed)
+    })
+    .await
+    .map_err(|e| format!("Package resolution task join error: {}", e))?
 }
 
 #[cfg(test)]

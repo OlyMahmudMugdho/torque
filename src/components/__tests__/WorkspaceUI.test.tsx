@@ -334,6 +334,52 @@ describe('Workspace UI Components', () => {
     expect(Array.from(rawBytes)).toEqual([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35]);
   });
 
+  it('updates rendered pages when recompiled with same page count', async () => {
+    const rawBytes1 = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35, 0x01]);
+    const rawBytes2 = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35, 0x02]);
+
+    const pageMock1 = {
+      getViewport: vi.fn().mockReturnValue({ width: 100, height: 100 }),
+      render: vi.fn().mockReturnValue({ promise: Promise.resolve() }),
+    };
+    const doc1 = {
+      numPages: 1,
+      getPage: vi.fn().mockResolvedValue(pageMock1),
+    };
+
+    const pageMock2 = {
+      getViewport: vi.fn().mockReturnValue({ width: 100, height: 100 }),
+      render: vi.fn().mockReturnValue({ promise: Promise.resolve() }),
+    };
+    const doc2 = {
+      numPages: 1,
+      getPage: vi.fn().mockResolvedValue(pageMock2),
+    };
+
+    vi.mocked(pdfjsLib.getDocument)
+      .mockReturnValueOnce({ promise: Promise.resolve(doc1) } as any)
+      .mockReturnValueOnce({ promise: Promise.resolve(doc2) } as any);
+
+    let rerenderFn: any;
+    await act(async () => {
+      const { rerender } = render(
+        <PdfPreviewPane pdfBytes={rawBytes1} compiling={false} projectName="Document" />
+      );
+      rerenderFn = rerender;
+    });
+
+    expect(doc1.getPage).toHaveBeenCalledWith(1);
+
+    await act(async () => {
+      rerenderFn(
+        <PdfPreviewPane pdfBytes={rawBytes2} compiling={false} projectName="Document" />
+      );
+    });
+
+    // doc2 has the exact same page count (1), but must be re-fetched and re-rendered
+    expect(doc2.getPage).toHaveBeenCalledWith(1);
+  });
+
   it('maps a PDF double-click to the matching SyncTeX source location', async () => {
     const onNavigateToSource = vi.fn();
     const rawBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x35]);

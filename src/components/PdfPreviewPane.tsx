@@ -36,6 +36,8 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
   const [scale, setScale] = useState<number>(1.1);
   const [renderError, setRenderError] = useState<boolean>(false);
   const [pages, setPages] = useState<Map<number, any>>(new Map());
+  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [docRevision, setDocRevision] = useState<number>(0);
   const pdfDocRef = useRef<any>(null);
 
   const hasPdf = Boolean(pdfBytes && pdfBytes.length > 0);
@@ -46,6 +48,7 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
     async function loadPdf() {
       if (!pdfBytes || pdfBytes.length === 0) {
         setNumPages(0);
+        setPdfDoc(null);
         pdfDocRef.current = null;
         setPages(new Map());
         setRenderError(false);
@@ -58,11 +61,15 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
         const doc = await loadingTask.promise;
         if (!active) return;
         pdfDocRef.current = doc;
+        setPdfDoc(doc);
         setNumPages(doc.numPages);
+        setDocRevision((rev) => rev + 1);
       } catch (err) {
         console.error('Failed to parse PDF bytes with PDF.js:', err);
         if (active) {
           setRenderError(true);
+          setPdfDoc(null);
+          pdfDocRef.current = null;
           setNumPages(0);
           setPages(new Map());
         }
@@ -80,7 +87,7 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
     let canceled = false;
 
     async function renderPages() {
-      const doc = pdfDocRef.current;
+      const doc = pdfDoc;
       if (!doc) return;
 
       const fetched = new Map<number, any>();
@@ -103,14 +110,16 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
       }
     }
 
-    if (numPages > 0) {
+    if (pdfDoc && pdfDoc.numPages > 0) {
       renderPages();
+    } else {
+      setPages(new Map());
     }
 
     return () => {
       canceled = true;
     };
-  }, [numPages, scale]);
+  }, [pdfDoc, scale]);
 
   const handlePdfDoubleClick = (event: {
     pageNumber: number;
@@ -349,7 +358,7 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
           <div ref={containerRef} className="flex flex-col items-center">
             {Array.from(pages.keys()).map((pageNumber) => (
               <PdfPageView
-                key={pageNumber}
+                key={`${pageNumber}-${docRevision}-${(pdfDoc as any)?._fingerprint || ''}`}
                 page={pages.get(pageNumber)}
                 pageNumber={pageNumber}
                 scale={scale}

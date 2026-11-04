@@ -150,6 +150,33 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
     await workspace.importZipAsProject(projectName, buffer);
   };
 
+  const handleSave = async () => {
+    if (monacoRef.current?.getEditorValue && workspace.activeFilePath) {
+      const val = monacoRef.current.getEditorValue();
+      if (typeof val === 'string') {
+        await workspace.updateActiveFileContent(val);
+      }
+    }
+    await workspace.actions.save?.();
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+S / Cmd+S (Save)
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSave();
+      }
+      // Ctrl+Alt+S / Cmd+Alt+S (Settings)
+      if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        setSettingsOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [workspace.activeFilePath]);
+
   const handleCompile = async () => {
     try {
       if (monacoRef.current?.getEditorValue && workspace.activeFilePath) {
@@ -315,6 +342,8 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         onExportZip={handleExportZip}
         onImportZip={handleImportZip}
         onCompile={handleCompile}
+        onSave={handleSave}
+        onOpenSettings={() => setSettingsOpen(true)}
         onCloseProject={handleCloseProject}
         onNewFile={handleCreateFile}
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
@@ -392,12 +421,13 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
 
           <div className="flex flex-col items-center gap-2">
             <button
+              onClick={() => setSettingsOpen(true)}
               className={`p-2 rounded transition ${
                 isDark
                   ? 'hover:text-[#dfe1e5] hover:bg-[#393b40]'
                   : 'hover:text-[#1f2328] hover:bg-[#dfe1e5]'
               }`}
-              title="Settings"
+              title="Settings (Ctrl+Alt+S)"
               aria-label="Settings"
             >
               <Settings className="w-4 h-4" />
@@ -472,6 +502,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
                 onCloseTab={workspace.closeTab}
                 onContentChange={workspace.updateActiveFileContent}
                 onCompileShortcut={handleCompile}
+                onSaveShortcut={handleSave}
               />
             </Panel>
 
@@ -552,6 +583,17 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         isOpen={missingRequirements.length > 0 && dismissedSetupResult !== workspace.lastResult}
         onClose={() => setDismissedSetupResult(workspace.lastResult)}
         missingRequirements={missingRequirements}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        theme={theme}
+        onThemeChange={setTheme}
+        autoSave={workspace.autoSave}
+        onAutoSaveChange={workspace.setAutoSave}
+        selectedEngine={workspace.selectedEngine}
+        onEngineChange={workspace.setSelectedEngine}
       />
     </div>
   );

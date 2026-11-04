@@ -133,4 +133,59 @@ describe('useWorkspace', () => {
     );
     expect(result.current.resolvedPackages).toEqual(['amsmath']);
   });
+
+  it('supports autosave enabled vs disabled and manual save', async () => {
+    const store = new ProjectStore(`ws-test-as-${crypto.randomUUID()}`);
+    const { result } = renderHook(() => useWorkspace({ store }));
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const activeProject = result.current.activeProject!;
+    expect(result.current.autoSave).toBe(true);
+
+    // 1. With autoSave enabled: changes write through to store immediately
+    await act(async () => {
+      await result.current.updateFileContent('main.tex', 'Autosaved content');
+    });
+
+    let storedFile = await store.getFile(activeProject.id, 'main.tex');
+    expect(storedFile?.content).toBe('Autosaved content');
+
+    // 2. Disable autosave
+    act(() => {
+      result.current.setAutoSave(false);
+    });
+    expect(result.current.autoSave).toBe(false);
+
+    // Edits when autosave is disabled: in-memory state updates, but store stays unchanged
+    await act(async () => {
+      await result.current.updateFileContent('main.tex', 'In-memory unpersisted edit');
+    });
+
+    expect(result.current.files.find((f) => f.path === 'main.tex')?.content).toBe(
+      'In-memory unpersisted edit'
+    );
+    storedFile = await store.getFile(activeProject.id, 'main.tex');
+    expect(storedFile?.content).toBe('Autosaved content'); // Not written to store yet!
+
+    // 3. Manual save writes dirty in-memory files to store
+    await act(async () => {
+      await result.current.actions.manualSave();
+    });
+
+    storedFile = await store.getFile(activeProject.id, 'main.tex');
+    expect(storedFile?.content).toBe('In-memory unpersisted edit');
+
+    // 4. Enabling autosave also flushes dirty files
+    await act(async () => {
+      await result.current.updateFileContent('main.tex', 'Another unpersisted edit');
+    });
+    storedFile = await store.getFile(activeProject.id, 'main.tex');
+    expect(storedFile?.content).toBe('In-memory unpersisted edit'); // not yet
+
+    await act(async () => {
+      result.current.setAutoSave(true);
+    });
+    storedFile = await store.getFile(activeProject.id, 'main.tex');
+    expect(storedFile?.content).toBe('Another unpersisted edit');
+  });
 });

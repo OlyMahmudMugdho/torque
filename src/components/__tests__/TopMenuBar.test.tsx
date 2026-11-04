@@ -36,7 +36,7 @@ describe('TopMenuBar', () => {
       expect(screen.queryByText('New File')).not.toBeInTheDocument();
       expect(screen.queryByText('Undo')).not.toBeInTheDocument();
       expect(screen.queryByText('Toggle Sidebar')).not.toBeInTheDocument();
-      expect(screen.queryByText('LaTeX Package Manager...')).not.toBeInTheDocument();
+      expect(screen.queryByText('Engine: latexmk (pdflatex)')).not.toBeInTheDocument();
       expect(screen.queryByText('About Torque')).not.toBeInTheDocument();
     });
   });
@@ -49,10 +49,36 @@ describe('TopMenuBar', () => {
 
       expect(screen.getByText('New File')).toBeInTheDocument();
       expect(screen.getByText('New Project')).toBeInTheDocument();
+      expect(screen.getByText('Save')).toBeInTheDocument();
+      expect(screen.getByText('Ctrl+S')).toBeInTheDocument();
       expect(screen.getByText('Import Zip')).toBeInTheDocument();
       expect(screen.getByText('Export Zip')).toBeInTheDocument();
+      expect(screen.getByText('Settings...')).toBeInTheDocument();
+      expect(screen.getByText('Ctrl+Alt+S')).toBeInTheDocument();
       expect(screen.getByText('Compile')).toBeInTheDocument();
       expect(screen.getByText('Ctrl+B')).toBeInTheDocument();
+    });
+
+    it('triggers onSave callback and closes menu', () => {
+      const onSave = vi.fn();
+      renderTopMenuBar({ onSave });
+
+      fireEvent.click(screen.getByRole('button', { name: 'File' }));
+      fireEvent.click(screen.getByText('Save'));
+
+      expect(onSave).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('Save')).not.toBeInTheDocument();
+    });
+
+    it('triggers onOpenSettings callback and closes menu', () => {
+      const onOpenSettings = vi.fn();
+      renderTopMenuBar({ onOpenSettings });
+
+      fireEvent.click(screen.getByRole('button', { name: 'File' }));
+      fireEvent.click(screen.getByText('Settings...'));
+
+      expect(onOpenSettings).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('Settings...')).not.toBeInTheDocument();
     });
 
     it('triggers onCompile callback and closes menu', () => {
@@ -224,19 +250,20 @@ describe('TopMenuBar', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Tools' }));
 
-      expect(screen.getByText('LaTeX Package Manager...')).toBeInTheDocument();
-      expect(screen.getByText('Shift+Alt+P')).toBeInTheDocument();
+      expect(screen.getByText('Engine: latexmk (pdflatex)')).toBeInTheDocument();
+      expect(screen.getByText('Engine: latexmk (xelatex)')).toBeInTheDocument();
+      expect(screen.getByText('Engine: latexmk (lualatex)')).toBeInTheDocument();
     });
 
-    it('triggers onOpenPackageManager callback and closes menu', () => {
-      const onOpenPackageManager = vi.fn();
-      renderTopMenuBar({ onOpenPackageManager });
+    it('triggers onSelectEngine callback and closes menu', () => {
+      const onSelectEngine = vi.fn();
+      renderTopMenuBar({ onSelectEngine });
 
       fireEvent.click(screen.getByRole('button', { name: 'Tools' }));
-      fireEvent.click(screen.getByText('LaTeX Package Manager...'));
+      fireEvent.click(screen.getByText('Engine: latexmk (xelatex)'));
 
-      expect(onOpenPackageManager).toHaveBeenCalledTimes(1);
-      expect(screen.queryByText('LaTeX Package Manager...')).not.toBeInTheDocument();
+      expect(onSelectEngine).toHaveBeenCalledWith('xelatex');
+      expect(screen.queryByText('Engine: latexmk (xelatex)')).not.toBeInTheDocument();
     });
   });
 

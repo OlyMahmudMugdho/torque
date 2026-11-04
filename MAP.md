@@ -132,14 +132,12 @@ Torque provides a full-featured LaTeX authoring environment powered by the host'
   - Project list with search filtering, last-modified timestamps, context menu (rename/delete), and drag-and-drop `.zip` import zone.
 - [`src/components/TopMenuBar.tsx`](file:///home/mugdho/codes/torque/src/components/TopMenuBar.tsx):
   - IntelliJ New UI application menu bar: *File*, *Edit*, *View*, *Tools*, *Help*.
-  - Keyboard shortcut hints (`Ctrl+B`, `Ctrl+S`, `Ctrl+Alt+P`), modal triggers (Package Manager, Settings, About), and export actions.
+  - Keyboard shortcut hints (`Ctrl+B`, `Ctrl+S`), modal triggers (Settings, About), and export actions.
 - [`src/components/ProjectTopBar.tsx`](file:///home/mugdho/codes/torque/src/components/ProjectTopBar.tsx):
-  - Editor header with project breadcrumbs, active root file badge, compilation status indicator (Idle, Compiling, Success, Failed, Duration), compile button (`Ctrl+B`), engine switcher (`pdflatex`, `xelatex`, `lualatex`), and theme toggle.
-- [`src/components/PackageManagerModal.tsx`](file:///home/mugdho/codes/torque/src/components/PackageManagerModal.tsx):
-  - LaTeX package catalog & inspector.
-  - Category filters (*Math*, *Physics*, *Graphics*, *Layout*, *Typography*, *Citations*, *Code*, *Tables*).
-  - Search by package name or description.
-  - One-click *Insert \usepackage* inserting required declaration directly into root entry preamble.
+  - Editor header with project breadcrumbs, active root file badge, compilation status indicator (Idle, Compiling, Success, Failed, Duration), compile button (`Ctrl+B`), and engine switcher (`pdflatex`, `xelatex`, `lualatex`). Theme toggling is accessed via *View* menu or *Settings*.
+- [`src/components/SettingsModal.tsx`](file:///home/mugdho/codes/torque/src/components/SettingsModal.tsx):
+  - IntelliJ-style Settings modal dialog (`Ctrl+Alt+S` / gear icon in rail / *File -> Settings...*).
+  - Configures Appearance (Theme), Editor (Autosave toggle and status), and Build & Execution (Default TeX engine).
 - [`src/components/TexSetupGuide.tsx`](file:///home/mugdho/codes/torque/src/components/TexSetupGuide.tsx):
   Modal shown when a compile result has `missingRequirements` (TeX Live / latexmk / engine missing). Lists what is missing, per-OS install commands (detected OS highlighted), and a Re-check button. Backed by a requirement preflight in Rust `compiler.rs` (`compute_missing_requirements`, `ensure_tex_path`) and Node `serverCompiler.ts` / `scripts/compiler-server.js` (`computeMissingRequirements`, `ensureTexPath`) that returns a failed result immediately.
 - [`src/components/DiagnosticsLogPanel.tsx`](file:///home/mugdho/codes/torque/src/components/DiagnosticsLogPanel.tsx):
@@ -177,7 +175,7 @@ Torque provides a full-featured LaTeX authoring environment powered by the host'
 - [`src/packages/packageCatalog.ts`](file:///home/mugdho/codes/torque/src/packages/packageCatalog.ts):
   - Curated registry and metadata definition (`DEFAULT_PACKAGE_CATALOG`) of 50+ popular LaTeX packages.
 - [`src/packages/packageManager.ts`](file:///home/mugdho/codes/torque/src/packages/packageManager.ts):
-  - Package catalog queries and preamble analyzer: parses existing `\usepackage{}` declarations and safely inserts new packages before `\begin{document}`.
+  - Preamble analyzer: parses existing `\usepackage{}` declarations and safely inserts new packages before `\begin{document}`.
 - [`src/packages/packageTypes.ts`](file:///home/mugdho/codes/torque/src/packages/packageTypes.ts):
   - Type definitions for `LatexPackage` and `PackageCategory`.
 

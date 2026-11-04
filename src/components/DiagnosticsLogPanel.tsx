@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { Diagnostic } from '../types/workspace';
 import { useThemeSafe } from '../context/ThemeContext';
-import { AlertCircle, AlertTriangle, CheckCircle2, Terminal, X, Package } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle2, Terminal, X } from 'lucide-react';
 
 /**
  * Extracts a missing package or class name from LaTeX compiler error messages.
@@ -25,7 +25,6 @@ export interface DiagnosticsLogPanelProps {
   onToggle?: () => void;
   onClose?: () => void;
   onSelectDiagnostic?: (diagnostic: Diagnostic) => void;
-  onQuickFixMissingPackage?: (packageName: string) => void;
 }
 
 export const DiagnosticsLogPanel: React.FC<DiagnosticsLogPanelProps> = ({
@@ -34,7 +33,6 @@ export const DiagnosticsLogPanel: React.FC<DiagnosticsLogPanelProps> = ({
   onToggle,
   onClose,
   onSelectDiagnostic,
-  onQuickFixMissingPackage,
 }) => {
   const [activeTab, setActiveTab] = useState<'problems' | 'build'>('problems');
   const { theme } = useThemeSafe();
@@ -144,7 +142,6 @@ export const DiagnosticsLogPanel: React.FC<DiagnosticsLogPanelProps> = ({
             ) : (
               diagnostics.map((d, index) => {
                 const isErr = d.severity === 'error';
-                const missingPkg = extractMissingPackageName(d.message);
                 const displayMessage =
                   d.message === 'unreachable'
                     ? 'Internal TeX engine error (unreachable). The compiler has been automatically reset.'
@@ -171,27 +168,6 @@ export const DiagnosticsLogPanel: React.FC<DiagnosticsLogPanelProps> = ({
                         </span>{' '}
                         <span className={isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'}>{displayMessage}</span>
                       </div>
-                      {missingPkg && onQuickFixMissingPackage && (
-                        <div className="mt-1 flex items-center">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onQuickFixMissingPackage(missingPkg);
-                            }}
-                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium border transition ${
-                              isDark
-                                ? 'bg-[#2b2d30] border-[#3574f0]/60 text-[#70a1ff] hover:bg-[#3574f0]/20'
-                                : 'bg-[#ebf2fe] border-[#3574f0]/40 text-[#1750eb] hover:bg-[#dce8fd]'
-                            }`}
-                            title={`Install package "${missingPkg}"`}
-                            aria-label={`Install package "${missingPkg}"`}
-                          >
-                            <Package className="w-3 h-3 text-[#3574f0]" />
-                            <span>Install package &quot;{missingPkg}&quot;</span>
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </div>
                 );

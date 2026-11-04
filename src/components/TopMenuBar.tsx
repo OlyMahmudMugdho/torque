@@ -12,6 +12,8 @@ export interface TopMenuBarProps {
   onExportZip?: () => void;
   onCloseProject?: () => void;
   onCompile?: () => void;
+  onSave?: () => void;
+  onOpenSettings?: () => void;
   onToggleSidebar?: () => void;
   onToggleProblems?: () => void;
   onTogglePreview?: () => void;
@@ -19,7 +21,6 @@ export interface TopMenuBarProps {
   onRedo?: () => void;
   onShortcuts?: () => void;
   onAbout?: () => void;
-  onOpenPackageManager?: () => void;
   selectedEngine?: LatexEngine;
   onSelectEngine?: (engine: LatexEngine) => void;
   className?: string;
@@ -47,6 +48,8 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onExportZip,
   onCloseProject,
   onCompile,
+  onSave,
+  onOpenSettings,
   onToggleSidebar,
   onToggleProblems,
   onTogglePreview,
@@ -54,7 +57,6 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onRedo,
   onShortcuts,
   onAbout,
-  onOpenPackageManager,
   selectedEngine = 'pdflatex',
   onSelectEngine,
   className = '',
@@ -103,9 +105,13 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
       items: [
         { label: 'New File', onClick: onNewFile },
         { label: 'New Project', onClick: onNewProject },
+        { label: 'Save', shortcut: 'Ctrl+S', onClick: onSave },
+        { type: 'separator' },
         { label: 'Import Zip', onClick: onImportZip },
         { label: 'Export Zip', onClick: onExportZip },
         { label: 'Close Project', onClick: onCloseProject },
+        { type: 'separator' },
+        { label: 'Settings...', shortcut: 'Ctrl+Alt+S', onClick: onOpenSettings },
         { type: 'separator' },
         { label: 'Compile', shortcut: 'Ctrl+B', onClick: onCompile },
         { type: 'separator' },
@@ -148,12 +154,6 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
       id: 'tools',
       label: 'Tools',
       items: [
-        {
-          label: 'LaTeX Package Manager...',
-          shortcut: 'Shift+Alt+P',
-          onClick: onOpenPackageManager,
-        },
-        { type: 'separator' },
         {
           label: 'Engine: latexmk (pdflatex)',
           checked: selectedEngine === 'pdflatex',

@@ -13,10 +13,13 @@ import type { CompilerDriver } from '../compiler/compilerDriver';
 import { exportProjectZip, importProjectZip } from '../archive/zipArchive';
 import { applyTextDiff } from '../editor/latexLanguage';
 
+export const AUTOSAVE_STORAGE_KEY = 'torque_autosave_enabled';
+
 export interface UseWorkspaceOptions {
   store?: ProjectStore;
   compiler?: CompilerClient;
   driver?: CompilerDriver;
+  autoSave?: boolean;
 }
 
 export interface WorkspaceState {
@@ -30,6 +33,9 @@ export interface WorkspaceState {
   lastResult: CompileResult | null;
   selectedEngine: LatexEngine;
   setSelectedEngine: (engine: LatexEngine) => void;
+  autoSave: boolean;
+  setAutoSave: (enabled: boolean) => void;
+  save: () => Promise<void>;
   resolvingPackage: string | null;
   resolvedPackages: string[];
   clearResolvedPackages: () => void;
@@ -78,6 +84,34 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
   const selectedEngineRef = useRef<LatexEngine>(selectedEngine);
   selectedEngineRef.current = selectedEngine;
 
+  const [autoSave, setAutoSaveState] = useState<boolean>(() => {
+    if (options?.autoSave !== undefined) {
+      return options.autoSave;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(AUTOSAVE_STORAGE_KEY);
+        if (stored !== null) {
+          return stored === 'true';
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return true;
+  });
+  const autoSaveRef = useRef<boolean>(autoSave);
+  autoSaveRef.current = autoSave;
+
+  const dirtyFilesRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (options?.autoSave !== undefined) {
+      setAutoSaveState(options.autoSave);
+      autoSaveRef.current = options.autoSave;
+    }
+  }, [options?.autoSave]);
+
   const [resolvingPackage, setResolvingPackage] = useState<string | null>(null);
   const [resolvedPackages, setResolvedPackages] = useState<string[]>([]);
 
@@ -97,6 +131,47 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
 
   const activeProjectRef = useRef<Project | null>(activeProject);
   activeProjectRef.current = activeProject;
+
+  const saveAction = useCallback(async () => {
+    if (!activeProjectRef.current) return;
+    const projId = activeProjectRef.current.id;
+    if (dirtyFilesRef.current.size > 0) {
+      const paths = Array.from(dirtyFilesRef.current);
+      for (const p of paths) {
+        const f = filesRef.current.find((file) => file.path === p);
+        if (f) {
+          await storeRef.current.putFile(projId, f.path, f.content, f.isBinary);
+        }
+      }
+      dirtyFilesRef.current.clear();
+    } else {
+      const active = activeFilePathRef.current;
+      if (active) {
+        const f = filesRef.current.find((file) => file.path === active);
+        if (f) {
+          await storeRef.current.putFile(projId, f.path, f.content, f.isBinary);
+        }
+      }
+    }
+  }, []);
+
+  const setAutoSave = useCallback(
+    (enabled: boolean) => {
+      setAutoSaveState(enabled);
+      autoSaveRef.current = enabled;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(AUTOSAVE_STORAGE_KEY, String(enabled));
+        } catch {
+          // ignore
+        }
+      }
+      if (enabled) {
+        saveAction();
+      }
+    },
+    [saveAction]
+  );
 
   const refreshFiles = useCallback(async (projectId: string) => {
     const list = await storeRef.current.listFiles(projectId);
@@ -261,7 +336,11 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
           ];
       filesRef.current = finalFiles;
       setFiles(finalFiles);
-      await storeRef.current.putFile(activeProjectRef.current.id, norm, content, false);
+      if (autoSaveRef.current) {
+        await storeRef.current.putFile(activeProjectRef.current.id, norm, content, false);
+      } else {
+        dirtyFilesRef.current.add(norm);
+      }
     },
     []
   );
@@ -447,7 +526,11 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
             ];
         filesRef.current = finalFiles;
         setFiles(finalFiles);
-        await storeRef.current.putFile(activeProjectRef.current.id, norm, content, false);
+        if (autoSaveRef.current) {
+          await storeRef.current.putFile(activeProjectRef.current.id, norm, content, false);
+        } else {
+          dirtyFilesRef.current.add(norm);
+        }
       },
       applyDiff: async (path: string, original: string, modified: string) => {
         if (!activeProjectRef.current) throw new Error('No active project');
@@ -456,18 +539,24 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
         if (!f) throw new Error(`File not found: ${path}`);
         const currentText = typeof f.content === 'string' ? f.content : new TextDecoder().decode(f.content);
         const updatedContent = applyTextDiff(currentText, original, modified);
-        await storeRef.current.putFile(activeProjectRef.current.id, norm, updatedContent, false);
         const updated = filesRef.current.map((file) =>
           file.path === norm ? { ...file, content: updatedContent, updatedAt: Date.now() } : file
         );
         filesRef.current = updated;
         setFiles(updated);
+        if (autoSaveRef.current) {
+          await storeRef.current.putFile(activeProjectRef.current.id, norm, updatedContent, false);
+        } else {
+          dirtyFilesRef.current.add(norm);
+        }
       },
       getDiagnostics: () => {
         return lastResult?.diagnostics ?? [];
       },
+      manualSave: saveAction,
+      save: saveAction,
     };
-  }, [compileAction, lastResult]);
+  }, [compileAction, lastResult, saveAction]);
 
   return {
     ready,
@@ -480,6 +569,9 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
     lastResult,
     selectedEngine,
     setSelectedEngine,
+    autoSave,
+    setAutoSave,
+    save: saveAction,
     resolvingPackage,
     resolvedPackages,
     clearResolvedPackages,

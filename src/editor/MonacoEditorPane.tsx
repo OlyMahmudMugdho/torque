@@ -15,6 +15,7 @@ export interface MonacoEditorPaneProps {
   onCloseTab: (path: string) => void;
   onContentChange: (content: string) => void;
   onCompileShortcut: () => void;
+  onSaveShortcut?: () => void;
 }
 
 export interface MonacoEditorHandle {
@@ -34,6 +35,7 @@ export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEdito
       onCloseTab,
       onContentChange,
       onCompileShortcut,
+      onSaveShortcut,
     },
     ref
   ) => {
@@ -107,6 +109,15 @@ export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEdito
         onContentChange(val);
       }
       onCompileShortcut();
+    });
+
+    // Ctrl+S / Cmd+S for save
+    editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => {
+      const val = editor.getValue();
+      if (typeof val === 'string') {
+        onContentChange(val);
+      }
+      onSaveShortcut?.();
     });
   };
 

@@ -63,4 +63,6 @@ export interface WorkspaceActions {
   setFileContent: (path: string, content: string) => Promise<void>;
   applyDiff: (path: string, original: string, modified: string) => Promise<void>;
   getDiagnostics: () => Diagnostic[];
+  manualSave: () => Promise<void>;
+  save?: () => Promise<void>;
 }

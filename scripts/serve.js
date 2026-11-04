@@ -2,7 +2,6 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handleCtanRequest } from './ctanProxy.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,7 +27,6 @@ const MIME_TYPES = {
 
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  if (await handleCtanRequest(req, res, requestUrl)) return;
 
   let reqPath = decodeURI(requestUrl.pathname);
   if (reqPath === '/' || reqPath.endsWith('/')) {

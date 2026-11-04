@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const children = [
-  spawn(process.execPath, ['scripts/ctan-server.js'], { stdio: 'inherit', env: process.env }),
+  spawn(process.execPath, ['scripts/compiler-server.js'], { stdio: 'inherit', env: process.env }),
   spawn(npmCommand, ['exec', 'next', '--', 'dev'], { stdio: 'inherit', env: process.env }),
 ];
 

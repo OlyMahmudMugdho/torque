@@ -21,15 +21,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 When modifying or expanding Torque, all agents must adhere to the following rules:
 
-### 1. Client-Side WebAssembly Execution
-- TeX compilation is 100% client-side via `glyphtex-engine` (`tectonic_wasm.wasm`).
-- Never introduce server-side TeX compilation endpoints or proxies.
-- Compilation must always remain isolated in a dedicated Web Worker (`src/compiler/compiler.worker.ts`) to avoid locking the UI thread.
-- Always reuse the precompiled `WebAssembly.Module` across compilations (`WebAssembly.compileStreaming` / `WebAssembly.compile`), but **always invalidate the `TexEngine` instance** on compilation failures or runtime traps to keep WASM linear memory pristine.
-- Streaming compilation with `WebAssembly.compileStreaming` must check that the response `Content-Type` contains `application/wasm` and must never pass a cloned response (`resp.clone()`) without consuming both branches to avoid tee stream deadlocks in browser Web Workers.
-- In multi-pass missing file loops in the worker, only trigger subsequent passes if `newFilesAdded > 0` (files not already present in memory). Font probes already in memory must not trigger repeated compilation passes.
-- Compatibility stubs for packages like `fontspec.sty` must use `\DeclareDocumentCommand` with optional trailing/leading arguments (`{ o m o }` and `{ m o m o }`) so options and font families do not leak onto page 1.
-- Stderr/stdout logs must be captured via `TexEngine.load(wasmModule, { onStderr, onStdout })` to extract real Rust panics, font shaper errors, and missing package messages.
+### 1. Native TeX Live Execution & Automated Package Resolution
+- TeX compilation is powered by the native host TeX Live distribution (`latexmk`, `pdflatex`, `xelatex`, `lualatex`).
+- Compilation runs natively through Tauri IPC (`src-tauri/src/compiler.rs`) on Desktop and through the lightweight compilation server (`src/compiler/serverCompiler.ts`, `src/app/api/compile/route.ts`, `scripts/compiler-server.js`) in Web / Dev environments via the unified `CompilerDriver` interface (`src/compiler/compilerDriver.ts`).
+- Missing packages, style files, classes, and font metrics are automatically detected from TeX compilation logs and resolved directly from CTAN mirrors into the user TeXMF tree (`src-tauri/src/package_resolver.rs` and standalone compiler server).
+- Multi-pass compilation is managed by `latexmk` with full SyncTeX generation (`synctex=1`), enabling bi-directional navigation between Monaco editor and PDF preview.
+- TeX log output is parsed into structured diagnostics with accurate line numbers, severity levels (error, warning, info), and missing file notifications.
 
 ### 2. Zero-Space Diagnostic Pane
 - The Problems / Build Output panel (`src/components/DiagnosticsLogPanel.tsx`) must dismiss cleanly with zero persistent footprint.
@@ -43,9 +40,9 @@ When modifying or expanding Torque, all agents must adhere to the following rule
 
 ### 4. IntelliJ IDEA Aesthetics & JetBrains Design Language
 - UI components must match IntelliJ IDEA New UI aesthetics:
-  - Clean toolbar styling with status pills.
+  - Clean toolbar styling with status pills (Idle, Compiling, Success, Failed, Duration, Engine selector).
   - Dark (`darcula`) and Light (`intellij-light`) themes with subtle borders (`#323232` dark / `#d1d5db` light).
-  - Standard JetBrains keyboard shortcut conventions (`Ctrl+B` / `Cmd+B` to build, `Ctrl+Alt+P` for package manager).
+  - Standard JetBrains keyboard shortcut conventions (`Ctrl+B` / `Cmd+B` to build, `Ctrl+Alt+P` for package catalog).
   - Welcome screen layout mirroring JetBrains Project Wizard cards and recent projects list.
 
 ### 5. Semantic Versioning Authority
@@ -57,4 +54,5 @@ When modifying or expanding Torque, all agents must adhere to the following rule
 ## Verification Requirement
 Every change must be validated by running:
 1. `npm test` — all Vitest suites must pass with zero failures.
-2. `npm run build` — Next.js static export must complete without TypeScript or bundling errors.
+2. `npm run build` — Next.js build must complete without TypeScript or bundling errors.
+3. `cargo test --manifest-path src-tauri/Cargo.toml` — all Rust tests must pass with zero failures.

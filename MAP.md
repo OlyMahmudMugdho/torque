@@ -1,19 +1,20 @@
 # Torque Architecture & Codebase Map
 
-> **Torque**: Modern, open-source, client-side WebAssembly LaTeX IDE featuring IntelliJ IDEA aesthetics, instant browser compilation, and native Tauri desktop support.
+> **Torque**: Modern, open-source LaTeX IDE featuring IntelliJ IDEA aesthetics, native TeX Live execution, automated CTAN package resolution, and native Tauri desktop support.
 
 ---
 
 ## 1. Project Purpose & Core Architecture
 
-Torque provides a full-featured, zero-server LaTeX authoring environment that runs completely inside the user's browser or as a native desktop application via Tauri v2.
+Torque provides a full-featured LaTeX authoring environment powered by the host's native TeX Live distribution (`latexmk`, `pdflatex`, `xelatex`, `lualatex`) with automated CTAN package resolution and SyncTeX bi-directional navigation. It runs as a native desktop application via Tauri v2 or as a web client communicating with a lightweight TeX compilation backend.
 
 ### Architectural Pillars:
-1. **100% Client-Side WebAssembly Compilation**: Powered by `glyphtex-engine` (Tectonic compiled to WASM). Documents compile locally without sending code to remote servers, preserving privacy and enabling offline use.
-2. **Web Worker Isolation**: The TeX WASM engine runs in a dedicated background worker (`compiler.worker.ts`), preventing UI freezes in the Monaco editor and preview panes.
-3. **IntelliJ IDEA New UI Aesthetics**: Dark (`darcula`) and Light (`intellij-light`) design language replicating JetBrains IDE toolbar styling, project trees, tab controls, menus, and keyboard shortcuts.
-4. **Unified Multi-Platform Storage**: Automatically detects whether it is running within Tauri desktop (`~/.torque` on the local filesystem) or a web browser (IndexedDB via `fake-indexeddb` / browser IDB).
-5. **Smart Package Resolution**: Preloads core standard TeX assets (`latex.fmt`, standard classes, AMS, TikZ, Latin Modern fonts) while fetching additional packages on demand from `/bundle/`.
+1. **Native TeX Live Execution**: Powered by host TeX Live (`latexmk`, `pdflatex`, `xelatex`, `lualatex`). Compiles standard LaTeX, XeLaTeX, and LuaLaTeX documents with full font, microtype, and multi-pass citation/cross-reference support.
+2. **Automated CTAN Package Resolution**: Automatically detects missing packages, style files, classes, and font metrics from TeX compilation logs and resolves them directly from CTAN mirrors into the user TeXMF tree (`TEXMFHOME`), running `mktexlsr`/`texhash` and retrying compilation seamlessly.
+3. **Unified Compiler Driver Architecture**: Single frontend controller (`CompilerDriver`) interfacing with native Tauri IPC (`src-tauri/src/compiler.rs`) in Desktop mode and HTTP server endpoints (`src/compiler/serverCompiler.ts`, `/api/compile`, `scripts/compiler-server.js`) in Web/Dev mode.
+4. **IntelliJ IDEA New UI Aesthetics**: Dark (`darcula`) and Light (`intellij-light`) design language replicating JetBrains IDE toolbar styling, status pills (Idle, Compiling, Success, Failed, Duration, Engine selector), project trees, tab controls, menus, and keyboard shortcuts.
+5. **SyncTeX Bi-Directional Navigation**: Generates `.synctex.gz` records during compilation and provides inverse search (click PDF preview to jump to source line) and forward search (jump from cursor to PDF coordinate).
+6. **Multi-Platform Storage**: Automatically detects whether it is running within Tauri desktop (`~/.torque` on the local filesystem) or a web browser (IndexedDB via `projectStore.ts`).
 
 ---
 
@@ -25,6 +26,7 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 │                                                                        │
 │  ┌───────────────────────┐             ┌────────────────────────────┐  │
 │  │ TopMenuBar & TopBar   │             │ WelcomeHomeScreen          │  │
+│  │ (Engine Switcher)     │             │ (JetBrains Wizard)         │  │
 │  └───────────┬───────────┘             └─────────────┬──────────────┘  │
 │              │                                       │                 │
 │              ▼                                       ▼                 │
@@ -35,24 +37,34 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 │          ▼                       ▼                          ▼          │
 │  ┌───────────────┐     ┌───────────────────┐     ┌──────────────────┐  │
 │  │ MonacoEditor  │     │ PdfPreviewPane    │     │ DiagnosticsPanel │  │
-│  │ (latexLang)   │     │ (pdfjs-dist)      │     │ (zero-space)     │  │
+│  │ (latexLang)   │     │ (SyncTeX Click)   │     │ (zero-space)     │  │
 │  └───────────────┘     └───────────────────┘     └──────────────────┘  │
 └──────────┬──────────────────────────────────────────────────┬──────────┘
            │                                                  │
-           │ postMessage({ files, entry })                    │
-           ▼                                                  ▼
-┌──────────────────────────────────────┐  ┌──────────────────────────────┐
-│ compiler.worker.ts                   │  │ Storage Abstraction          │
-│ ┌──────────────────────────────────┐ │  │ ┌──────────────────────────┐ │
-│ │ WebAssembly.Module (Precompiled) │ │  │ │ TauriStorage (~/.torque) │ │
-│ ├──────────────────────────────────┤ │  │ ├──────────────────────────┤ │
-│ │ TexEngine (glyphtex-engine)      │ │  │ │ ProjectStore (IndexedDB) │ │
-│ ├──────────────────────────────────┤ │  │ └──────────────────────────┘ │
-│ │ Stderr / Stdout Capturer         │ │  └──────────────────────────────┘
-│ ├──────────────────────────────────┤ │
-│ │ On-Demand Bundle Resolver        │ │
-│ └──────────────────────────────────┘ │
-└──────────────────────────────────────┘
+           │ compile({ files, entry, engine, synctex })       ▼
+           ▼                                      ┌──────────────────────┐
+┌──────────────────────────────────────┐          │ Storage Abstraction  │
+│ CompilerClient / CompilerDriver      │          │ ┌──────────────────┐ │
+│ ┌──────────────────────────────────┐ │          │ │ TauriStorage     │ │
+│ │ TauriCompilerDriver (Tauri IPC)  │ │          │ │ (~/.torque)      │ │
+│ ├──────────────────────────────────┤ │          │ ├──────────────────┤ │
+│ │ ServerCompilerDriver (HTTP POST) │ │          │ │ ProjectStore     │ │
+│ └──────────────────────────────────┘ │          │ │ (IndexedDB)      │ │
+└──────────────────┬───────────────────┘          │ └──────────────────┘ │
+                   │                              └──────────────────────┘
+                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Native TeX Live Execution Backend (Tauri Rust / Node.js Server)       │
+│ ┌────────────────────────────────────────────────────────────────────┐ │
+│ │ TeX Engine Runner: latexmk -pdf / -xelatex / -lualatex -synctex=1  │ │
+│ ├────────────────────────────────────────────────────────────────────┤ │
+│ │ Automated CTAN Resolver: detects missing .sty/.cls, fetches, unpacks││
+│ ├────────────────────────────────────────────────────────────────────┤ │
+│ │ User TeXMF Updater: texmf/tex/latex/..., runs mktexlsr / texhash   │ │
+│ ├────────────────────────────────────────────────────────────────────┤ │
+│ │ Log & Diagnostic Parser: extracts errors, line numbers, panics     │ │
+│ └────────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -60,7 +72,7 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 ## 3. Comprehensive Directory & File Reference
 
 ### Root Directory
-- [`package.json`](file:///home/mugdho/codes/torque/package.json): Package metadata, dependencies (`glyphtex-engine`, `monaco-editor`, `pdfjs-dist`, `next`, `@tauri-apps/api`), and scripts (`dev`, `build`, `start`, `test`, `tauri`).
+- [`package.json`](file:///home/mugdho/codes/torque/package.json): Package metadata, dependencies (`monaco-editor`, `pdfjs-dist`, `synctex-js`, `next`, `@tauri-apps/api`), and scripts (`dev`, `build`, `start`, `test`, `tauri`).
 - [`version.ts`](file:///home/mugdho/codes/torque/src/version.ts): Single source of truth for semantic application version (`APP_VERSION = '0.1.0'`).
 - [`next.config.mjs`](file:///home/mugdho/codes/torque/next.config.mjs): Static HTML export configuration (`output: 'export'`) with unoptimized images and trailing slash settings.
 - [`tsconfig.json`](file:///home/mugdho/codes/torque/tsconfig.json): TypeScript compilation options and path aliases (`@/*` -> `./src/*`).
@@ -74,26 +86,42 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 - [`src/app/layout.tsx`](file:///home/mugdho/codes/torque/src/app/layout.tsx): Root layout mounting font definitions and wrapping child pages with `<ThemeProvider>`.
 - [`src/app/page.tsx`](file:///home/mugdho/codes/torque/src/app/page.tsx): Main entry page rendering the workspace UI or welcome screen via dynamic client import.
 - [`src/app/globals.css`](file:///home/mugdho/codes/torque/src/app/globals.css): Global CSS stylesheets, Tailwind directives, and IntelliJ UI scrollbar stylings.
+- [`src/app/api/compile/route.ts`](file:///home/mugdho/codes/torque/src/app/api/compile/route.ts): App Router HTTP compilation endpoint delegating to `serverCompiler.ts`.
 
 ---
 
-### `src/compiler/` — WebAssembly TeX Compiler Subsystem
-- [`src/compiler/compiler.worker.ts`](file:///home/mugdho/codes/torque/src/compiler/compiler.worker.ts):
-  - Dedicated Web Worker executing `TexEngine` off the main thread.
-  - **Module Caching**: Compiles `WebAssembly.Module` once (`getWasmModule()`) and reuses it across engine instances for instant engine recreation.
-  - **Auto Engine Invalidation**: If a compile fails or traps, `currentEngine` is set to `null` so corrupted WASM linear memory / `bridge_core` state never poisons subsequent compilations.
-  - **Diagnostic & Log Extraction**: Captures `onStderr` and `onStdout` to parse panic reasons, missing file notices, and LaTeX syntax errors into structured diagnostics.
-  - **XeTeX Font Name Probe Resolution**: Automatically strips `.sty.aux`, probe suffixes, brackets (`[...]`), and `:mapping` specifiers from XeTeX font lookups to match files in `/bundle/`.
-  - **TikZ, AMS, Hyperref & Tables Preload**: Bundles core TeX packages, Latin Modern Roman fonts, TikZ libraries, Hyperref suite (`hxetex.def`, `rerunfilecheck`, `uniquecounter`, `puenc.def`), tables (`booktabs`, `multirow`), fontenc (`t1enc.def`), and algorithmic packages upfront.
-  - **Multi-Pass Resolution Guard**: Tracks whether newly retrieved files were added to cache, terminating early if missing assets are unresolvable or already cached font probes to prevent timeout loops.
-  - **Eager Background Pre-warming**: Immediately compiles WASM module and preloads core bundle when the worker is spawned in browser.
+### `src/compiler/` — Native TeX Compilation Subsystem
+- [`src/compiler/compilerDriver.ts`](file:///home/mugdho/codes/torque/src/compiler/compilerDriver.ts):
+  - Unified driver interface (`CompilerDriver`) for detecting TeX Live environments and compiling projects.
+  - Implementations: `TauriCompilerDriver` (native Tauri IPC via `tauri_compile_latex` and `tauri_detect_texlive`), `ServerCompilerDriver` (HTTP client posting to `/api/compile` or standalone compiler server), and factory `getActiveCompilerDriver()`.
 - [`src/compiler/compilerClient.ts`](file:///home/mugdho/codes/torque/src/compiler/compilerClient.ts):
-  - Main thread controller interfacing with `compiler.worker.ts`.
-  - Enforces single-concurrency guard (`isCompiling()`), generates unique request IDs, handles timeouts, and disposes worker instances gracefully on error.
-- [`src/compiler/compilerProtocol.ts`](file:///home/mugdho/codes/torque/src/compiler/compilerProtocol.ts):
-  - Data contracts between main thread and worker (`CompileWorkerRequest`, `CompileWorkerResponse`, `CompileWorkerResult`).
+  - Main-thread compilation controller.
+  - Enforces single-concurrency guard (`isCompiling()`), progress event callbacks (`compiling`, `resolving`), compilation timeout handling, and SyncTeX decoding.
+- [`src/compiler/serverCompiler.ts`](file:///home/mugdho/codes/torque/src/compiler/serverCompiler.ts):
+  - Standalone Node.js compilation runner executing native `latexmk` / TeX Live binaries in temporary build directories.
+  - Automatically parses TeX logs, extracts missing package names, and downloads missing CTAN archives.
+- [`src/compiler/synctexParser.ts`](file:///home/mugdho/codes/torque/src/compiler/synctexParser.ts):
+  - SyncTeX parser and gzip decompressor extracting line, page, and bounding box coordinate records.
+- [`src/compiler/synctexResolver.ts`](file:///home/mugdho/codes/torque/src/compiler/synctexResolver.ts):
+  - Forward and inverse SyncTeX coordinate mapping helper between editor line numbers and PDF preview canvas points.
 - [`src/compiler/__tests__/`](file:///home/mugdho/codes/torque/src/compiler/__tests__/):
-  - Comprehensive unit and integration test suite for engine lifecycle, diagnostics parsing, and concurrency protection.
+  - Comprehensive unit test suites for compiler driver, server compiler, client lifecycle, and SyncTeX parser.
+
+---
+
+### `src-tauri/` — Native Desktop Backend (Rust)
+- [`src-tauri/src/main.rs`](file:///home/mugdho/codes/torque/src-tauri/src/main.rs): Tauri entry point.
+- [`src-tauri/src/lib.rs`](file:///home/mugdho/codes/torque/src-tauri/src/lib.rs): Tauri application builder, state management, and command registration.
+- [`src-tauri/src/compiler.rs`](file:///home/mugdho/codes/torque/src-tauri/src/compiler.rs):
+  - Native TeX Live execution orchestrator.
+  - Spawns `latexmk` with `-pdf`, `-xelatex`, or `-lualatex`, passing `-synctex=1` and `-interaction=nonstopmode`.
+  - Parses TeX log output into structured diagnostics and detects missing `.sty`, `.cls`, and font metric errors.
+  - Coordinates automated package resolution with `package_resolver.rs` and re-runs compilation passes until completion.
+- [`src-tauri/src/package_resolver.rs`](file:///home/mugdho/codes/torque/src-tauri/src/package_resolver.rs):
+  - Automated CTAN package resolver.
+  - Fetches package archives directly from CTAN mirrors (TDS zip, flat zip, raw files), unpacks them into the user TeXMF tree (`TEXMFHOME`), and runs `mktexlsr` / `texhash`.
+- [`src-tauri/src/storage.rs`](file:///home/mugdho/codes/torque/src-tauri/src/storage.rs): Native filesystem operations managing `~/.torque/projects` and `~/.torque/cache/packages`.
+- [`src-tauri/tauri.conf.json`](file:///home/mugdho/codes/torque/src-tauri/tauri.conf.json): Tauri v2 configuration (window size, title, permissions, bundle identifier, packaging metadata).
 
 ---
 
@@ -105,22 +133,22 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 - [`src/components/TopMenuBar.tsx`](file:///home/mugdho/codes/torque/src/components/TopMenuBar.tsx):
   - IntelliJ New UI application menu bar: *File*, *Edit*, *View*, *Tools*, *Help*.
   - Keyboard shortcut hints (`Ctrl+B`, `Ctrl+S`, `Ctrl+Alt+P`), modal triggers (Package Manager, Settings, About), and export actions.
+- [`src/components/ProjectTopBar.tsx`](file:///home/mugdho/codes/torque/src/components/ProjectTopBar.tsx):
+  - Editor header with project breadcrumbs, active root file badge, compilation status indicator (Idle, Compiling, Success, Failed, Duration), compile button (`Ctrl+B`), engine switcher (`pdflatex`, `xelatex`, `lualatex`), and theme toggle.
 - [`src/components/PackageManagerModal.tsx`](file:///home/mugdho/codes/torque/src/components/PackageManagerModal.tsx):
-  - Interactive LaTeX package browser and manager.
-  - Category filters (*Math & Science*, *Graphics & TikZ*, *Layout & Formatting*, *Tables*, *Code & Algorithms*).
+  - LaTeX package catalog & inspector.
+  - Category filters (*Math*, *Physics*, *Graphics*, *Layout*, *Typography*, *Citations*, *Code*, *Tables*).
   - Search by package name or description.
-  - One-click *Add to Document* inserting required `\usepackage{...}` snippet directly into root entry preamble.
+  - One-click *Insert \usepackage* inserting required declaration directly into root entry preamble.
 - [`src/components/DiagnosticsLogPanel.tsx`](file:///home/mugdho/codes/torque/src/components/DiagnosticsLogPanel.tsx):
   - IntelliJ-style bottom *Problems / Build Output* tool window.
   - Zero-space dismissal: collapses to 0 height when closed without consuming editor space.
-  - Severity filtering (*Errors*, *Warnings*, *Info*), jump-to-source click handling, and quick-fix button for missing packages.
-- [`src/components/ProjectTopBar.tsx`](file:///home/mugdho/codes/torque/src/components/ProjectTopBar.tsx):
-  - Editor header with project breadcrumbs, active root file badge, compilation status indicator (Idle, Compiling, Success, Failed, Duration), compile button (`Ctrl+B`), and dark/light theme switch.
+  - Severity filtering (*Errors*, *Warnings*, *Info*), jump-to-source click handling, and auto-download notification pill.
 - [`src/components/FileTreeSidebar.tsx`](file:///home/mugdho/codes/torque/src/components/FileTreeSidebar.tsx):
   - IntelliJ Project Explorer tree view.
   - Create file/folder, rename, delete, download, and *Set as Root Entry* actions.
 - [`src/components/PdfPreviewPane.tsx`](file:///home/mugdho/codes/torque/src/components/PdfPreviewPane.tsx):
-  - Client-side PDF renderer powered by `pdfjs-dist`.
+  - PDF renderer powered by `pdfjs-dist` with SyncTeX inverse search (click to jump to editor source line).
   - Zoom controls (fit width, zoom in/out), page navigation, and download/print triggers.
 
 ---
@@ -141,31 +169,23 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 
 ---
 
-### `src/packages/` — Package Manager Subsystem
+### `src/packages/` — Package Catalog Subsystem
 - [`src/packages/packageCatalog.ts`](file:///home/mugdho/codes/torque/src/packages/packageCatalog.ts):
-  - Curated registry and metadata definition (`DEFAULT_PACKAGE_CATALOG`) of 50+ popular LaTeX packages, separated from browser runtime for Web Worker compatibility.
+  - Curated registry and metadata definition (`DEFAULT_PACKAGE_CATALOG`) of 50+ popular LaTeX packages.
 - [`src/packages/packageManager.ts`](file:///home/mugdho/codes/torque/src/packages/packageManager.ts):
-  - Package catalog re-export and manager state.
-  - Preamble analyzer: parses existing `\usepackage{}` declarations, detects missing packages, and safely inserts new packages before `\begin{document}`.
-  - Manages package installation status, synchronizing with both the preloaded bundle and the persistent package cache.
-- [`src/packages/packageDownloader.ts`](file:///home/mugdho/codes/torque/src/packages/packageDownloader.ts):
-  - CTAN and TeX Live CDN mirror downloader with resilient fallback, content validation (rejecting HTML error pages and empty responses), and multi-file package resolution.
-  - Persists retrieved files directly into `packageCache`.
+  - Package catalog queries and preamble analyzer: parses existing `\usepackage{}` declarations and safely inserts new packages before `\begin{document}`.
 - [`src/packages/packageTypes.ts`](file:///home/mugdho/codes/torque/src/packages/packageTypes.ts):
-  - Type definitions for `LatexPackage`, `PackageCategory`, and package manager events.
+  - Type definitions for `LatexPackage` and `PackageCategory`.
 
 ---
 
 ### `src/storage/` — Persistence Subsystem
 - [`src/storage/pathUtils.ts`](file:///home/mugdho/codes/torque/src/storage/pathUtils.ts):
-  - Path normalization ensuring security against directory traversal attacks (`normalizeFilePath`), decoupled from main storage classes.
+  - Path normalization ensuring security against directory traversal attacks (`normalizeFilePath`).
 - [`src/storage/projectStore.ts`](file:///home/mugdho/codes/torque/src/storage/projectStore.ts):
   - High-level project storage manager. Detects desktop vs web environment and routes operations to either `TauriStorage` or browser IndexedDB (`torque_latex_db`).
 - [`src/storage/packageCache.ts`](file:///home/mugdho/codes/torque/src/storage/packageCache.ts):
-  - Persistent global cache for downloaded CTAN LaTeX packages.
-  - In Web: IndexedDB database (`torque_package_cache`, object store `packages`).
-  - In Desktop: Native filesystem storage (`~/.torque/cache/packages/`) via Tauri IPC.
-  - Enforces strict filename sanitization and extension whitelisting (`.sty`, `.cls`, `.def`, `.fd`, `.tfm`, `.tex`).
+  - Persistent package cache interface for cached package assets.
 - [`src/storage/tauriStorage.ts`](file:///home/mugdho/codes/torque/src/storage/tauriStorage.ts):
   - Desktop-specific storage bridge invoking Tauri IPC commands. Stores project files under `~/.torque/projects/<id>/`.
 
@@ -184,35 +204,18 @@ Torque provides a full-featured, zero-server LaTeX authoring environment that ru
 
 ---
 
-### `src-tauri/` — Native Desktop Backend (Rust)
-- [`src-tauri/src/main.rs`](file:///home/mugdho/codes/torque/src-tauri/src/main.rs): Tauri entry point.
-- [`src-tauri/src/lib.rs`](file:///home/mugdho/codes/torque/src-tauri/src/lib.rs): Tauri application builder and IPC command registration.
-- [`src-tauri/src/storage.rs`](file:///home/mugdho/codes/torque/src-tauri/src/storage.rs): Native filesystem operations managing `~/.torque/projects`, reading/writing text & binary assets.
-- [`src-tauri/tauri.conf.json`](file:///home/mugdho/codes/torque/src-tauri/tauri.conf.json): Tauri v2 configuration (window size, title, permissions, bundle identifier, packaging metadata, and multi-platform bundle targets).
-
----
-
-### `.github/workflows/` — Continuous Integration & Releases
-- [`.github/workflows/release.yml`](file:///home/mugdho/codes/torque/.github/workflows/release.yml): Multi-platform GitHub Actions release matrix building binaries for Linux (`deb`, `rpm`, `AppImage`), Windows (`nsis` `.exe`, `msi`), and macOS (`dmg`, `app`), uploading built artifacts directly to GitHub Releases.
-
----
-
-### `public/` — Static Web Assets & TeX Distribution
-- `public/wasm/tectonic_wasm.wasm`: Precompiled WebAssembly binary of Tectonic.
-- `public/bundle/`: TeX Live distribution files (LaTeX format `latex.fmt`, standard packages, AMS fonts `.tfm`/`.pfb`, TikZ `.code.tex`, Latin Modern fonts `.otf`).
-- `public/bundle/manifest.json`: List of all available bundle files for fast in-worker presence checks.
-
----
-
 ### `scripts/` — Tooling & Development
-- [`scripts/serve.js`](file:///home/mugdho/codes/torque/scripts/serve.js): Lightweight static HTTP server for running the production export (`out/`) with correct MIME types for `.wasm`, `.otf`, and `.tfm`.
-- [`scripts/test-compile.mjs`](file:///home/mugdho/codes/torque/scripts/test-compile.mjs): Standalone Node.js script for verifying WASM compilation with `glyphtex-engine`.
+- [`scripts/compiler-server.js`](file:///home/mugdho/codes/torque/scripts/compiler-server.js):
+  - Standalone lightweight TeX Live HTTP compilation server with auto-resolution and SyncTeX support.
+- [`scripts/dev.js`](file:///home/mugdho/codes/torque/scripts/dev.js):
+  - Spawns both the compilation server and Next.js dev server concurrently.
+- [`scripts/serve.js`](file:///home/mugdho/codes/torque/scripts/serve.js):
+  - Static production server serving export output (`out/`).
 
 ---
 
-### `skills/` & `docs/` — Agent Skills & Specifications
-- [`skills/client-side-latex-wasm/SKILL.md`](file:///home/mugdho/codes/torque/skills/client-side-latex-wasm/SKILL.md): Comprehensive agent skill for client-side LaTeX WASM integration.
-- `docs/superpowers/`: Architecture specifications and implementation plans.
+### `public/` — Static Web Assets
+- `public/pdf.worker.min.mjs`: Worker script for PDF preview rendering via `pdfjs-dist`.
 
 ---
 
@@ -228,8 +231,8 @@ npm test
 # Build Next.js static export
 npm run build
 
-# Run production static server
-npm run start
+# Run native backend tests (Cargo)
+cargo test --manifest-path src-tauri/Cargo.toml
 
 # Launch desktop app in development mode
 npm run tauri:dev

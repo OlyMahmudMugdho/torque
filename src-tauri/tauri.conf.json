@@ -44,9 +44,9 @@
     "android": {
       "debugApplicationIdSuffix": ".debug"
     },
-    "shortDescription": "Torque - Client-Side WebAssembly LaTeX Editor",
+    "shortDescription": "Torque - Native TeX Live LaTeX IDE",
     "category": "DeveloperTool",
-    "longDescription": "Torque is an open-source, client-side WebAssembly LaTeX IDE featuring IntelliJ IDEA aesthetics, instant browser compilation, and native Tauri desktop support.",
+    "longDescription": "Torque is an open-source LaTeX IDE featuring IntelliJ IDEA aesthetics, native host TeX Live execution (latexmk/xelatex/pdflatex/lualatex), automated CTAN package resolution, and native Tauri desktop support.",
     "copyright": "Copyright © 2026 Torque Contributors",
     "linux": {
       "deb": {

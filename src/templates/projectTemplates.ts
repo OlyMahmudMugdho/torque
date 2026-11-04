@@ -17,6 +17,7 @@ export interface NewProjectFormValues {
   paperSize: 'letterpaper' | 'a4paper';
   createGitRepo: boolean;
   generateSample: boolean;
+  location?: string;
 }
 
 export const PROJECT_TEMPLATES: ProjectTemplateConfig[] = [
@@ -99,7 +100,7 @@ This is the abstract for the article prepared in Torque LaTeX IDE.
 \\end{abstract}
 
 \\section{Introduction}
-Welcome to your new LaTeX article. Torque compiles documents completely in the browser via WebAssembly.
+Welcome to your new LaTeX article prepared in Torque LaTeX Editor.
 
 ${
   generateSample
@@ -143,7 +144,7 @@ This conference paper demonstrates publication-ready formatting using the IEEEtr
 \\end{abstract}
 
 \\begin{IEEEkeywords}
-LaTeX, WebAssembly, IEEEtran, Client-Side Typesetting
+LaTeX, IEEEtran, Native TeX Live, Typesetting
 \\end{IEEEkeywords}
 
 \\section{Introduction}
@@ -190,9 +191,9 @@ Summary of contributions and recommendations for future study.
 \\section{Introduction}
 \\begin{frame}{Introduction}
   \\begin{itemize}
-    \\item 100\\% Client-Side WebAssembly LaTeX engine
+    \\item Native host TeX Live engine
     \\item JetBrains IntelliJ New UI aesthetics
-    \\item Zero server compilation round-trips
+    \\item Automated CTAN package resolution
   \\end{itemize}
 \\end{frame}
 

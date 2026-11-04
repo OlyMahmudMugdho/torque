@@ -78,12 +78,12 @@ describe('WelcomeHomeScreen', () => {
       expect(backdrop.className).toContain('w-screen');
       expect(backdrop.className).toContain('h-screen');
 
-      // Inner window container is full-width/full-height with rounded corners on sm+
+      // Inner window container is full-width/full-height flush with the window frame (no dual rounded corners)
       const windowContainer = backdrop.querySelector('div') as HTMLElement;
       expect(windowContainer.className).toContain('w-full');
       expect(windowContainer.className).toContain('h-full');
       expect(windowContainer.className).toContain('rounded-none');
-      expect(windowContainer.className).toContain('sm:rounded-lg');
+      expect(windowContainer.className).toContain('border-0');
     });
 
     it('renders left sidebar branding with app name, version, and subtitle', () => {

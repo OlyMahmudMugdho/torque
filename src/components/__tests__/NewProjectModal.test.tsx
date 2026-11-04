@@ -91,8 +91,38 @@ describe('NewProjectModal Component & Project Scaffolding', () => {
       paperSize: 'a4paper',
       createGitRepo: true,
       generateSample: true,
+      location: '~/.torque/projects/quantum-computing-paper',
     });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows customizing location path in NewProjectModal', async () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+
+    render(
+      <ThemeProvider>
+        <NewProjectModal isOpen={true} onClose={onClose} onCreate={onCreate} />
+      </ThemeProvider>
+    );
+
+    const locationInput = screen.getByLabelText(/location:/i);
+    expect(locationInput).toBeInTheDocument();
+    fireEvent.change(locationInput, { target: { value: '/home/user/latex-docs' } });
+
+    const nameInput = screen.getByLabelText(/name:/i);
+    fireEvent.change(nameInput, { target: { value: 'custom-proj' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /create/i }));
+
+    await waitFor(() => {
+      expect(onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'custom-proj',
+          location: '/home/user/latex-docs/custom-proj',
+        })
+      );
+    });
   });
 
   it('scaffolds IEEEtran conference project files properly', () => {

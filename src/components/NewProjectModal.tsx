@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useThemeSafe } from '../context/ThemeContext';
+import { isTauri } from '../storage/tauriStorage';
 import {
   X,
   FileText,
@@ -10,7 +11,6 @@ import {
   Folder,
   Check,
   GitBranch,
-  Sparkles,
 } from 'lucide-react';
 import {
   PROJECT_TEMPLATES,
@@ -41,6 +41,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const isDark = theme === 'dark';
 
   const [name, setName] = useState('untitled');
+  const [location, setLocation] = useState('~/.torque/projects');
   const [templateId, setTemplateId] = useState<ProjectTemplateId>('article');
   const [fontSize, setFontSize] = useState<'10pt' | '11pt' | '12pt'>('11pt');
   const [paperSize, setPaperSize] = useState<'letterpaper' | 'a4paper'>('letterpaper');
@@ -49,6 +50,31 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleBrowseLocation = async () => {
+    if (typeof window !== 'undefined' && isTauri()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const selected = await invoke<string | null>('select_directory', {
+          defaultPath: location.startsWith('~') ? undefined : location,
+        });
+        if (selected) {
+          setLocation(selected);
+        }
+      } catch (e) {
+        console.warn('Failed to open directory dialog via Tauri:', e);
+      }
+    } else if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
+      try {
+        const handle = await (window as any).showDirectoryPicker();
+        if (handle?.name) {
+          setLocation(handle.name);
+        }
+      } catch {
+        // User cancelled picker
+      }
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -88,6 +114,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         paperSize,
         createGitRepo,
         generateSample,
+        location: `${location.replace(/\/+$/, '')}/${name.trim()}`,
       });
       onClose();
     } finally {
@@ -180,8 +207,8 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                   isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
                 }`}
               >
-                <Sparkles className="w-3 h-3 text-[#e5a035] shrink-0" />
-                <span>WebAssembly LaTeX</span>
+                <Folder className="w-3 h-3 text-[#3574f0] shrink-0" />
+                <span>Torque Project</span>
               </div>
             </div>
           </aside>
@@ -213,16 +240,47 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 />
               </div>
 
-              {/* Location Pill */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-[#868a91]">Location:</span>
+              {/* Location Input with Browse button */}
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="project-location" className="text-xs font-semibold">
+                  Location:
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <input
+                      id="project-location"
+                      type="text"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      placeholder="~/.torque/projects"
+                      className={`w-full h-8 px-2.5 rounded border text-xs font-mono outline-none transition ${
+                        isDark
+                          ? 'bg-[#1e1f22] border-[#4e5157] text-[#dfe1e5] focus:border-[#3574f0] focus:ring-1 focus:ring-[#3574f0]'
+                          : 'bg-[#ffffff] border-[#c9ccd6] text-[#1f2328] focus:border-[#3574f0] focus:ring-1 focus:ring-[#3574f0]'
+                      }`}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleBrowseLocation}
+                    aria-label="Browse location"
+                    title="Select folder"
+                    className={`h-8 px-2.5 rounded border text-xs font-medium flex items-center gap-1.5 shrink-0 transition ${
+                      isDark
+                        ? 'border-[#4e5157] bg-[#1e1f22] text-[#dfe1e5] hover:bg-[#393b40]'
+                        : 'border-[#c9ccd6] bg-[#f7f8fa] text-[#1f2328] hover:bg-[#ebecf0]'
+                    }`}
+                  >
+                    <Folder className="w-3.5 h-3.5 text-[#3574f0]" />
+                    <span>Browse...</span>
+                  </button>
+                </div>
                 <div
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-[11px] font-mono ${
-                    isDark ? 'bg-[#1e1f22]/60 border-[#393b40] text-[#868a91]' : 'bg-[#f7f8fa] border-[#d1d5db] text-[#6c707e]'
+                  className={`text-[10px] font-mono truncate px-0.5 ${
+                    isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
                   }`}
                 >
-                  <Folder className="w-3.5 h-3.5 text-[#3574f0] shrink-0" />
-                  <span className="truncate">~/.torque/projects/{name || 'untitled'}</span>
+                  Full Path: {location.replace(/\/+$/, '')}/{name || 'untitled'}
                 </div>
               </div>
 

@@ -452,6 +452,27 @@ pub async fn save_file(
     .map_err(|e| format!("Task error: {}", e))?
 }
 
+/// Open a native directory picker dialog and return the chosen path.
+#[tauri::command]
+pub async fn select_directory(
+    app: tauri::AppHandle,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        let mut builder = app.dialog().file();
+        if let Some(dp) = default_path {
+            if !dp.trim().is_empty() {
+                builder = builder.set_directory(dp);
+            }
+        }
+        let folder = builder.blocking_pick_folder();
+        Ok(folder.and_then(|f| f.into_path().ok()).map(|p| p.to_string_lossy().to_string()))
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))?
+}
+
 #[tauri::command]
 pub fn tauri_get_package_file(filename: String) -> Result<Option<String>, String> {
     let sanitized = normalize_path(&filename)?;

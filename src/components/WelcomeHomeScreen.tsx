@@ -154,7 +154,7 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
 
   return (
     <div
-      className={`w-screen h-screen flex items-center justify-center font-sans select-none overflow-hidden transition-colors ${
+      className={`w-screen h-screen flex flex-col font-sans select-none overflow-hidden transition-colors ${
         isDark ? 'bg-[#1e1f22] text-[#dfe1e5]' : 'bg-[#e5e7eb] text-[#1f2328]'
       }`}
     >
@@ -169,16 +169,16 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
         aria-label="Upload Zip"
       />
 
-      {/* IntelliJ / OpenIDEA Window Container — full-screen, responsive */}
+      {/* IntelliJ / OpenIDEA Window Container — flush full-window layout */}
       <div
-        className={`w-full h-full rounded-none sm:rounded-lg border shadow-2xl flex flex-col overflow-hidden ${
-          isDark ? 'bg-[#2b2d30] border-[#393b40]' : 'bg-[#ffffff] border-[#c9ccd6]'
+        className={`w-full h-full rounded-none border-0 shadow-none flex flex-col overflow-hidden ${
+          isDark ? 'bg-[#2b2d30]' : 'bg-[#ffffff]'
         }`}
       >
         {/* Title Bar / Header */}
         <div
           className={`h-9 px-3 border-b flex items-center justify-between shrink-0 ${
-            isDark ? 'bg-[#1e1f22] border-[#393b40]' : 'bg-[#ebecf0] border-[#d1d5db]'
+            isDark ? 'bg-[#1e1f22] border-[#323232]' : 'bg-[#ebecf0] border-[#d1d5db]'
           }`}
         >
           {/* Left Title */}

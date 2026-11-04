@@ -249,10 +249,12 @@ export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEdito
           </div>
         ) : (
           <Editor
+            path={activeFilePath}
             height="100%"
             language={activeFilePath.endsWith('.tex') ? 'latex' : 'plaintext'}
             theme={theme === 'dark' ? 'intellij-dark' : 'intellij-light'}
             value={textContent}
+            defaultValue={textContent}
             onChange={(val) => onContentChange(val ?? '')}
             onMount={handleEditorDidMount}
             options={{

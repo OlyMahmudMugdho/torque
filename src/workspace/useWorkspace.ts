@@ -338,26 +338,8 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
 
       try {
         const entry = activeProjectRef.current.rootEntry || 'main.tex';
-        let filesToCompile = [...filesRef.current];
-        try {
-          const storedFiles = await storeRef.current.listFiles(activeProjectRef.current.id);
-          if (storedFiles && storedFiles.length > 0) {
-            const map = new Map<string, ProjectFile>();
-            for (const f of storedFiles) {
-              map.set(f.path, f);
-            }
-            for (const f of filesRef.current) {
-              const stored = map.get(f.path);
-              if (!stored || (f.updatedAt || 0) >= (stored.updatedAt || 0)) {
-                map.set(f.path, f);
-              }
-            }
-            filesToCompile = Array.from(map.values());
-            filesRef.current = filesToCompile;
-          }
-        } catch {
-          // Fall back to filesRef.current
-        }
+        // Always compile with the freshest in-memory filesRef.current!
+        const filesToCompile = filesRef.current;
 
         const result = await compilerRef.current.compile(filesToCompile, entry, {
           engine: engineToUse,

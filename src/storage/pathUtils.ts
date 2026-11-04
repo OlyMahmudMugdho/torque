@@ -27,3 +27,10 @@ export function normalizeFilePath(rawPath: string): string {
 
   return cleanedSegments.join('/');
 }
+
+/** Name of the zero-byte marker file that makes an empty folder persistent. */
+export const FOLDER_MARKER = '.keep';
+
+export function isFolderMarker(path: string): boolean {
+  return path === FOLDER_MARKER || path.endsWith('/' + FOLDER_MARKER);
+}

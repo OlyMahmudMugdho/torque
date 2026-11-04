@@ -6,6 +6,7 @@ import {
   type CompileDriverResponse,
   getActiveCompilerDriver,
 } from './compilerDriver';
+import { isFolderMarker } from '../storage/pathUtils';
 import { decompressGzip, parseSyncTex } from './synctexParser';
 import { parser as syncTexJsParser } from 'synctex-js';
 
@@ -268,6 +269,7 @@ export class CompilerClient {
 
     const filesMap: Record<string, Uint8Array | string> = {};
     for (const f of files) {
+      if (isFolderMarker(f.path)) continue; // empty-folder markers carry no content
       filesMap[f.path] = f.content;
     }
 
@@ -321,7 +323,11 @@ export class CompilerClient {
             res.synctexBytes[0] === 0x1f && res.synctexBytes[1] === 0x8b
               ? await decompressGzip(res.synctexBytes)
               : new TextDecoder().decode(res.synctexBytes);
-          syncTexIndex = parseSyncTexWithLibrary(rawSyncTex, entry);
+          syncTexIndex = parseSyncTex(
+            rawSyncTex,
+            entry,
+            files.map((f) => f.path)
+          );
         } catch (err) {
           console.warn('[CompilerClient] Failed to parse SyncTeX output:', err);
         }

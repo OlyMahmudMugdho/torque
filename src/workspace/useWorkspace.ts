@@ -46,6 +46,7 @@ export interface WorkspaceState {
   createFile: (path: string, content?: string | Uint8Array, isBinary?: boolean) => Promise<void>;
   updateFileContent: (path: string, content: string) => Promise<void>;
   updateActiveFileContent: (content: string) => Promise<void>;
+  createFolder: (path: string) => Promise<void>;
   renameFilePath: (oldPath: string, newPath: string) => Promise<void>;
   deleteFilePath: (path: string) => Promise<void>;
   setProjectRootEntry: (path: string) => Promise<void>;
@@ -68,6 +69,8 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
   const activeFilePathRef = useRef<string>(activeFilePath);
   activeFilePathRef.current = activeFilePath;
   const [openTabs, setOpenTabs] = useState<string[]>(['main.tex']);
+  const openTabsRef = useRef<string[]>(openTabs);
+  openTabsRef.current = openTabs;
   const [compileStatus, setCompileStatus] = useState<CompileStatus>('idle');
   const [lastResult, setLastResult] = useState<CompileResult | null>(null);
 
@@ -277,13 +280,19 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
       if (!activeProjectRef.current) return;
       const normOld = normalizeFilePath(oldPath);
       const normNew = normalizeFilePath(newPath);
-      await storeRef.current.renameFile(activeProjectRef.current.id, normOld, normNew);
+      await storeRef.current.renameFilePath(activeProjectRef.current.id, normOld, normNew);
       await refreshFiles(activeProjectRef.current.id);
       await refreshProjects();
 
-      setOpenTabs((prev) => prev.map((t) => (t === normOld ? normNew : t)));
-      if (activeFilePath === normOld) {
-        setActiveFilePath(normNew);
+      const remap = (t: string) =>
+        t === normOld
+          ? normNew
+          : t.startsWith(normOld + '/')
+          ? normNew + t.slice(normOld.length)
+          : t;
+      setOpenTabs((prev) => prev.map(remap));
+      if (activeFilePath) {
+        setActiveFilePath(remap(activeFilePath));
       }
     },
     [activeFilePath, refreshFiles, refreshProjects]
@@ -293,11 +302,23 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
     async (path: string) => {
       if (!activeProjectRef.current) return;
       const norm = normalizeFilePath(path);
-      await storeRef.current.deleteFile(activeProjectRef.current.id, norm);
+      await storeRef.current.deleteFilePath(activeProjectRef.current.id, norm);
       await refreshFiles(activeProjectRef.current.id);
-      closeTab(norm);
+      for (const tab of openTabsRef.current) {
+        if (tab === norm || tab.startsWith(norm + '/')) closeTab(tab);
+      }
     },
     [closeTab, refreshFiles]
+  );
+
+  const createFolder = useCallback(
+    async (path: string) => {
+      if (!activeProjectRef.current) return;
+      const norm = normalizeFilePath(path);
+      await storeRef.current.createFolder(activeProjectRef.current.id, norm);
+      await refreshFiles(activeProjectRef.current.id);
+    },
+    [refreshFiles]
   );
 
   const setProjectRootEntry = useCallback(
@@ -469,6 +490,7 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
     selectFile,
     closeTab,
     createFile,
+    createFolder,
     updateFileContent,
     updateActiveFileContent,
     renameFilePath,

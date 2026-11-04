@@ -49,6 +49,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
   });
   const [logsOpen, setLogsOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [createRequest, setCreateRequest] = useState<{ kind: "file" | "folder"; nonce: number } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(true);
   const [dismissedSetupResult, setDismissedSetupResult] = useState<unknown>(null);
   const [isPackageManagerOpen, setPackageManagerOpen] = useState(false);
@@ -144,11 +145,9 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
     }
   };
 
-  const handleCreateFile = async () => {
-    const path = window.prompt('Enter file path (e.g. chapters/intro.tex):');
-    if (path?.trim()) {
-      await workspace.createFile(path.trim());
-    }
+  const handleCreateFile = () => {
+    setSidebarOpen(true);
+    setCreateRequest({ kind: 'file', nonce: Date.now() });
   };
 
   const handleExportZip = async () => {
@@ -184,12 +183,27 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
   };
 
   const handleNavigateToSource = (target: { file: string; line: number }) => {
+    let resolvedFile: string | null = null;
     if (target.file) {
-      workspace.selectFile(target.file);
+      const clean = target.file.replace(/\\/g, '/').replace(/\/\.\//g, '/').replace(/^\.\//, '');
+      const paths = workspace.files.map((f) => f.path);
+      resolvedFile =
+        paths.find((p) => p === clean) ??
+        paths
+          .filter((p) => clean.endsWith('/' + p))
+          .sort((x, y) => y.length - x.length)[0] ??
+        paths.find((p) => p.split('/').pop() === clean.split('/').pop()) ??
+        null;
+      if (!resolvedFile) return; // unknown file (e.g. a system .cls): nothing to open
     }
-    // Selecting another file updates Monaco on the next React render. Defer
-    // the reveal so the editor operates on the newly selected model.
-    window.setTimeout(() => monacoRef.current?.revealInEditor(target), 0);
+    const switching = !!resolvedFile && resolvedFile !== workspace.activeFilePath;
+    if (resolvedFile && switching) {
+      workspace.selectFile(resolvedFile);
+    }
+    const reveal = () => monacoRef.current?.revealInEditor({ file: resolvedFile ?? '', line: target.line });
+    // Switching files swaps the Monaco model asynchronously; reveal again once settled.
+    window.setTimeout(reveal, switching ? 80 : 0);
+    if (switching) window.setTimeout(reveal, 300);
   };
 
   const handleSelectDiagnostic = (d: Diagnostic) => {
@@ -493,9 +507,12 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
                         activeFilePath={workspace.activeFilePath}
                         rootEntry={workspace.activeProject?.rootEntry || 'main.tex'}
                         onSelectFile={workspace.selectFile}
+                        projectName={workspace.activeProject?.name}
+                        createRequest={createRequest}
                         onCreateFile={async (path) => {
                           await workspace.createFile(path);
                         }}
+                        onCreateFolder={workspace.createFolder}
                         onUploadFiles={handleUploadFiles}
                         onRenameFile={workspace.renameFilePath}
                         onDeleteFile={workspace.deleteFilePath}

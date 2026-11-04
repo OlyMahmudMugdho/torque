@@ -97,6 +97,8 @@ export const PdfPageView: React.FC<PdfPageViewProps> = ({
 
   const handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!onDoubleClick || !textLayerRef.current) return;
+    // A single click must not hijack text selection.
+    if (e.type === 'click' && (window.getSelection()?.toString() ?? '') !== '') return;
 
     const rect = textLayerRef.current.getBoundingClientRect();
     const viewport = page.getViewport({ scale });
@@ -118,6 +120,7 @@ export const PdfPageView: React.FC<PdfPageViewProps> = ({
       ref={wrapperRef}
       data-testid={`pdf-page-${pageNumber}`}
       className="mb-4 shadow-2xl bg-white rounded-sm overflow-hidden flex justify-center relative"
+      onClick={handleDoubleClick}
       onDoubleClick={handleDoubleClick}
       style={{ cursor: 'crosshair' }}
     >

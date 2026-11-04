@@ -9,6 +9,24 @@ export const resolveSyncTexPosition = (
 ): { file: string; line: number } | null => {
   let bestMatch: { file: string; line: number; distance: number } | null = null;
   const pageBlocks = index.blocks.filter((block) => block.page === page);
+
+  // Real SyncTeX output: nodes are anchored at their baseline (top-left origin,
+  // PDF points). Find the visual line closest to the click, then the node at or
+  // immediately left of the click on that line.
+  const nodes = pageBlocks.filter((b) => b.kind === 'node');
+  if (nodes.length > 0) {
+    const bandDy = (b: { y: number }) =>
+      Math.max(0, b.y - 11 - yPt, yPt - (b.y + 3));
+    let minDy = Infinity;
+    for (const n of nodes) minDy = Math.min(minDy, bandDy(n));
+    if (minDy > Math.max(tolerancePt, 24)) return null;
+    const lineNodes = nodes.filter((n) => bandDy(n) <= minDy + 0.5);
+    const left = lineNodes.filter((n) => n.x <= xPt);
+    const pick = left.length > 0
+      ? left.reduce((a, b) => (b.x >= a.x ? b : a))
+      : lineNodes.reduce((a, b) => (b.x < a.x ? b : a));
+    return { file: pick.file, line: pick.line };
+  }
   const preciseBlocks = pageBlocks.filter((block) => block.width === 0 && block.height === 0);
   const blocks = preciseBlocks.length > 0 ? preciseBlocks : pageBlocks;
 

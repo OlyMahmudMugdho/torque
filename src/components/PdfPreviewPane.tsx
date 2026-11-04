@@ -128,20 +128,16 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
     pageHeight: number;
     textSnippet: string;
   }) => {
-    if (!onNavigateToSource) return;
-    const resolved = syncTexIndex
-      ? resolveSyncTexPosition(
-          syncTexIndex,
-          event.pageNumber,
-          event.xPt,
-          event.yPt,
-          36
-        )
-      : null;
-
-    // Keep a deterministic fallback for older/failed builds that have no
-    // SyncTeX artifact, while preferring the real file and line mapping.
-    onNavigateToSource(resolved ?? { file: '', line: Math.max(1, Math.round(event.yPt * 2)) });
+    if (!onNavigateToSource || !syncTexIndex) return;
+    const resolved = resolveSyncTexPosition(
+      syncTexIndex,
+      event.pageNumber,
+      event.xPt,
+      event.yPt,
+      36
+    );
+    // No SyncTeX mapping: do nothing rather than jump to a wrong line.
+    if (resolved) onNavigateToSource(resolved);
   };
 
   const handleDownload = async () => {

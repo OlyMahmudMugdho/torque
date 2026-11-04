@@ -1,5 +1,5 @@
 import type { Project, ProjectFile } from '../types/workspace';
-import { normalizeFilePath } from './pathUtils';
+import { normalizeFilePath, FOLDER_MARKER } from './pathUtils';
 
 export function isTauri(): boolean {
   const g = typeof globalThis !== 'undefined' ? (globalThis as any) : null;
@@ -383,5 +383,73 @@ Welcome to your LaTeX document!
 
     const encodedFiles = remaining.map(encodeFileForTauri);
     await this.invoke('tauri_save_project', { project, files: encodedFiles });
+  }
+
+  private async loadAll(projectId: string): Promise<{ project: any; files: ProjectFile[] }> {
+    const data = await this.invoke<any>('tauri_load_project', { id: projectId });
+    if (!data) throw new Error(`Project not found: ${projectId}`);
+    const [project, rawFiles] = Array.isArray(data) ? data : [data.project, data.files];
+    if (!project) throw new Error(`Project not found: ${projectId}`);
+    return { project, files: ((rawFiles as RawTauriFile[]) || []).map(decodeTauriFile) };
+  }
+
+  private async saveAll(project: any, files: ProjectFile[]): Promise<void> {
+    project.updatedAt = Date.now();
+    await this.invoke('tauri_save_project', { project, files: files.map(encodeFileForTauri) });
+  }
+
+  /** Create an empty, persistent folder (stored as a zero-byte `dir/.keep` marker). */
+  async createFolder(projectId: string, path: string): Promise<string> {
+    const folder = normalizeFilePath(path);
+    const { project, files } = await this.loadAll(projectId);
+    if (files.some((f) => f.path === folder)) {
+      throw new Error(`A file named "${folder}" already exists`);
+    }
+    const marker = `${folder}/${FOLDER_MARKER}`;
+    if (!files.some((f) => f.path === marker)) {
+      files.push({ projectId, path: marker, content: '', isBinary: false, updatedAt: Date.now() });
+      await this.saveAll(project, files);
+    }
+    return folder;
+  }
+
+  /** Rename a file, or a folder (recursively renames everything under the prefix). */
+  async renameFilePath(projectId: string, oldPath: string, newPath: string): Promise<void> {
+    const oldNorm = normalizeFilePath(oldPath);
+    const newNorm = normalizeFilePath(newPath);
+    if (oldNorm === newNorm) return;
+    if (newNorm.startsWith(oldNorm + '/')) {
+      throw new Error('Cannot move a folder into itself');
+    }
+    const { project, files } = await this.loadAll(projectId);
+    const prefix = oldNorm + '/';
+    const affected = files.filter((f) => f.path === oldNorm || f.path.startsWith(prefix));
+    if (affected.length === 0) throw new Error(`File not found: ${oldNorm}`);
+    const now = Date.now();
+    const moved = affected.map((f) => ({
+      ...f,
+      path: f.path === oldNorm ? newNorm : newNorm + '/' + f.path.slice(prefix.length),
+      updatedAt: now,
+    }));
+    const movedPaths = new Set(moved.map((f) => f.path));
+    const remaining = files.filter((f) => !affected.includes(f) && !movedPaths.has(f.path));
+    if (project.rootEntry === oldNorm) project.rootEntry = newNorm;
+    else if (project.rootEntry?.startsWith(prefix)) {
+      project.rootEntry = newNorm + '/' + project.rootEntry.slice(prefix.length);
+    }
+    await this.saveAll(project, [...remaining, ...moved]);
+  }
+
+  /** Delete a file, or a folder and everything under it. */
+  async deleteFilePath(projectId: string, path: string): Promise<void> {
+    const norm = normalizeFilePath(path);
+    const { project, files } = await this.loadAll(projectId);
+    const prefix = norm + '/';
+    if (project.rootEntry === norm || project.rootEntry?.startsWith(prefix)) {
+      throw new Error(
+        `Cannot delete the active root entry file "${project.rootEntry}". Please set another root entry first.`
+      );
+    }
+    await this.saveAll(project, files.filter((f) => f.path !== norm && !f.path.startsWith(prefix)));
   }
 }

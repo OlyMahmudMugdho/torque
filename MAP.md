@@ -147,11 +147,13 @@ Torque provides a full-featured LaTeX authoring environment powered by the host'
   - Zero-space dismissal: collapses to 0 height when closed without consuming editor space.
   - Severity filtering (*Errors*, *Warnings*, *Info*), jump-to-source click handling, and auto-download notification pill.
 - [`src/components/FileTreeSidebar.tsx`](file:///home/mugdho/codes/torque/src/components/FileTreeSidebar.tsx):
-  - IntelliJ Project Explorer tree view.
-  - Create file/folder, rename, delete, download, and *Set as Root Entry* actions.
+  - IntelliJ IDEA Project tool window with hierarchical folder tree, expand/collapse state, and file-type badges.
+  - Native IntelliJ-style creation dialogs for files and directories (nested path support, input validation, escape cancellation).
+  - Full keyboard navigation (arrows, F2 inline rename, Delete with confirmation, Alt+Insert New menu) and right-click context menu.
 - [`src/components/PdfPreviewPane.tsx`](file:///home/mugdho/codes/torque/src/components/PdfPreviewPane.tsx):
-  - PDF renderer powered by `pdfjs-dist` with SyncTeX inverse search (click to jump to editor source line).
-  - Zoom controls (fit width, zoom in/out), page navigation, and download/print triggers.
+  - PDF renderer powered by `pdfjs-dist` with SyncTeX inverse search (single-click and double-click to jump to editor source line).
+  - SyncTeX parser with path normalization, magnification scaling, and inverted Y coordinate mapping.
+  - Zoom controls (fit width, zoom in/out), page navigation, and native desktop save dialog.
 
 ---
 

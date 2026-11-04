@@ -1,6 +1,6 @@
 import type { Project, ProjectFile } from '../types/workspace';
 import { isTauri, TauriStorage } from './tauriStorage';
-import { normalizeFilePath } from './pathUtils';
+import { normalizeFilePath, FOLDER_MARKER } from './pathUtils';
 
 export { isTauri, TauriStorage, normalizeFilePath };
 
@@ -474,5 +474,59 @@ Welcome to your LaTeX document!
         projectStore.put(project);
       };
     });
+  }
+
+  /** Create an empty, persistent folder (zero-byte `dir/.keep` marker). */
+  async createFolder(projectId: string, path: string): Promise<string> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.createFolder(projectId, path);
+    }
+    const folder = normalizeFilePath(path);
+    if (await this.getFile(projectId, folder)) {
+      throw new Error(`A file named "${folder}" already exists`);
+    }
+    await this.putFile(projectId, `${folder}/${FOLDER_MARKER}`, '', false);
+    return folder;
+  }
+
+  /** Rename a file, or a folder recursively (all files under the prefix). */
+  async renameFilePath(projectId: string, oldPath: string, newPath: string): Promise<void> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.renameFilePath(projectId, oldPath, newPath);
+    }
+    const oldNorm = normalizeFilePath(oldPath);
+    const newNorm = normalizeFilePath(newPath);
+    if (oldNorm === newNorm) return;
+    if (newNorm.startsWith(oldNorm + '/')) {
+      throw new Error('Cannot move a folder into itself');
+    }
+    const prefix = oldNorm + '/';
+    const files = await this.listFiles(projectId);
+    const affected = files.filter((f) => f.path === oldNorm || f.path.startsWith(prefix));
+    if (affected.length === 0) throw new Error(`File not found: ${oldNorm}`);
+    for (const f of affected) {
+      const target = f.path === oldNorm ? newNorm : newNorm + '/' + f.path.slice(prefix.length);
+      await this.renameFile(projectId, f.path, target);
+    }
+  }
+
+  /** Delete a file, or a folder and everything under it. */
+  async deleteFilePath(projectId: string, path: string): Promise<void> {
+    if (this.tauriStorage) {
+      return this.tauriStorage.deleteFilePath(projectId, path);
+    }
+    const norm = normalizeFilePath(path);
+    const prefix = norm + '/';
+    const files = await this.listFiles(projectId);
+    const affected = files.filter((f) => f.path === norm || f.path.startsWith(prefix));
+    const project = (await this.listProjects()).find((p) => p.id === projectId);
+    if (project && affected.some((f) => f.path === project.rootEntry)) {
+      throw new Error(
+        `Cannot delete the active root entry file "${project.rootEntry}". Please set another root entry first.`
+      );
+    }
+    for (const f of affected) {
+      await this.deleteFile(projectId, f.path);
+    }
   }
 }

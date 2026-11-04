@@ -16,7 +16,11 @@ export interface SyncTexBlock {
   y: number;
   width: number;
   height: number;
+  /** Depth below the baseline (real SyncTeX boxes). */
+  depth?: number;
   page: number;
+  /** 'box' for [ / ( records (spans), 'node' for point anchors. */
+  kind?: 'box' | 'node';
 }
 
 export interface SyncTexIndex {

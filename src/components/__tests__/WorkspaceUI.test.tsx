@@ -87,6 +87,7 @@ describe('Workspace UI Components', () => {
       selectFile: vi.fn(),
       closeTab: vi.fn(),
       createFile: vi.fn(),
+      createFolder: vi.fn(),
       renameFilePath: vi.fn(),
       deleteFilePath: vi.fn(),
       setProjectRootEntry: vi.fn(),
@@ -118,7 +119,8 @@ describe('Workspace UI Components', () => {
     expect(screen.getByText('main.tex')).toBeInTheDocument();
     expect(screen.getByText('ROOT')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('sections/intro.tex'));
+    fireEvent.click(screen.getByText('sections')); // expand folder
+    fireEvent.click(screen.getByText('intro.tex'));
     expect(onSelectFile).toHaveBeenCalledWith('sections/intro.tex');
   });
 

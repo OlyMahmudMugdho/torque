@@ -1,6 +1,6 @@
 [package]
 name = "torque"
-version = "0.2.0"
+version = "0.2.1"
 description = "Torque - Native TeX Live LaTeX IDE"
 authors = ["Torque Contributors"]
 license = ""

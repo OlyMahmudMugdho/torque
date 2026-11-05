@@ -5,7 +5,7 @@ import {
   saveAISettings,
   fetchProviderModels,
 } from '../aiConfig';
-import type { AIProviderConfig, AISettings } from '../../types/ai';
+import type { AISettings } from '../../types/ai';
 
 describe('AI Config Subsystem', () => {
   const originalTauri = (globalThis as any).__TAURI_INTERNALS__;

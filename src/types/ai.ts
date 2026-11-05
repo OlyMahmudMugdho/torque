@@ -21,6 +21,7 @@ export interface ToolCallItem {
   status: 'pending_approval' | 'accepted' | 'rejected' | 'executing' | 'done' | 'failed';
   diff?: import('../ai/diffUtils').FileDiffResult;
   result?: any;
+  error?: string;
 }
 
 export interface ChatMessage {
@@ -28,6 +29,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   toolCalls?: ToolCallItem[];
+  toolCallId?: string;
   timestamp: number;
 }
 

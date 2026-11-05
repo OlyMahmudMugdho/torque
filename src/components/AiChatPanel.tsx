@@ -14,10 +14,16 @@ import {
   AlertTriangle,
   ChevronDown,
   MessageSquare,
+  FileText,
+  Terminal,
+  Activity,
+  Check,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import { useThemeSafe } from '../context/ThemeContext';
 import { AiDiffCard } from './AiDiffCard';
-import { AgentClient, type WorkspaceToolContext } from '../ai/agentClient';
+import { AgentClient, buildWorkspaceSystemPrompt, type WorkspaceToolContext } from '../ai/agentClient';
 import { loadAISettings } from '../ai/aiConfig';
 import type { AIProviderConfig, ChatMessage, ChatSession } from '../types/ai';
 import type { FileDiffResult } from '../ai/diffUtils';
@@ -326,23 +332,10 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
       }
     } else if (effectiveProvider) {
       setIsGenerating(true);
-      const assistantMsgId = `asst-${Date.now()}`;
-      const placeholderAssistantMsg: ChatMessage = {
-        id: assistantMsgId,
-        role: 'assistant',
-        content: '',
-        timestamp: Date.now(),
-      };
-
-      setSessions((prev) =>
-        prev.map((s) => {
-          if (s.id !== targetSession.id) return s;
-          return {
-            ...s,
-            messages: [...updatedMessages, placeholderAssistantMsg],
-          };
-        })
-      );
+      const systemPrompt = buildWorkspaceSystemPrompt({
+        files: workspace?.files,
+        activeFilePath: workspace?.activeFilePath,
+      });
 
       try {
         const agent = new AgentClient(effectiveProvider);
@@ -360,7 +353,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
           compile: async (engine?: string) => {
             if (workspace?.compileProject) {
               const res = await workspace.compileProject(engine);
-              return { success: res?.status === 'success' || true, log: res?.log || '' };
+              return { success: res?.status === 'success' || res?.success || true, log: res?.log || '' };
             }
             return { success: true, log: '' };
           },
@@ -369,21 +362,16 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
           },
         };
 
-        const responseMsg = await agent.sendMessage(
-          updatedMessages as any,
+        const finalSessionMessages = await agent.runTurn(
+          updatedMessages as ChatMessage[],
           toolContext,
           {
-            onChunk: (chunk: string) => {
+            systemPrompt,
+            onMessagesChange: (msgs) => {
               setSessions((prev) =>
                 prev.map((s) => {
                   if (s.id !== targetSession.id) return s;
-                  return {
-                    ...s,
-                    messages: s.messages.map((m) => {
-                      if (m.id !== assistantMsgId) return m;
-                      return { ...m, content: (m.content || '') + chunk };
-                    }),
-                  };
+                  return { ...s, messages: msgs };
                 })
               );
             },
@@ -393,25 +381,22 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
         setSessions((prev) =>
           prev.map((s) => {
             if (s.id !== targetSession.id) return s;
-            return {
-              ...s,
-              messages: s.messages.map((m) => (m.id === assistantMsgId ? responseMsg : m)),
-            };
+            return { ...s, messages: finalSessionMessages };
           })
         );
       } catch (err: any) {
         setSessions((prev) =>
           prev.map((s) => {
             if (s.id !== targetSession.id) return s;
+            const errMsg: ChatMessage = {
+              id: `err-${Date.now()}`,
+              role: 'assistant',
+              content: `⚠️ Failed to get AI response: ${err?.message || String(err)}`,
+              timestamp: Date.now(),
+            };
             return {
               ...s,
-              messages: s.messages.map((m) => {
-                if (m.id !== assistantMsgId) return m;
-                return {
-                  ...m,
-                  content: `⚠️ Failed to get AI response: ${err?.message || String(err)}`,
-                };
-              }),
+              messages: [...s.messages, errMsg],
             };
           })
         );
@@ -667,6 +652,9 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
           </div>
         ) : (
           activeSession.messages.map((message) => {
+            if (message.role === 'tool' || message.role === 'system') {
+              return null;
+            }
             const isUser = message.role === 'user';
             return (
               <div
@@ -701,13 +689,18 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                 >
                   {isUser ? (
                     <div className="whitespace-pre-wrap">{message.content}</div>
-                  ) : (
+                  ) : message.content ? (
                     <FormattedAssistantMessage content={message.content} isDark={isDark} />
-                  )}
+                  ) : isGenerating && (!message.toolCalls || message.toolCalls.length === 0) ? (
+                    <div className="flex items-center gap-1.5 text-xs opacity-60 py-0.5">
+                      <Loader2 size={12} className="animate-spin text-[#3574f0]" />
+                      <span>Thinking...</span>
+                    </div>
+                  ) : null}
 
                   {/* Tool Calls */}
                   {message.toolCalls && message.toolCalls.length > 0 && (
-                    <div className="mt-2 space-y-2">
+                    <div className={message.content ? 'mt-2 space-y-1.5' : 'space-y-1.5'}>
                       {message.toolCalls.map((tc) => {
                         if (tc.diff) {
                           return (
@@ -724,7 +717,102 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                             />
                           );
                         }
-                        return null;
+
+                        if (tc.name === 'torque_read_file') {
+                          return (
+                            <div
+                              key={tc.id}
+                              data-testid="tool-badge-read-file"
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono border ${
+                                isDark
+                                  ? 'bg-[#1e1f22] border-[#323232] text-[#868a91]'
+                                  : 'bg-[#ffffff] border-[#d1d5db] text-[#5c6066]'
+                              }`}
+                            >
+                              <FileText size={12} className="text-[#3574f0] shrink-0" />
+                              <span className="truncate">
+                                read <span className={isDark ? 'text-[#dfe1e5] font-semibold' : 'text-[#1f2328] font-semibold'}>{tc.args?.path || 'file'}</span>
+                                {tc.args?.startLine ? ` (L${tc.args.startLine}-${tc.args.endLine || ''})` : ''}
+                              </span>
+                              {tc.status === 'done' ? (
+                                <span className="ml-auto text-[10px] text-green-500 font-sans flex items-center gap-0.5 shrink-0">
+                                  <Check size={11} /> Read
+                                </span>
+                              ) : tc.status === 'failed' ? (
+                                <span className="ml-auto text-[10px] text-[#e05555] font-sans flex items-center gap-0.5 shrink-0">
+                                  <AlertCircle size={11} /> Failed
+                                </span>
+                              ) : (
+                                <span className="ml-auto text-[10px] text-amber-500 font-sans flex items-center gap-0.5 shrink-0">
+                                  <Loader2 size={10} className="animate-spin" /> Reading...
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (tc.name === 'torque_compile') {
+                          return (
+                            <div
+                              key={tc.id}
+                              data-testid="tool-badge-compile"
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono border ${
+                                isDark
+                                  ? 'bg-[#1e1f22] border-[#323232] text-[#868a91]'
+                                  : 'bg-[#ffffff] border-[#d1d5db] text-[#5c6066]'
+                              }`}
+                            >
+                              <Terminal size={12} className="text-[#3574f0] shrink-0" />
+                              <span className="truncate">
+                                compile project ({tc.args?.engine || 'default'})
+                              </span>
+                              {tc.status === 'done' ? (
+                                <span className="ml-auto text-[10px] text-green-500 font-sans flex items-center gap-0.5 shrink-0">
+                                  <Check size={11} /> Done
+                                </span>
+                              ) : tc.status === 'failed' ? (
+                                <span className="ml-auto text-[10px] text-[#e05555] font-sans flex items-center gap-0.5 shrink-0">
+                                  <AlertCircle size={11} /> Failed
+                                </span>
+                              ) : (
+                                <span className="ml-auto text-[10px] text-amber-500 font-sans flex items-center gap-0.5 shrink-0">
+                                  <Loader2 size={10} className="animate-spin" /> Compiling...
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (tc.name === 'torque_get_diagnostics') {
+                          return (
+                            <div
+                              key={tc.id}
+                              data-testid="tool-badge-diagnostics"
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono border ${
+                                isDark
+                                  ? 'bg-[#1e1f22] border-[#323232] text-[#868a91]'
+                                  : 'bg-[#ffffff] border-[#d1d5db] text-[#5c6066]'
+                              }`}
+                            >
+                              <Activity size={12} className="text-[#3574f0] shrink-0" />
+                              <span className="truncate">inspect compiler diagnostics</span>
+                              <span className="ml-auto text-[10px] text-green-500 font-sans flex items-center gap-0.5 shrink-0">
+                                <Check size={11} /> Done
+                              </span>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div
+                            key={tc.id}
+                            data-testid="tool-badge-fallback"
+                            className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono border border-red-500/30 bg-red-500/10 text-red-400"
+                          >
+                            <AlertCircle size={12} className="shrink-0" />
+                            <span className="truncate">{tc.name}: {tc.error || 'Execution failed'}</span>
+                          </div>
+                        );
                       })}
                     </div>
                   )}

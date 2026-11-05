@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AgentClient, type ChatMessage, type WorkspaceToolContext } from '../agentClient';
+import { AgentClient, buildWorkspaceSystemPrompt, type ChatMessage, type WorkspaceToolContext } from '../agentClient';
 import type { AIProviderConfig } from '../../types/ai';
 
 const mockConfig: AIProviderConfig = {
@@ -597,6 +597,196 @@ describe('AgentClient', () => {
       await expect(client.rejectToolCall(assistantMessage, 'non-existent')).rejects.toThrow(
         'Tool call with ID "non-existent" not found in message.'
       );
+    });
+  });
+
+  describe('runTurn & buildWorkspaceSystemPrompt', () => {
+    it('builds system prompt with active file and project file list', () => {
+      const prompt = buildWorkspaceSystemPrompt({
+        files: { 'main.tex': 'content', 'refs.bib': 'refs' },
+        activeFilePath: 'main.tex',
+      });
+
+      expect(prompt).toContain('Active Document: main.tex');
+      expect(prompt).toContain('Project Files: main.tex, refs.bib');
+      expect(prompt).toContain('torque_read_file');
+      expect(prompt).toContain('torque_edit_file');
+    });
+
+    it('executes multi-turn agent loop when read-only tool is called', async () => {
+      // Turn 1: Model calls torque_read_file
+      const turn1Response = {
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [
+                {
+                  id: 'call_read_1',
+                  type: 'function',
+                  function: {
+                    name: 'torque_read_file',
+                    arguments: JSON.stringify({ path: 'main.tex' }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      };
+
+      // Turn 2: Model receives tool result and provides final summary
+      const turn2Response = {
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: 'Here is the summary of main.tex: It is a LaTeX article.',
+            },
+          },
+        ],
+      };
+
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => turn1Response,
+        } as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => turn2Response,
+        } as any);
+
+      const conversation: ChatMessage[] = [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: 'Summarize main.tex',
+          timestamp: Date.now(),
+        },
+      ];
+
+      const messagesChangeSpy = vi.fn();
+      const result = await client.runTurn(conversation, mockContext, {
+        systemPrompt: 'System instructions',
+        onMessagesChange: messagesChangeSpy,
+      });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+      // Verify Turn 1 request included system prompt
+      const [, firstCallReq] = fetchSpy.mock.calls[0];
+      const firstBody = JSON.parse(firstCallReq?.body as string);
+      expect(firstBody.messages[0].role).toBe('system');
+      expect(firstBody.messages[0].content).toBe('System instructions');
+      expect(firstBody.messages[1].content).toBe('Summarize main.tex');
+
+      // Verify Turn 2 request included tool response
+      const [, secondCallReq] = fetchSpy.mock.calls[1];
+      const secondBody = JSON.parse(secondCallReq?.body as string);
+      expect(secondBody.messages).toHaveLength(4); // system, user, assistant(tool_call), tool
+      expect(secondBody.messages[2].tool_calls[0].id).toBe('call_read_1');
+      expect(secondBody.messages[3].role).toBe('tool');
+      expect(secondBody.messages[3].tool_call_id).toBe('call_read_1');
+      expect(secondBody.messages[3].content).toContain('\\documentclass{article}');
+
+      // Verify final conversation messages returned
+      expect(result.length).toBeGreaterThanOrEqual(4);
+      const lastMsg = result[result.length - 1];
+      expect(lastMsg.role).toBe('assistant');
+      expect(lastMsg.content).toContain('Here is the summary of main.tex');
+    });
+
+    it('pauses loop when tool requires user approval (torque_edit_file)', async () => {
+      const turn1Response = {
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: 'Applying title update.',
+              tool_calls: [
+                {
+                  id: 'call_edit_pending',
+                  type: 'function',
+                  function: {
+                    name: 'torque_edit_file',
+                    arguments: JSON.stringify({
+                      path: 'main.tex',
+                      target: 'Hello World',
+                      replacement: 'Quantum Simulation',
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      };
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => turn1Response,
+      } as any);
+
+      const conversation: ChatMessage[] = [
+        {
+          id: 'user-2',
+          role: 'user',
+          content: 'Update title',
+          timestamp: Date.now(),
+        },
+      ];
+
+      const result = await client.runTurn(conversation, mockContext);
+
+      // Should only call API once because diff requires user approval
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      const assistantMsg = result[result.length - 1];
+      expect(assistantMsg.role).toBe('assistant');
+      expect(assistantMsg.toolCalls).toBeDefined();
+      expect(assistantMsg.toolCalls![0].status).toBe('pending_approval');
+      expect(assistantMsg.toolCalls![0].diff).toBeDefined();
+    });
+
+    it('does not duplicate tool call name in SSE streaming mode', async () => {
+      const sseChunks = [
+        'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_123","type":"function","function":{"name":"torque_read_file","arguments":""}}]},"finish_reason":null}]}\n\n',
+        'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"path\\": \\"main.tex\\"}"}}]},"finish_reason":null}]}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          for (const chunk of sseChunks) {
+            controller.enqueue(encoder.encode(chunk));
+          }
+          controller.close();
+        },
+      });
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: stream,
+      } as any);
+
+      const res = await client.sendMessage(
+        [{ id: '1', role: 'user', content: 'Read main.tex', timestamp: 1 }],
+        mockContext,
+        { onChunk: () => {} }
+      );
+
+      expect(res.toolCalls).toHaveLength(1);
+      expect(res.toolCalls![0].name).toBe('torque_read_file');
+      expect(res.toolCalls![0].status).toBe('done');
+      expect(res.toolCalls![0].result).toContain('\\documentclass{article}');
     });
   });
 });

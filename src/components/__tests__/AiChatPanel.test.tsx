@@ -279,6 +279,87 @@ describe('AiChatPanel Component', () => {
     expect(screen.getByTestId('status-rejected-badge')).toBeInTheDocument();
   });
 
+  it('renders tool badges for read-only tools and filters out protocol messages from UI feed', () => {
+    const sessionsWithTools: ChatSession[] = [
+      {
+        id: 'sess-tools-1',
+        title: 'Tool Test',
+        createdAt: Date.now(),
+        messages: [
+          {
+            id: 'msg-u1',
+            role: 'user',
+            content: 'Summarize document',
+            timestamp: 1,
+          },
+          {
+            id: 'msg-a1',
+            role: 'assistant',
+            content: '',
+            timestamp: 2,
+            toolCalls: [
+              {
+                id: 'tc-read-1',
+                name: 'torque_read_file',
+                args: { path: 'main.tex', startLine: 1, endLine: 50 },
+                status: 'done',
+                result: '\\documentclass{article}...',
+              },
+              {
+                id: 'tc-compile-1',
+                name: 'torque_compile',
+                args: { engine: 'pdflatex' },
+                status: 'done',
+                result: { success: true },
+              },
+              {
+                id: 'tc-diag-1',
+                name: 'torque_get_diagnostics',
+                args: {},
+                status: 'done',
+                result: [],
+              },
+            ],
+          },
+          {
+            id: 'msg-tool-1',
+            role: 'tool',
+            toolCallId: 'tc-read-1',
+            content: 'RAW_FILE_PAYLOAD_SHOULD_BE_HIDDEN',
+            timestamp: 3,
+          },
+          {
+            id: 'msg-a2',
+            role: 'assistant',
+            content: 'Here is the summary of the LaTeX file.',
+            timestamp: 4,
+          },
+        ],
+      },
+    ];
+
+    render(
+      <AiChatPanel
+        {...createProps({
+          initialSessions: sessionsWithTools,
+        })}
+      />
+    );
+
+    // Tool badges should be visible
+    expect(screen.getByTestId('tool-badge-read-file')).toBeInTheDocument();
+    expect(screen.getByTestId('tool-badge-read-file')).toHaveTextContent('read main.tex');
+    expect(screen.getByTestId('tool-badge-compile')).toBeInTheDocument();
+    expect(screen.getByTestId('tool-badge-compile')).toHaveTextContent('compile project (pdflatex)');
+    expect(screen.getByTestId('tool-badge-diagnostics')).toBeInTheDocument();
+
+    // The raw tool payload should NOT be rendered as a visible message bubble
+    expect(screen.queryByText('RAW_FILE_PAYLOAD_SHOULD_BE_HIDDEN')).not.toBeInTheDocument();
+
+    // Assistant summary should be visible
+    expect(screen.getByText('Here is the summary of the LaTeX file.')).toBeInTheDocument();
+  });
+
   it('calls onClose when close button is clicked', () => {
     const onClose = vi.fn();
     render(<AiChatPanel {...createProps({ onClose })} />);

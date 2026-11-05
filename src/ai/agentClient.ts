@@ -1,32 +1,54 @@
-import type { AIProviderConfig } from '../types/ai';
+import type { AIProviderConfig, ChatMessage, ToolCallItem as ToolCallState } from '../types/ai';
 import { normalizeBaseUrl } from './aiConfig';
 import { WORKSPACE_TOOLS_SCHEMA, validateToolPath } from './tools';
-import { computeFileDiff, applyFilePatch, type FileDiffResult } from './diffUtils';
+import { computeFileDiff, applyFilePatch } from './diffUtils';
 
-export interface ToolCallState {
-  id: string;
-  name: string;
-  args: Record<string, any>;
-  status: 'pending_approval' | 'accepted' | 'rejected' | 'executing' | 'done' | 'failed';
-  diff?: FileDiffResult;
-  result?: any;
-  error?: string;
-}
-
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system' | 'tool';
-  content: string;
-  toolCalls?: ToolCallState[];
-  toolCallId?: string; // For role: 'tool'
-  timestamp: number;
-}
+export type { ToolCallState, ChatMessage };
 
 export interface WorkspaceToolContext {
   readFile: (path: string) => Promise<string | null> | (string | null);
   writeFile: (path: string, content: string) => Promise<void> | void;
   compile?: (engine?: string) => Promise<{ success: boolean; log: string }> | { success: boolean; log: string };
   getDiagnostics?: () => Promise<any> | any;
+}
+
+export interface AgentLoopOptions {
+  maxTurns?: number;
+  systemPrompt?: string;
+  onChunk?: (token: string) => void;
+  onMessagesChange?: (messages: ChatMessage[]) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Generates an informative system prompt instructing the AI assistant
+ * on available project files, the active document, and how to use workspace tools.
+ */
+export function buildWorkspaceSystemPrompt(workspace?: {
+  files?: Record<string, any>;
+  activeFilePath?: string | null;
+}): string {
+  const fileKeys = workspace?.files ? Object.keys(workspace.files) : [];
+  const activeFile = workspace?.activeFilePath || (fileKeys.length > 0 ? fileKeys[0] : 'main.tex');
+
+  return `You are Torque AI Assistant, an expert LaTeX co-author embedded inside the Torque LaTeX IDE.
+You help the user write, edit, format, compile, and debug LaTeX documents.
+
+Current Workspace:
+- Active Document: ${activeFile}
+- Project Files: ${fileKeys.length > 0 ? fileKeys.join(', ') : 'None'}
+
+Available Workspace Tools:
+- torque_read_file: Read file contents (parameters: path, optional startLine, endLine).
+- torque_edit_file: Surgically edit file contents (parameters: path, target, replacement). Generates interactive diff for user review.
+- torque_write_file: Create or overwrite a file (parameters: path, content). Generates interactive diff for user review.
+- torque_compile: Compile the project (optional parameter: engine: pdflatex | xelatex | lualatex).
+- torque_get_diagnostics: Get latest compilation diagnostics and error details.
+
+CRITICAL INSTRUCTIONS:
+1. When asked to inspect, summarize, analyze, or fix errors in any document (including the active document), ALWAYS use torque_read_file first to read the file contents. Do NOT invent or guess file contents.
+2. When asked to make changes, add sections, fix LaTeX syntax, or generate code, use torque_edit_file for specific replacements or torque_write_file for full files.
+3. Be concise, precise, and professional. Focus on LaTeX best practices.`;
 }
 
 export class AgentClient {
@@ -79,6 +101,7 @@ export class AgentClient {
       model: this.config.selectedModel,
       messages: formattedMessages,
       tools: WORKSPACE_TOOLS_SCHEMA,
+      tool_choice: 'auto',
       stream: isStreaming,
     };
 
@@ -162,12 +185,18 @@ export class AgentClient {
                   if (!rawToolCallsMap[idx]) {
                     rawToolCallsMap[idx] = {
                       id: tc.id || '',
-                      name: tc.function?.name || '',
+                      name: '',
                       arguments: '',
                     };
                   }
                   if (tc.id) rawToolCallsMap[idx].id = tc.id;
-                  if (tc.function?.name) rawToolCallsMap[idx].name += tc.function.name;
+                  if (tc.function?.name) {
+                    if (!rawToolCallsMap[idx].name) {
+                      rawToolCallsMap[idx].name = tc.function.name;
+                    } else if (!rawToolCallsMap[idx].name.includes(tc.function.name)) {
+                      rawToolCallsMap[idx].name += tc.function.name;
+                    }
+                  }
                   if (tc.function?.arguments) rawToolCallsMap[idx].arguments += tc.function.arguments;
                 }
               }
@@ -342,6 +371,11 @@ export class AgentClient {
       toolCalls.push(tcState);
     }
 
+    // Clean up content if it's only whitespace before tool calls
+    if (toolCalls.length > 0 && !content.trim()) {
+      content = '';
+    }
+
     return {
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       role: 'assistant',
@@ -349,6 +383,109 @@ export class AgentClient {
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       timestamp: Date.now(),
     };
+  }
+
+  /**
+   * Runs a complete multi-turn conversation loop with automated tool execution.
+   * Read-only tools (torque_read_file, torque_compile, torque_get_diagnostics) are
+   * executed and their results fed back to the model in successive turns.
+   * If a tool requires user approval (torque_edit_file, torque_write_file with diff),
+   * the loop pauses with 'pending_approval' so the user can review via the UI.
+   */
+  async runTurn(
+    conversation: ChatMessage[],
+    context: WorkspaceToolContext,
+    options?: AgentLoopOptions
+  ): Promise<ChatMessage[]> {
+    const maxTurns = options?.maxTurns ?? 5;
+    const workingMessages: ChatMessage[] = [...conversation];
+
+    for (let turn = 0; turn < maxTurns; turn++) {
+      let messagesForApi = [...workingMessages];
+      if (options?.systemPrompt && !messagesForApi.some((m) => m.role === 'system')) {
+        messagesForApi = [
+          {
+            id: 'sys-prompt',
+            role: 'system',
+            content: options.systemPrompt,
+            timestamp: Date.now(),
+          },
+          ...messagesForApi,
+        ];
+      }
+
+      const assistantPlaceholderId = `asst-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      let streamedContent = '';
+
+      const handleChunk = (chunk: string) => {
+        streamedContent += chunk;
+        options?.onChunk?.(chunk);
+
+        const existingIdx = workingMessages.findIndex((m) => m.id === assistantPlaceholderId);
+        if (existingIdx >= 0) {
+          workingMessages[existingIdx] = {
+            ...workingMessages[existingIdx],
+            content: streamedContent,
+          };
+        } else {
+          workingMessages.push({
+            id: assistantPlaceholderId,
+            role: 'assistant',
+            content: streamedContent,
+            timestamp: Date.now(),
+          });
+        }
+        options?.onMessagesChange?.([...workingMessages]);
+      };
+
+      const assistantMsg = await this.sendMessage(messagesForApi, context, {
+        onChunk: options?.onChunk ? handleChunk : undefined,
+        signal: options?.signal,
+      });
+
+      // Update or insert the final assistant message
+      const existingIdx = workingMessages.findIndex((m) => m.id === assistantPlaceholderId);
+      if (existingIdx >= 0) {
+        workingMessages[existingIdx] = {
+          ...assistantMsg,
+          id: assistantPlaceholderId,
+        };
+      } else {
+        workingMessages.push(assistantMsg);
+      }
+      options?.onMessagesChange?.([...workingMessages]);
+
+      // If no tool calls, response is complete
+      if (!assistantMsg.toolCalls || assistantMsg.toolCalls.length === 0) {
+        break;
+      }
+
+      // Check if any tool call requires user approval
+      const hasPendingApproval = assistantMsg.toolCalls.some(
+        (tc) => tc.status === 'pending_approval'
+      );
+      if (hasPendingApproval) {
+        break;
+      }
+
+      // Read-only tools finished: generate tool response messages and proceed to next turn
+      for (const tc of assistantMsg.toolCalls) {
+        const toolMsg: ChatMessage = {
+          id: `tool-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          role: 'tool',
+          toolCallId: tc.id,
+          content:
+            typeof tc.result === 'string'
+              ? tc.result
+              : JSON.stringify(tc.result ?? { error: tc.error ?? 'Tool execution failed' }),
+          timestamp: Date.now(),
+        };
+        workingMessages.push(toolMsg);
+      }
+      options?.onMessagesChange?.([...workingMessages]);
+    }
+
+    return workingMessages;
   }
 
   async approveToolCall(

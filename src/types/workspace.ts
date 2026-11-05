@@ -57,6 +57,17 @@ export interface ProjectFile {
   updatedAt: number;
 }
 
+export interface McpInfo {
+  port: number;
+  active: boolean;
+}
+
+export interface McpFileChangedPayload {
+  projectId?: string;
+  path: string;
+  content: string;
+}
+
 export interface WorkspaceActions {
   compile: (options?: { engine?: LatexEngine }) => Promise<CompileResult>;
   getFileContent: (path: string) => Promise<string>;

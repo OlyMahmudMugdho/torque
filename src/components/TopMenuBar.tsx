@@ -21,6 +21,8 @@ export interface TopMenuBarProps {
   onRedo?: () => void;
   onShortcuts?: () => void;
   onAbout?: () => void;
+  onOpenMcpGuide?: () => void;
+  onOpenMcp?: () => void;
   selectedEngine?: LatexEngine;
   onSelectEngine?: (engine: LatexEngine) => void;
   className?: string;
@@ -57,6 +59,8 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onRedo,
   onShortcuts,
   onAbout,
+  onOpenMcpGuide,
+  onOpenMcp,
   selectedEngine = 'pdflatex',
   onSelectEngine,
   className = '',
@@ -175,6 +179,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
       id: 'help',
       label: 'Help',
       items: [
+        { label: 'MCP AI Assistant Guide...', onClick: onOpenMcpGuide || onOpenMcp },
         { label: 'Shortcuts Guide', onClick: onShortcuts },
         { label: 'About Torque', onClick: onAbout },
       ],

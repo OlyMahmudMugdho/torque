@@ -268,13 +268,25 @@ describe('TopMenuBar', () => {
   });
 
   describe('Help Menu', () => {
-    it('opens Help dropdown with Shortcuts Guide and About Torque', () => {
+    it('opens Help dropdown with MCP AI Assistant Guide, Shortcuts Guide and About Torque', () => {
       renderTopMenuBar();
 
       fireEvent.click(screen.getByRole('button', { name: 'Help' }));
 
+      expect(screen.getByText('MCP AI Assistant Guide...')).toBeInTheDocument();
       expect(screen.getByText('Shortcuts Guide')).toBeInTheDocument();
       expect(screen.getByText('About Torque')).toBeInTheDocument();
+    });
+
+    it('triggers onOpenMcpGuide callback when clicking MCP AI Assistant Guide...', () => {
+      const onOpenMcpGuide = vi.fn();
+      renderTopMenuBar({ onOpenMcpGuide });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Help' }));
+      fireEvent.click(screen.getByText('MCP AI Assistant Guide...'));
+
+      expect(onOpenMcpGuide).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('MCP AI Assistant Guide...')).not.toBeInTheDocument();
     });
 
     it('closes menu when clicking an item in Help menu', () => {

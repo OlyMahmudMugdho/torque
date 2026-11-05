@@ -12,6 +12,7 @@ import { DiagnosticsLogPanel } from './components/DiagnosticsLogPanel';
 import { WelcomeHomeScreen } from './components/WelcomeHomeScreen';
 import { TexSetupGuide } from './components/TexSetupGuide';
 import { SettingsModal } from './components/SettingsModal';
+import { McpInstructionsModal } from './components/McpInstructionsModal';
 import type { Diagnostic } from './types/workspace';
 import { Folder, Terminal, Settings, GitBranch, CheckCircle2, Package } from 'lucide-react';
 
@@ -52,6 +53,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
   const [previewOpen, setPreviewOpen] = useState(true);
   const [dismissedSetupResult, setDismissedSetupResult] = useState<unknown>(null);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const [isMcpModalOpen, setMcpModalOpen] = useState(false);
   const monacoRef = useRef<MonacoEditorHandle>(null);
 
   // Synchronize URL search params (?project=, ?id=, ?page=) on mount and popstate
@@ -364,6 +366,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         onAbout={() => {
           alert('Torque LaTeX Editor\nHigh-Performance LaTeX IDE with Native TeX Live & Auto-Package Resolution');
         }}
+        onOpenMcpGuide={() => setMcpModalOpen(true)}
       />
 
       {/* Main Area: Activity Bar + Resizable Workspace */}
@@ -594,6 +597,11 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         onAutoSaveChange={workspace.setAutoSave}
         selectedEngine={workspace.selectedEngine}
         onEngineChange={workspace.setSelectedEngine}
+      />
+
+      <McpInstructionsModal
+        isOpen={isMcpModalOpen}
+        onClose={() => setMcpModalOpen(false)}
       />
     </div>
   );

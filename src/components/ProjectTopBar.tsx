@@ -49,6 +49,8 @@ export interface ProjectTopBarProps {
   onRedo?: () => void;
   onShortcuts?: () => void;
   onAbout?: () => void;
+  onOpenMcpGuide?: () => void;
+  onOpenMcp?: () => void;
 }
 
 export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
@@ -78,6 +80,8 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
   onRedo,
   onShortcuts,
   onAbout,
+  onOpenMcpGuide,
+  onOpenMcp,
 }) => {
   const { theme } = useThemeSafe();
   const isDark = theme === 'dark';
@@ -165,6 +169,8 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
           onRedo={onRedo}
           onShortcuts={onShortcuts}
           onAbout={onAbout}
+          onOpenMcpGuide={onOpenMcpGuide}
+          onOpenMcp={onOpenMcp}
           selectedEngine={selectedEngine}
           onSelectEngine={onSelectEngine}
           className="border-b-0 h-8 px-0"
@@ -416,6 +422,26 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
             Build Success
           </span>
         )}
+
+        {/* IntelliJ New UI MCP Status Pill */}
+        <button
+          type="button"
+          onClick={() => {
+            if (onOpenMcpGuide) onOpenMcpGuide();
+            else if (onOpenMcp) onOpenMcp();
+          }}
+          data-testid="mcp-status-pill"
+          title="Torque Model Context Protocol (MCP) Server Active - Click for setup guide"
+          aria-label="MCP Server Active"
+          className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium border transition cursor-pointer ${
+            isDark
+              ? 'bg-[#1e1f22] border-[#393b40] text-[#dfe1e5] hover:bg-[#393b40] hover:border-[#4e5157]'
+              : 'bg-[#ffffff] border-[#d1d5db] text-[#1f2328] hover:bg-[#ebecf0]'
+          }`}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-[#59a869] animate-pulse" />
+          <span className="font-mono font-semibold">MCP</span>
+        </button>
       </div>
 
       {/* Right: Actions */}

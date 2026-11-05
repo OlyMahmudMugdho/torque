@@ -6,12 +6,15 @@ import type {
   CompileResult,
   WorkspaceActions,
   LatexEngine,
+  McpFileChangedPayload,
 } from '../types/workspace';
 import { ProjectStore, normalizeFilePath } from '../storage/projectStore';
 import { CompilerClient } from '../compiler/compilerClient';
 import type { CompilerDriver } from '../compiler/compilerDriver';
 import { exportProjectZip, importProjectZip } from '../archive/zipArchive';
 import { applyTextDiff } from '../editor/latexLanguage';
+import { isTauri, base64ToUint8Array } from '../storage/tauriStorage';
+import { decompressGzip, parseSyncTex } from '../compiler/synctexParser';
 
 export const AUTOSAVE_STORAGE_KEY = 'torque_autosave_enabled';
 
@@ -183,6 +186,194 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
     setProjects(list);
     return list;
   }, []);
+
+  // Synchronize active project ID to Tauri MCP server
+  useEffect(() => {
+    if (!activeProject?.id) return;
+    if (isTauri()) {
+      const g = typeof window !== 'undefined' ? (window as any) : null;
+      if (g?.__TAURI_INTERNALS__?.invoke) {
+        g.__TAURI_INTERNALS__.invoke('tauri_set_active_project', { projectId: activeProject.id }).catch(() => {});
+      } else {
+        import('@tauri-apps/api/core')
+          .then(({ invoke }) => {
+            invoke('tauri_set_active_project', { projectId: activeProject.id }).catch(() => {});
+          })
+          .catch(() => {});
+      }
+    }
+  }, [activeProject?.id]);
+
+  // MCP live reactive synchronization handlers
+  const handleMcpFileChanged = useCallback((payload: McpFileChangedPayload) => {
+    if (!payload || !payload.path) return;
+    if (payload.projectId && activeProjectRef.current && payload.projectId !== activeProjectRef.current.id) {
+      return;
+    }
+    const norm = normalizeFilePath(payload.path);
+    const newContent = payload.content;
+
+    setFiles((prevFiles) => {
+      let found = false;
+      const updated = prevFiles.map((f) => {
+        if (f.path === norm) {
+          found = true;
+          return { ...f, content: newContent, updatedAt: Date.now() };
+        }
+        return f;
+      });
+      const nextFiles = found
+        ? updated
+        : [
+            ...updated,
+            {
+              projectId: activeProjectRef.current?.id || '',
+              path: norm,
+              content: newContent,
+              isBinary: false,
+              updatedAt: Date.now(),
+            },
+          ];
+      filesRef.current = nextFiles;
+      return nextFiles;
+    });
+  }, []);
+
+  const handleMcpCompileFinished = useCallback(async (raw: any) => {
+    if (!raw) return;
+
+    let pdfBytes: Uint8Array | null = null;
+    const rawPdf = raw.pdfBytes ?? raw.pdf;
+    if (rawPdf) {
+      if (typeof rawPdf === 'string') {
+        pdfBytes = base64ToUint8Array(rawPdf);
+      } else if (rawPdf instanceof Uint8Array) {
+        pdfBytes = rawPdf;
+      } else if (Array.isArray(rawPdf)) {
+        pdfBytes = new Uint8Array(rawPdf);
+      }
+    }
+
+    let syncTexIndex = raw.syncTexIndex;
+    if (!syncTexIndex && raw.synctex) {
+      try {
+        const rawBytes = typeof raw.synctex === 'string' ? base64ToUint8Array(raw.synctex) : raw.synctex;
+        const rawText =
+          rawBytes[0] === 0x1f && rawBytes[1] === 0x8b
+            ? await decompressGzip(rawBytes)
+            : new TextDecoder().decode(rawBytes);
+        syncTexIndex = parseSyncTex(
+          rawText,
+          activeProjectRef.current?.rootEntry || 'main.tex',
+          filesRef.current.map((f) => f.path)
+        );
+      } catch {
+        // ignore synctex parse error
+      }
+    }
+
+    const rawStatus = String(raw.status || 'spotless').toLowerCase();
+    let status: CompileResult['status'] =
+      rawStatus === 'spotless' || rawStatus === 'success'
+        ? 'spotless'
+        : rawStatus === 'warnings'
+        ? 'warnings'
+        : rawStatus === 'errors'
+        ? 'errors'
+        : 'failed';
+
+    if (status === 'failed' && pdfBytes) {
+      const hasErrors = Array.isArray(raw.diagnostics) && raw.diagnostics.some((d: any) => d.severity === 'error');
+      status = hasErrors ? 'errors' : 'warnings';
+    }
+
+    const resolvedPackages = Array.isArray(raw.resolved_packages)
+      ? raw.resolved_packages
+      : Array.isArray(raw.resolvedPackages)
+      ? raw.resolvedPackages
+      : [];
+
+    const result: CompileResult = {
+      status,
+      pdfBytes,
+      diagnostics: Array.isArray(raw.diagnostics) ? raw.diagnostics : [],
+      missingFiles: Array.isArray(raw.missing_files) ? raw.missing_files : Array.isArray(raw.missingFiles) ? raw.missingFiles : [],
+      durationMs: Number(raw.duration_ms ?? raw.durationMs) || 0,
+      syncTexIndex,
+      resolvedPackages,
+      missingRequirements: raw.missing_requirements ?? raw.missingRequirements,
+      engine: raw.engine || selectedEngineRef.current,
+    };
+
+    setCompileStatus(result.status);
+    setLastResult(result);
+    if (resolvedPackages.length > 0) {
+      setResolvedPackages(resolvedPackages);
+    }
+  }, []);
+
+  useEffect(() => {
+    let unlistenFile: (() => void) | undefined;
+    let unlistenCompile: (() => void) | undefined;
+
+    if (isTauri()) {
+      import('@tauri-apps/api/event')
+        .then(({ listen }) => {
+          listen<McpFileChangedPayload>('mcp:file-changed', (event) => {
+            handleMcpFileChanged(event.payload);
+          }).then((fn) => {
+            unlistenFile = fn;
+          });
+
+          listen<any>('mcp:compile-finished', (event) => {
+            handleMcpCompileFinished(event.payload);
+          }).then((fn) => {
+            unlistenCompile = fn;
+          });
+        })
+        .catch(() => {});
+    }
+
+    const handleCustomFileChanged = (e: Event) => {
+      const ce = e as CustomEvent<McpFileChangedPayload>;
+      if (ce.detail) {
+        handleMcpFileChanged(ce.detail);
+      }
+    };
+
+    const handleCustomCompileFinished = (e: Event) => {
+      const ce = e as CustomEvent<any>;
+      if (ce.detail) {
+        handleMcpCompileFinished(ce.detail);
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('torque:mcp-file-changed', handleCustomFileChanged);
+      window.addEventListener('torque:mcp-compile-finished', handleCustomCompileFinished);
+    }
+
+    return () => {
+      try {
+        if (typeof unlistenFile === 'function') {
+          Promise.resolve(unlistenFile()).catch(() => {});
+        }
+      } catch {
+        // ignore
+      }
+      try {
+        if (typeof unlistenCompile === 'function') {
+          Promise.resolve(unlistenCompile()).catch(() => {});
+        }
+      } catch {
+        // ignore
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('torque:mcp-file-changed', handleCustomFileChanged);
+        window.removeEventListener('torque:mcp-compile-finished', handleCustomCompileFinished);
+      }
+    };
+  }, [handleMcpFileChanged, handleMcpCompileFinished]);
 
   // Initialize store and default project
   useEffect(() => {

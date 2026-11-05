@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::DialogExt;
 
-mod base64_utils {
+pub mod base64_utils {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     pub fn encode(data: &[u8]) -> String {
@@ -138,7 +138,7 @@ pub fn normalize_path(raw_path: &str) -> Result<String, String> {
     Ok(segments.join("/"))
 }
 
-fn is_binary_file(path: &str, bytes: &[u8]) -> bool {
+pub fn is_binary_file(path: &str, bytes: &[u8]) -> bool {
     let lower = path.to_lowercase();
     let binary_extensions = [
         ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp",

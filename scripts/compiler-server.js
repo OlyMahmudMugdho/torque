@@ -1657,6 +1657,56 @@ export function createCompilerServer(options = {}) {
       return;
     }
 
+    // AI Config: GET /api/ai-config
+    if (req.method === 'GET' && pathname === '/api/ai-config') {
+      try {
+        const aiConfigFile = path.join(os.homedir(), '.torque', 'ai_config.json');
+        if (!fs.existsSync(aiConfigFile)) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: `AI config file not found at ${aiConfigFile}` }));
+          return;
+        }
+        const content = fs.readFileSync(aiConfigFile, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(content);
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: String(err?.message || err) }));
+      }
+      return;
+    }
+
+    // AI Config: POST /api/ai-config
+    if (req.method === 'POST' && pathname === '/api/ai-config') {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          if (!parsed || typeof parsed !== 'object') {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON payload' }));
+            return;
+          }
+          const torqueDir = path.join(os.homedir(), '.torque');
+          if (!fs.existsSync(torqueDir)) {
+            fs.mkdirSync(torqueDir, { recursive: true });
+          }
+          const aiConfigFile = path.join(torqueDir, 'ai_config.json');
+          fs.writeFileSync(aiConfigFile, JSON.stringify(parsed, null, 2), 'utf8');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: String(err?.message || err) }));
+        }
+      });
+      return;
+    }
+
     // 2. Existing POST / and POST /api/compile
     if (req.method === 'POST' && (pathname === '/' || pathname === '/api/compile')) {
       let body = '';

@@ -1,8 +1,10 @@
+pub mod ai;
 pub mod compiler;
 pub mod mcp;
 pub mod package_resolver;
 pub mod storage;
 
+use ai::{tauri_get_ai_config, tauri_save_ai_config};
 use compiler::{tauri_compile_latex, tauri_detect_texlive};
 use mcp::{tauri_get_mcp_info, tauri_set_active_project};
 use package_resolver::tauri_resolve_missing_packages;
@@ -46,6 +48,8 @@ pub fn run() {
       tauri_resolve_missing_packages,
       tauri_get_mcp_info,
       tauri_set_active_project,
+      tauri_get_ai_config,
+      tauri_save_ai_config,
     ])
     .run(tauri::generate_context!())
     .expect("error while building tauri application");

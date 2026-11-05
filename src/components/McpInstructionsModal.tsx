@@ -106,6 +106,9 @@ export const McpInstructionsModal: React.FC<McpInstructionsModalProps> = ({
               command: 'node',
               args: ['/path/to/torque/scripts/torque-mcp-bridge.js'],
               alwaysAllow: [
+                'torque_create_project',
+                'torque_list_projects',
+                'torque_get_active_project',
                 'torque_read_file',
                 'torque_edit_file',
                 'torque_write_file',
@@ -151,6 +154,21 @@ export const McpInstructionsModal: React.FC<McpInstructionsModalProps> = ({
 
   const tools = [
     {
+      name: 'torque_create_project',
+      description: 'Create a new LaTeX project in Torque with a default or custom root entry document.',
+      params: 'name (string, required), rootEntry (string), content (string)',
+    },
+    {
+      name: 'torque_list_projects',
+      description: 'List all LaTeX projects available in Torque.',
+      params: 'None',
+    },
+    {
+      name: 'torque_get_active_project',
+      description: 'Get the currently active LaTeX project in Torque, including file manifest and root entry file.',
+      params: 'None',
+    },
+    {
       name: 'torque_read_file',
       description: 'Read full text or slice by line ranges (startLine, endLine) to optimize context window.',
       params: 'path (string, required), startLine (number), endLine (number), projectId (string)',
@@ -158,7 +176,7 @@ export const McpInstructionsModal: React.FC<McpInstructionsModalProps> = ({
     {
       name: 'torque_edit_file',
       description: 'Surgical search & replace in LaTeX files. Replaces unique targets or sections accurately.',
-      params: 'path (string, required), search (string, required), replace (string, required)',
+      params: 'path (string, required), target (alias: search, string, required), replacement (alias: replace, string, required), projectId (string)',
     },
     {
       name: 'torque_write_file',

@@ -64,6 +64,7 @@ describe('McpInstructionsModal', () => {
     fireEvent.click(toolsBtn);
 
     expect(screen.getByText('Available AI Editing Tools')).toBeInTheDocument();
+    expect(screen.getByText('torque_create_project')).toBeInTheDocument();
     expect(screen.getByText('torque_read_file')).toBeInTheDocument();
     expect(screen.getByText('torque_edit_file')).toBeInTheDocument();
     expect(screen.getByText('torque_write_file')).toBeInTheDocument();

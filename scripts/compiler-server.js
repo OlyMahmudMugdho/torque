@@ -15,6 +15,7 @@ import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -822,6 +823,76 @@ function resolveProjectId(state, requestedId) {
   throw err;
 }
 
+export function handleToolCreateProject(state, args = {}) {
+  const rawName = args.name;
+  if (!rawName || typeof rawName !== 'string' || !rawName.trim()) {
+    const err = new Error("Missing required argument 'name'");
+    err.code = -32602;
+    throw err;
+  }
+  const name = rawName.trim();
+
+  const rawRoot = args.rootEntry && typeof args.rootEntry === 'string' ? args.rootEntry.trim() : '';
+  let rootEntry = 'main.tex';
+  if (rawRoot) {
+    try {
+      rootEntry = normalizePath(rawRoot);
+    } catch (e) {
+      const err = new Error(`Invalid rootEntry: ${e.message}`);
+      err.code = -32602;
+      throw err;
+    }
+  }
+
+  const defaultContent = `\\documentclass{article}
+\\usepackage{amsmath}
+
+\\title{${name}}
+\\author{}
+\\date{\\today}
+
+\\begin{document}
+\\maketitle
+
+\\section{Introduction}
+Welcome to your LaTeX document!
+
+\\end{document}
+`;
+
+  const content = typeof args.content === 'string' ? args.content : defaultContent;
+  const projectId = crypto.randomUUID();
+  const now = Date.now();
+
+  const projectsDir = state.getProjectsDir();
+  const projectDir = path.join(projectsDir, projectId);
+  const filePath = path.join(projectDir, 'files', rootEntry);
+
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, Buffer.from(content, 'utf-8'));
+
+  const project = {
+    id: projectId,
+    name,
+    rootEntry,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const projJsonPath = path.join(projectDir, 'project.json');
+  fs.writeFileSync(projJsonPath, JSON.stringify(project, null, 2), 'utf-8');
+
+  state.setActiveProjectId(projectId);
+
+  return {
+    id: project.id,
+    name: project.name,
+    rootEntry: project.rootEntry,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+  };
+}
+
 export function handleToolListProjects(state) {
   const projectsDir = state.getProjectsDir();
   const projects = listProjectsFromDir(projectsDir);
@@ -978,13 +1049,28 @@ export function handleToolWriteFile(state, args = {}) {
   const buf = Buffer.from(String(content), 'utf-8');
   fs.writeFileSync(filePath, buf);
 
-  // Update project updatedAt
+  // Update project updatedAt or auto-generate project.json
+  const now = Date.now();
   const projJsonPath = path.join(projectDir, 'project.json');
   if (fs.existsSync(projJsonPath)) {
     try {
       const proj = JSON.parse(fs.readFileSync(projJsonPath, 'utf-8'));
-      proj.updatedAt = Date.now();
+      proj.updatedAt = now;
       fs.writeFileSync(projJsonPath, JSON.stringify(proj, null, 2), 'utf-8');
+    } catch {
+      // Ignore
+    }
+  } else {
+    const rootEntry = cleanPath.endsWith('.tex') ? cleanPath : 'main.tex';
+    const project = {
+      id: projectId,
+      name: projectId,
+      rootEntry,
+      createdAt: now,
+      updatedAt: now,
+    };
+    try {
+      fs.writeFileSync(projJsonPath, JSON.stringify(project, null, 2), 'utf-8');
     } catch {
       // Ignore
     }
@@ -1005,14 +1091,14 @@ export function handleToolEditFile(state, args = {}) {
     throw err;
   }
 
-  const target = args.target;
-  if (!target || typeof target !== 'string') {
+  const target = args.target !== undefined ? args.target : args.search;
+  if (target === undefined || target === null || typeof target !== 'string' || target.length === 0) {
     const err = new Error("Argument 'target' cannot be empty");
     err.code = -32602;
     throw err;
   }
 
-  const replacement = args.replacement;
+  const replacement = args.replacement !== undefined ? args.replacement : args.replace;
   if (replacement === undefined || replacement === null) {
     const err = new Error("Missing required argument 'replacement'");
     err.code = -32602;
@@ -1173,6 +1259,28 @@ export function getToolsCatalog() {
   return {
     tools: [
       {
+        name: 'torque_create_project',
+        description: 'Create a new LaTeX project in Torque with a default or custom root entry document.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Name of the new LaTeX project',
+            },
+            rootEntry: {
+              type: 'string',
+              description: "Optional root LaTeX document path (defaults to 'main.tex')",
+            },
+            content: {
+              type: 'string',
+              description: 'Optional initial LaTeX document content for rootEntry',
+            },
+          },
+          required: ['name'],
+        },
+      },
+      {
         name: 'torque_list_projects',
         description: 'List all LaTeX projects available in Torque.',
         inputSchema: {
@@ -1250,18 +1358,26 @@ export function getToolsCatalog() {
             },
             target: {
               type: 'string',
-              description: 'Exact text string or block to find and replace',
+              description: 'Exact text string or block to find and replace (alias: search)',
+            },
+            search: {
+              type: 'string',
+              description: 'Alias for target: exact text string or block to find and replace',
             },
             replacement: {
               type: 'string',
-              description: 'New text to substitute in place of target',
+              description: 'New text to substitute in place of target (alias: replace)',
+            },
+            replace: {
+              type: 'string',
+              description: 'Alias for replacement: new text to substitute in place of target',
             },
             projectId: {
               type: 'string',
               description: 'Optional; defaults to active project',
             },
           },
-          required: ['path', 'target', 'replacement'],
+          required: ['path'],
         },
       },
       {
@@ -1382,6 +1498,9 @@ export function dispatchJsonRpc(requestInput, state = defaultMcpState) {
       try {
         let toolRes;
         switch (toolName) {
+          case 'torque_create_project':
+            toolRes = handleToolCreateProject(state, toolArgs);
+            break;
           case 'torque_list_projects':
             toolRes = handleToolListProjects(state);
             break;
@@ -1433,6 +1552,14 @@ export function dispatchJsonRpc(requestInput, state = defaultMcpState) {
             message: err.message,
           },
         };
+      }
+    }
+    case 'torque_create_project': {
+      try {
+        const val = handleToolCreateProject(state, req.params || {});
+        return { jsonrpc: '2.0', id, result: val };
+      } catch (err) {
+        return { jsonrpc: '2.0', id, error: { code: typeof err.code === 'number' ? err.code : -32603, message: err.message } };
       }
     }
     case 'torque_list_projects': {

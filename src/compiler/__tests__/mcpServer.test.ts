@@ -204,7 +204,7 @@ describe('MCP Server Endpoints & Tool Handlers in compiler-server.js', () => {
       expect(res.status).toBe(204);
     });
 
-    it('handles tools/list returning 7 Torque tools', async () => {
+    it('handles tools/list returning 8 Torque tools', async () => {
       const res = await fetch(`${baseUrl}/mcp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -220,9 +220,10 @@ describe('MCP Server Endpoints & Tool Handlers in compiler-server.js', () => {
       expect(json.id).toBe('list-1');
       const tools = json.result.tools;
       expect(Array.isArray(tools)).toBe(true);
-      expect(tools.length).toBe(7);
+      expect(tools.length).toBe(8);
 
       const names = tools.map((t: any) => t.name);
+      expect(names).toContain('torque_create_project');
       expect(names).toContain('torque_list_projects');
       expect(names).toContain('torque_get_active_project');
       expect(names).toContain('torque_read_file');
@@ -410,6 +411,34 @@ describe('MCP Server Endpoints & Tool Handlers in compiler-server.js', () => {
       expect(updated).not.toContain('Hello MCP World');
     });
 
+    it('performs surgical text replacement using search/replace aliases', async () => {
+      const res = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 71,
+          method: 'tools/call',
+          params: {
+            name: 'torque_edit_file',
+            arguments: {
+              path: 'main.tex',
+              search: 'Hello Antigravity MCP Partner',
+              replace: 'Hello Aliased Partner',
+            },
+          },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.result.isError).toBe(false);
+
+      const filePath = path.join(testProjectsDir, 'proj-1', 'files', 'main.tex');
+      const updated = fs.readFileSync(filePath, 'utf-8');
+      expect(updated).toContain('Hello Aliased Partner');
+    });
+
     it('rejects torque_edit_file when target text is missing', async () => {
       const res = await fetch(`${baseUrl}/mcp`, {
         method: 'POST',
@@ -516,6 +545,110 @@ describe('MCP Server Endpoints & Tool Handlers in compiler-server.js', () => {
       expect(json.error).toBeDefined();
       expect(json.error.code).toBe(-32601);
       expect(json.error.message).toContain('Method not found');
+    });
+
+    it('creates a new project via torque_create_project tool and direct method', async () => {
+      // 1. tools/call with custom rootEntry and content
+      const res = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'cp-1',
+          method: 'tools/call',
+          params: {
+            name: 'torque_create_project',
+            arguments: {
+              name: 'Quantum Optics',
+              rootEntry: 'optics.tex',
+              content: '\\documentclass{article}\n\\begin{document}\nQuantum Optics Content\n\\end{document}',
+            },
+          },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.result.isError).toBe(false);
+
+      const created = JSON.parse(json.result.content[0].text);
+      expect(created.name).toBe('Quantum Optics');
+      expect(created.rootEntry).toBe('optics.tex');
+      expect(created.id).toBeDefined();
+
+      const createdFile = path.join(testProjectsDir, created.id, 'files', 'optics.tex');
+      expect(fs.existsSync(createdFile)).toBe(true);
+      expect(fs.readFileSync(createdFile, 'utf-8')).toContain('Quantum Optics Content');
+
+      // 2. Direct method call with default rootEntry
+      const directRes = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'cp-2',
+          method: 'torque_create_project',
+          params: {
+            name: 'Default Root Project',
+          },
+        }),
+      });
+
+      expect(directRes.status).toBe(200);
+      const directJson = await directRes.json();
+      expect(directJson.result.name).toBe('Default Root Project');
+      expect(directJson.result.rootEntry).toBe('main.tex');
+
+      // 3. Error when name is missing
+      const errRes = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'cp-err',
+          method: 'torque_create_project',
+          params: {},
+        }),
+      });
+      const errJson = await errRes.json();
+      expect(errJson.error).toBeDefined();
+      expect(errJson.error.code).toBe(-32602);
+      expect(errJson.error.message).toContain("Missing required argument 'name'");
+
+      // Clean up test projects created
+      fs.rmSync(path.join(testProjectsDir, created.id), { recursive: true, force: true });
+      fs.rmSync(path.join(testProjectsDir, directJson.result.id), { recursive: true, force: true });
+    });
+
+    it('auto-generates project.json when torque_write_file writes to a project without one', async () => {
+      const autoProjId = 'proj-autogen';
+      const res = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 72,
+          method: 'tools/call',
+          params: {
+            name: 'torque_write_file',
+            arguments: {
+              projectId: autoProjId,
+              path: 'document.tex',
+              content: '\\documentclass{article}\n\\begin{document}Autogen\\end{document}',
+            },
+          },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const projJsonPath = path.join(testProjectsDir, autoProjId, 'project.json');
+      expect(fs.existsSync(projJsonPath)).toBe(true);
+      const proj = JSON.parse(fs.readFileSync(projJsonPath, 'utf-8'));
+      expect(proj.id).toBe(autoProjId);
+      expect(proj.rootEntry).toBe('document.tex');
+
+      // Clean up auto-generated project directory
+      fs.rmSync(path.join(testProjectsDir, autoProjId), { recursive: true, force: true });
     });
   });
 

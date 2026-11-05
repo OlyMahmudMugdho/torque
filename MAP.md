@@ -122,9 +122,9 @@ Torque provides a full-featured LaTeX authoring environment powered by the host'
   - Fetches package archives directly from CTAN mirrors (TDS zip, flat zip, raw files), unpacks them into the user TeXMF tree (`TEXMFHOME`), and runs `mktexlsr` / `texhash`.
 - [`src-tauri/src/storage.rs`](file:///home/mugdho/codes/torque/src-tauri/src/storage.rs): Native filesystem operations managing `~/.torque/projects` and `~/.torque/cache/packages`.
 - [`src-tauri/src/mcp.rs`](file:///home/mugdho/codes/torque/src-tauri/src/mcp.rs):
-  - Embedded Model Context Protocol (MCP) server listening on `127.0.0.1:3030` (fallback `3031`).
+  - Embedded Model Context Protocol (MCP) server listening on `127.0.0.1:3030` (fallback `3031`), modularized across `src-tauri/src/mcp/` (`projects.rs`, `files.rs`, `compiler.rs`, `catalog.rs`, `dispatch.rs`, `http.rs`, `tests.rs`).
   - Implements JSON-RPC 2.0 protocol (`2024-11-05`), `GET /sse`, `POST /message`, and `POST /mcp`.
-  - Exposes 7 workspace tools: `torque_list_projects`, `torque_get_active_project`, `torque_read_file` (with line slicing), `torque_write_file`, `torque_edit_file` (surgical diffs), `torque_compile`, `torque_get_diagnostics`.
+  - Exposes 8 workspace tools: `torque_create_project`, `torque_list_projects`, `torque_get_active_project`, `torque_read_file` (with line slicing), `torque_write_file`, `torque_edit_file` (surgical diffs), `torque_compile`, `torque_get_diagnostics`.
   - Emits Tauri IPC events (`mcp:file-changed`, `mcp:compile-finished`) for real-time frontend synchronization.
 - [`src-tauri/tauri.conf.json`](file:///home/mugdho/codes/torque/src-tauri/tauri.conf.json): Tauri v2 configuration (window size, title, permissions, bundle identifier, packaging metadata).
 

@@ -45,6 +45,7 @@ export interface ProjectTopBarProps {
   onToggleSidebar?: () => void;
   onToggleProblems?: () => void;
   onTogglePreview?: () => void;
+  onToggleAiChat?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
   onShortcuts?: () => void;
@@ -76,6 +77,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
   onToggleSidebar,
   onToggleProblems,
   onTogglePreview,
+  onToggleAiChat,
   onUndo,
   onRedo,
   onShortcuts,
@@ -165,6 +167,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
           onToggleSidebar={onToggleSidebar}
           onToggleProblems={onToggleProblems}
           onTogglePreview={onTogglePreview}
+          onToggleAiChat={onToggleAiChat}
           onUndo={onUndo}
           onRedo={onRedo}
           onShortcuts={onShortcuts}

@@ -12,10 +12,12 @@ import {
   User,
   Settings,
   AlertTriangle,
+  ChevronDown,
+  MessageSquare,
 } from 'lucide-react';
 import { useThemeSafe } from '../context/ThemeContext';
 import { AiDiffCard } from './AiDiffCard';
-import type { AIProviderConfig, ChatMessage, ChatSession, ToolCallItem } from '../types/ai';
+import type { AIProviderConfig, ChatMessage, ChatSession } from '../types/ai';
 import type { FileDiffResult } from '../ai/diffUtils';
 
 export interface AiChatPanelProps {
@@ -315,7 +317,8 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
 
   const handleAcceptToolCall = (messageId: string, toolCallId: string, diff: FileDiffResult) => {
     if (workspace) {
-      if (diff.isNewFile && workspace.createFile) {
+      const isNewFile = !diff.originalContent;
+      if (isNewFile && workspace.createFile) {
         workspace.createFile(diff.path, diff.newContent);
       } else if (workspace.updateFileContent) {
         workspace.updateFileContent(diff.path, diff.newContent);
@@ -374,28 +377,27 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
 
   return (
     <div
-      className={`flex flex-col h-full border-l select-none transition-colors ${
-        isDark ? 'bg-[#1e1f22] border-[#323232] text-[#dfe1e5]' : 'bg-[#ffffff] border-[#d1d5db] text-[#1f2328]'
+      className={`flex flex-col h-full w-full overflow-hidden select-none transition-colors ${
+        isDark ? 'bg-[#1e1f22] text-[#dfe1e5]' : 'bg-[#ffffff] text-[#1f2328]'
       }`}
-      style={{ width: '100%', minWidth: '320px' }}
       data-testid="ai-chat-panel"
     >
       {/* Header Bar */}
       <div
-        className={`flex items-center justify-between px-3 py-2 border-b shrink-0 ${
-          isDark ? 'bg-[#2b2d30] border-[#323232]' : 'bg-[#f7f8fa] border-[#d1d5db]'
+        className={`h-8 px-2 border-b flex items-center justify-between text-xs shrink-0 ${
+          isDark ? 'border-[#1e1f22] bg-[#2b2d30]' : 'border-[#d1d5db] bg-[#ebecf0]'
         }`}
         data-testid="ai-chat-header"
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <Sparkles size={16} className="text-[#3574f0] shrink-0" />
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Sparkles size={14} className="text-[#3574f0] shrink-0" />
           <span className="font-semibold text-xs tracking-tight truncate">AI Assistant</span>
 
           {/* Active Model Pill */}
           <span
             data-testid="active-model-pill"
-            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium truncate max-w-[120px] ${
-              isDark ? 'bg-[#1e1f22] text-[#8b949e] border border-[#323232]' : 'bg-[#e5e7eb] text-[#4b5563]'
+            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium truncate max-w-[90px] ${
+              isDark ? 'bg-[#1e1f22] text-[#868a91] border border-[#393b40]' : 'bg-[#ffffff] text-[#5c6066] border border-[#d1d5db]'
             }`}
             title={activeProvider?.selectedModel || 'No Model'}
           >
@@ -403,36 +405,18 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          {/* Session Selector */}
-          <select
-            data-testid="session-select"
-            aria-label="Select Chat Session"
-            value={activeSessionId}
-            onChange={(e) => setActiveSessionId(e.target.value)}
-            className={`text-xs px-2 py-1 rounded border outline-none font-sans max-w-[110px] truncate ${
-              isDark
-                ? 'bg-[#1e1f22] border-[#323232] text-[#dfe1e5] focus:border-[#3574f0]'
-                : 'bg-white border-[#d1d5db] text-[#1f2328] focus:border-[#3574f0]'
-            }`}
-          >
-            {sessions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.title}
-              </option>
-            ))}
-          </select>
-
+        <div className="flex items-center gap-0.5 shrink-0">
           {/* New Chat Button */}
           <button
             type="button"
             data-testid="new-chat-button"
             onClick={handleCreateNewChat}
-            title="Create New Chat"
-            className="p-1 rounded text-xs hover:bg-black/10 dark:hover:bg-white/10 text-opacity-80 transition-colors flex items-center gap-1"
+            title="New Chat"
+            className={`p-1 rounded transition ${
+              isDark ? 'hover:bg-[#393b40] text-[#868a91] hover:text-[#dfe1e5]' : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-[#1f2328]'
+            }`}
           >
             <Plus size={14} />
-            <span className="hidden sm:inline text-[11px] font-medium">+ New</span>
           </button>
 
           {/* Delete Session Button */}
@@ -440,8 +424,10 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
             type="button"
             data-testid="delete-session-button"
             onClick={() => handleDeleteSession(activeSessionId)}
-            title="Delete current session"
-            className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 text-opacity-70 hover:text-[#c75450] transition-colors"
+            title="Delete Chat Session"
+            className={`p-1 rounded transition ${
+              isDark ? 'hover:bg-[#393b40] text-[#868a91] hover:text-[#e05555]' : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-[#e05555]'
+            }`}
           >
             <Trash2 size={13} />
           </button>
@@ -452,10 +438,52 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
             data-testid="close-chat-button"
             onClick={onClose}
             title="Close Assistant"
-            className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 text-opacity-70 transition-colors"
+            className={`p-1 rounded transition ${
+              isDark ? 'hover:bg-[#393b40] text-[#868a91] hover:text-[#dfe1e5]' : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-[#1f2328]'
+            }`}
           >
             <X size={14} />
           </button>
+        </div>
+      </div>
+
+      {/* Sessions Bar */}
+      <div
+        className={`h-7 px-2 border-b flex items-center justify-between text-xs shrink-0 ${
+          isDark ? 'bg-[#1e1f22] border-[#2b2d30]' : 'bg-[#f7f8fa] border-[#e5e7eb]'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          <MessageSquare size={12} className={`shrink-0 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`} />
+          <div className="relative flex-1 min-w-0">
+            <select
+              data-testid="session-select"
+              aria-label="Select Chat Session"
+              value={activeSessionId}
+              onChange={(e) => setActiveSessionId(e.target.value)}
+              className={`w-full text-[11px] h-5 pl-1.5 pr-5 rounded border outline-none font-sans truncate appearance-none cursor-pointer ${
+                isDark
+                  ? 'bg-[#2b2d30] border-[#393b40] text-[#dfe1e5] focus:border-[#3574f0]'
+                  : 'bg-white border-[#d1d5db] text-[#1f2328] focus:border-[#3574f0]'
+              }`}
+            >
+              {sessions.map((s) => (
+                <option
+                  key={s.id}
+                  value={s.id}
+                  className={isDark ? 'bg-[#2b2d30] text-[#dfe1e5]' : 'bg-white text-[#1f2328]'}
+                >
+                  {s.title}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              size={11}
+              className={`absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none ${
+                isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
+              }`}
+            />
+          </div>
         </div>
       </div>
 
@@ -463,46 +491,66 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
       {!isProviderConfigured && (
         <div
           data-testid="unconfigured-provider-banner"
-          className={`flex items-center justify-between px-3 py-2 text-xs border-b ${
+          className={`px-2.5 py-1.5 text-[11px] border-b flex items-center justify-between shrink-0 ${
             isDark
-              ? 'bg-[#2b2518] border-[#5e4b24] text-[#e5c07b]'
+              ? 'bg-[#2b2518] border-[#433519] text-[#e5c07b]'
               : 'bg-[#fffbeb] border-[#fde68a] text-[#b45309]'
           }`}
         >
-          <div className="flex items-center gap-2">
-            <AlertTriangle size={14} className="shrink-0 text-amber-500" />
-            <span>No AI provider configured</span>
+          <div className="flex items-center gap-1.5 min-w-0 mr-2 truncate">
+            <AlertTriangle size={13} className="shrink-0 text-amber-500" />
+            <span className="truncate">No AI provider configured</span>
           </div>
           <button
             type="button"
             data-testid="banner-open-settings-button"
             onClick={onOpenSettings}
-            className="flex items-center gap-1 px-2 py-0.5 rounded font-medium text-xs text-white hover:opacity-90 active:opacity-80 transition-opacity"
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium text-white shrink-0 hover:opacity-90 active:opacity-80 transition-opacity"
             style={{ backgroundColor: '#3574f0' }}
           >
-            <Settings size={12} />
-            <span>Open Settings</span>
+            <Settings size={11} />
+            <span>Settings</span>
           </button>
         </div>
       )}
 
       {/* Message Feed */}
       <div
-        className="flex-1 overflow-y-auto p-3 space-y-3 select-text"
+        className="flex-1 overflow-y-auto p-3 space-y-3 select-text min-h-0"
         data-testid="chat-message-feed"
       >
         {(!activeSession || activeSession.messages.length === 0) ? (
           <div
             data-testid="chat-empty-state"
-            className="flex flex-col items-center justify-center h-full text-center px-4 py-8 select-none"
+            className="flex flex-col items-center justify-center h-full text-center px-3 py-6 select-none my-auto"
           >
-            <div className="w-10 h-10 rounded-full flex items-center justify-center mb-3 bg-[#3574f0]/10 text-[#3574f0]">
-              <Sparkles size={20} />
+            <div className="w-9 h-9 rounded-full flex items-center justify-center mb-2.5 bg-[#3574f0]/15 text-[#3574f0]">
+              <Sparkles size={18} />
             </div>
-            <h3 className="font-semibold text-sm mb-1">Torque AI Assistant</h3>
-            <p className="text-xs opacity-70 max-w-xs mb-4">
+            <h3 className="font-semibold text-xs mb-1">Torque AI Assistant</h3>
+            <p className={`text-[11px] max-w-[220px] mb-4 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`}>
               Ask AI co-author to edit, format LaTeX, fix errors, or generate boilerplate code.
             </p>
+            <div className="flex flex-col gap-1.5 w-full max-w-[240px]">
+              {[
+                'Summarize active document',
+                'Fix LaTeX compilation errors',
+                'Add abstract section',
+              ].map((promptText) => (
+                <button
+                  key={promptText}
+                  type="button"
+                  onClick={() => setInputValue(promptText)}
+                  className={`text-[11px] px-2.5 py-1.5 rounded border text-left truncate transition ${
+                    isDark
+                      ? 'border-[#323232] bg-[#2b2d30] hover:bg-[#32353a] hover:border-[#3574f0] text-[#dfe1e5]'
+                      : 'border-[#d1d5db] bg-[#f7f8fa] hover:bg-[#ebedf0] hover:border-[#3574f0] text-[#1f2328]'
+                  }`}
+                >
+                  {promptText}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           activeSession.messages.map((message) => {
@@ -528,7 +576,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                 </div>
 
                 <div
-                  className={`rounded-lg px-3 py-2 text-xs max-w-[90%] shadow-sm ${
+                  className={`rounded-lg px-3 py-2 text-xs max-w-[95%] shadow-sm ${
                     isUser
                       ? isDark
                         ? 'bg-[#263750] border border-[#3574f0]/30 text-[#e6edf3]'
@@ -577,13 +625,13 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
 
       {/* Input Bar */}
       <div
-        className={`p-3 border-t shrink-0 ${
-          isDark ? 'bg-[#26282b] border-[#323232]' : 'bg-[#f7f8fa] border-[#d1d5db]'
+        className={`p-2 border-t shrink-0 ${
+          isDark ? 'bg-[#2b2d30] border-[#1e1f22]' : 'bg-[#ebecf0] border-[#d1d5db]'
         }`}
         data-testid="chat-input-bar"
       >
         <div
-          className={`flex items-end gap-2 p-1.5 rounded-md border transition-colors ${
+          className={`flex flex-col rounded border transition-colors ${
             isDark
               ? 'bg-[#1e1f22] border-[#323232] focus-within:border-[#3574f0]'
               : 'bg-white border-[#d1d5db] focus-within:border-[#3574f0]'
@@ -591,38 +639,44 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
         >
           <textarea
             ref={textareaRef}
-            rows={1}
+            rows={2}
             value={inputValue}
             onChange={handleTextareaInput}
             onKeyDown={handleKeyDown}
             placeholder="Ask AI co-author to edit, format LaTeX, fix errors..."
             data-testid="chat-textarea"
-            className="flex-1 bg-transparent border-0 outline-none resize-none text-xs leading-relaxed max-h-36 overflow-y-auto px-1 py-1"
+            className="w-full bg-transparent border-0 outline-none resize-none text-[12px] leading-relaxed max-h-32 overflow-y-auto px-2 py-1.5 placeholder:text-[11px] placeholder:opacity-50"
           />
 
-          {isGenerating ? (
-            <button
-              type="button"
-              data-testid="stop-generate-button"
-              onClick={() => setIsGenerating(false)}
-              className="p-1.5 rounded text-white bg-[#c75450] hover:bg-[#b0433f] transition-colors shrink-0"
-              title="Stop Generation"
-            >
-              <Square size={13} fill="currentColor" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              data-testid="send-message-button"
-              onClick={handleSend}
-              disabled={!inputValue.trim()}
-              className="p-1.5 rounded text-white transition-opacity disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-              style={{ backgroundColor: '#3574f0' }}
-              title="Send Message (Enter)"
-            >
-              <ArrowUp size={13} className="stroke-[2.5]" />
-            </button>
-          )}
+          <div className="flex items-center justify-between px-2 pb-1.5 pt-0.5">
+            <span className={`text-[10px] ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`}>
+              ↵ send • ⇧↵ newline
+            </span>
+
+            {isGenerating ? (
+              <button
+                type="button"
+                data-testid="stop-generate-button"
+                onClick={() => setIsGenerating(false)}
+                className="p-1 rounded text-white bg-[#c75450] hover:bg-[#b0433f] transition-colors shrink-0"
+                title="Stop Generation"
+              >
+                <Square size={12} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-testid="send-message-button"
+                onClick={handleSend}
+                disabled={!inputValue.trim()}
+                className="p-1 rounded-full text-white transition-opacity disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                style={{ backgroundColor: '#3574f0' }}
+                title="Send Message (Enter)"
+              >
+                <ArrowUp size={12} className="stroke-[2.5]" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

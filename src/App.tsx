@@ -13,8 +13,11 @@ import { WelcomeHomeScreen } from './components/WelcomeHomeScreen';
 import { TexSetupGuide } from './components/TexSetupGuide';
 import { SettingsModal } from './components/SettingsModal';
 import { McpInstructionsModal } from './components/McpInstructionsModal';
+import { AiChatPanel } from './components/AiChatPanel';
+import { loadAISettings } from './ai/aiConfig';
+import type { AIProviderConfig } from './types/ai';
 import type { Diagnostic } from './types/workspace';
-import { Folder, Terminal, Settings, GitBranch, CheckCircle2, Package } from 'lucide-react';
+import { Folder, Terminal, Settings, GitBranch, CheckCircle2, Package, Sparkles } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -49,12 +52,26 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
   });
   const [logsOpen, setLogsOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeLeftTab, setActiveLeftTab] = useState<'files' | 'ai'>('files');
   const [createRequest, setCreateRequest] = useState<{ kind: "file" | "folder"; nonce: number } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(true);
   const [dismissedSetupResult, setDismissedSetupResult] = useState<unknown>(null);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isMcpModalOpen, setMcpModalOpen] = useState(false);
+  const [activeAiProvider, setActiveAiProvider] = useState<AIProviderConfig | null>(null);
   const monacoRef = useRef<MonacoEditorHandle>(null);
+
+  useEffect(() => {
+    loadAISettings()
+      .then((settings) => {
+        const active =
+          settings.providers.find((p) => p.id === settings.activeProviderId) ||
+          settings.providers[0] ||
+          null;
+        setActiveAiProvider(active);
+      })
+      .catch(() => {});
+  }, [isSettingsOpen]);
 
   // Synchronize URL search params (?project=, ?id=, ?page=) on mount and popstate
   useEffect(() => {
@@ -131,6 +148,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
   };
 
   const handleCreateFile = () => {
+    setActiveLeftTab('files');
     setSidebarOpen(true);
     setCreateRequest({ kind: 'file', nonce: Date.now() });
   };
@@ -162,6 +180,24 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
     await workspace.actions.save?.();
   };
 
+  const handleToggleFiles = () => {
+    if (sidebarOpen && activeLeftTab === 'files') {
+      setSidebarOpen(false);
+    } else {
+      setActiveLeftTab('files');
+      setSidebarOpen(true);
+    }
+  };
+
+  const handleToggleAi = () => {
+    if (sidebarOpen && activeLeftTab === 'ai') {
+      setSidebarOpen(false);
+    } else {
+      setActiveLeftTab('ai');
+      setSidebarOpen(true);
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl+S / Cmd+S (Save)
@@ -174,10 +210,20 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         e.preventDefault();
         setSettingsOpen((prev) => !prev);
       }
+      // Alt+1: Toggle Files
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === '1') {
+        e.preventDefault();
+        handleToggleFiles();
+      }
+      // Alt+7: Toggle AI Assistant
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === '7') {
+        e.preventDefault();
+        handleToggleAi();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [workspace.activeFilePath]);
+  }, [workspace.activeFilePath, sidebarOpen, activeLeftTab]);
 
   const handleCompile = async () => {
     try {
@@ -348,12 +394,13 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         onOpenSettings={() => setSettingsOpen(true)}
         onCloseProject={handleCloseProject}
         onNewFile={handleCreateFile}
-        onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+        onToggleSidebar={handleToggleFiles}
         onToggleProblems={() => {
           if (!sidebarOpen) setSidebarOpen(true);
           setLogsOpen((prev) => !prev);
         }}
         onTogglePreview={() => setPreviewOpen((prev) => !prev)}
+        onToggleAiChat={handleToggleAi}
         onUndo={() => {
           document.execCommand('undo');
         }}
@@ -381,9 +428,9 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         >
           <div className="flex flex-col items-center gap-2">
             <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
+              onClick={handleToggleFiles}
               className={`p-2 rounded transition ${
-                sidebarOpen
+                sidebarOpen && activeLeftTab === 'files'
                   ? isDark
                     ? 'text-[#3574f0] bg-[#1e1f22]'
                     : 'text-[#3574f0] bg-[#ffffff]'
@@ -420,6 +467,24 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
                 <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-[#e05555]" />
               </button>
             )}
+
+            {/* AI Assistant button */}
+            <button
+              onClick={handleToggleAi}
+              className={`p-2 rounded transition ${
+                sidebarOpen && activeLeftTab === 'ai'
+                  ? isDark
+                    ? 'text-[#3574f0] bg-[#1e1f22]'
+                    : 'text-[#3574f0] bg-[#ffffff]'
+                  : isDark
+                    ? 'text-[#868a91] hover:bg-[#393b40]'
+                    : 'text-[#6c707e] hover:bg-[#dfe1e5]'
+              }`}
+              title="AI Assistant (Alt+7)"
+              aria-label="AI Assistant"
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
           </div>
 
           <div className="flex flex-col items-center gap-2">
@@ -441,43 +506,83 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         {/* Resizable Panels */}
         <div className="flex-1 h-full overflow-hidden">
           <PanelGroup direction="horizontal">
-            {/* Left Panel: Sidebar containing File Explorer + Problems Panel at bottom (only when problems exist) */}
+            {/* Left Tool Window Panel: Dedicated for Files and AI Assistant */}
             {sidebarOpen && (
               <>
-                <Panel defaultSize={22} minSize={10} maxSize={50}>
+                <Panel defaultSize={24} minSize={12} maxSize={50}>
                   <div className="w-full h-full flex flex-col overflow-hidden">
-                    <div className="flex-1 overflow-hidden min-h-0">
-                      <FileTreeSidebar
-                        files={workspace.files}
-                        activeFilePath={workspace.activeFilePath}
-                        rootEntry={workspace.activeProject?.rootEntry || 'main.tex'}
-                        onSelectFile={workspace.selectFile}
-                        projectName={workspace.activeProject?.name}
-                        createRequest={createRequest}
-                        onCreateFile={async (path) => {
-                          await workspace.createFile(path);
-                        }}
-                        onCreateFolder={workspace.createFolder}
-                        onUploadFiles={handleUploadFiles}
-                        onRenameFile={workspace.renameFilePath}
-                        onDeleteFile={workspace.deleteFilePath}
-                        onSetRootEntry={workspace.setProjectRootEntry}
-                      />
-                    </div>
+                    {activeLeftTab === 'files' ? (
+                      <>
+                        <div className="flex-1 overflow-hidden min-h-0">
+                          <FileTreeSidebar
+                            files={workspace.files}
+                            activeFilePath={workspace.activeFilePath}
+                            rootEntry={workspace.activeProject?.rootEntry || 'main.tex'}
+                            onSelectFile={workspace.selectFile}
+                            projectName={workspace.activeProject?.name}
+                            createRequest={createRequest}
+                            onCreateFile={async (path) => {
+                              await workspace.createFile(path);
+                            }}
+                            onCreateFolder={workspace.createFolder}
+                            onUploadFiles={handleUploadFiles}
+                            onRenameFile={workspace.renameFilePath}
+                            onDeleteFile={workspace.deleteFilePath}
+                            onSetRootEntry={workspace.setProjectRootEntry}
+                          />
+                        </div>
 
-                    {/* Problems/Build Panel in Sidebar: ONLY rendered when diagnostics exist and logsOpen */}
-                    {hasProblems && logsOpen && (
-                      <div
-                        className={`border-t shrink-0 max-h-[50%] flex flex-col overflow-hidden ${
-                          isDark ? 'border-[#393b40]' : 'border-[#d1d5db]'
-                        }`}
-                      >
-                        <DiagnosticsLogPanel
-                          diagnostics={diagnostics}
-                          isOpen={logsOpen}
-                          onToggle={() => setLogsOpen(false)}
-                          onClose={() => setLogsOpen(false)}
-                          onSelectDiagnostic={handleSelectDiagnostic}
+                        {/* Problems/Build Panel in Sidebar: ONLY rendered when diagnostics exist and logsOpen */}
+                        {hasProblems && logsOpen && (
+                          <div
+                            className={`border-t shrink-0 max-h-[50%] flex flex-col overflow-hidden ${
+                              isDark ? 'border-[#393b40]' : 'border-[#d1d5db]'
+                            }`}
+                          >
+                            <DiagnosticsLogPanel
+                              diagnostics={diagnostics}
+                              isOpen={logsOpen}
+                              onToggle={() => setLogsOpen(false)}
+                              onClose={() => setLogsOpen(false)}
+                              onSelectDiagnostic={handleSelectDiagnostic}
+                            />
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="w-full h-full flex flex-col overflow-hidden">
+                        <AiChatPanel
+                          isOpen={true}
+                          onClose={() => setSidebarOpen(false)}
+                          workspace={{
+                            files: workspace.files.reduce((acc, f) => {
+                              acc[f.path] = f.content;
+                              return acc;
+                            }, {} as Record<string, any>),
+                            activeFilePath: workspace.activeFilePath,
+                            activeFileContent: (() => {
+                              const file = workspace.files.find((f) => f.path === workspace.activeFilePath);
+                              return typeof file?.content === 'string' ? file.content : undefined;
+                            })(),
+                            updateFileContent: async (path, content) => {
+                              const file = workspace.files.find((f) => f.path === path);
+                              if (file && file.path === workspace.activeFilePath) {
+                                await workspace.updateActiveFileContent(content);
+                              } else {
+                                await workspace.createFile(path, content, false);
+                              }
+                            },
+                            createFile: async (path, content) => {
+                              await workspace.createFile(path, content, false);
+                            },
+                            compileProject: async (engine?: string) => {
+                              if (engine) workspace.setSelectedEngine(engine as any);
+                              return await workspace.actions.compile();
+                            },
+                            diagnostics: workspace.lastResult?.diagnostics ?? [],
+                          }}
+                          activeProvider={activeAiProvider}
+                          onOpenSettings={() => setSettingsOpen(true)}
                         />
                       </div>
                     )}
@@ -487,7 +592,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
                   className={`w-1.5 hover:w-1.5 hover:bg-[#3574f0] active:bg-[#3574f0] transition-colors cursor-col-resize z-10 shrink-0 ${
                     isDark ? 'bg-[#1e1f22] border-r border-[#2b2d30]' : 'bg-[#d1d5db] border-r border-[#c4c7c5]'
                   }`}
-                  aria-label="Resize sidebar"
+                  aria-label="Resize left pane"
                 />
               </>
             )}

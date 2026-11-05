@@ -17,6 +17,7 @@ export interface TopMenuBarProps {
   onToggleSidebar?: () => void;
   onToggleProblems?: () => void;
   onTogglePreview?: () => void;
+  onToggleAiChat?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
   onShortcuts?: () => void;
@@ -55,6 +56,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onToggleSidebar,
   onToggleProblems,
   onTogglePreview,
+  onToggleAiChat,
   onUndo,
   onRedo,
   onShortcuts,
@@ -140,6 +142,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
       items: [
         { label: 'Toggle Sidebar', shortcut: 'Alt+1', onClick: onToggleSidebar },
         { label: 'Toggle Problems', shortcut: 'Alt+6', onClick: onToggleProblems },
+        { label: 'Toggle AI Assistant', shortcut: 'Alt+7', onClick: onToggleAiChat },
         { label: 'Toggle PDF Preview', onClick: onTogglePreview },
         { type: 'separator' },
         {

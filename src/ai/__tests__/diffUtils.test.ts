@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   computeFileDiff,
   applyFilePatch,
-  type FileDiffResult,
 } from '../diffUtils';
 
 describe('diffUtils', () => {

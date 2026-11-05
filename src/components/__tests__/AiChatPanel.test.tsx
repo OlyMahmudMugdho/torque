@@ -28,6 +28,7 @@ const mockDiff: FileDiffResult = {
     { type: 'added', line: 'New text', newLineNo: 3 },
     { type: 'context', line: '\\end{document}', oldLineNo: 4, newLineNo: 4 },
   ],
+  unifiedDiff: '@@ -1,4 +1,4 @@\n \\documentclass{article}\n \\begin{document}\n-Old text\n+New text\n \\end{document}',
 };
 
 describe('AiChatPanel Component', () => {

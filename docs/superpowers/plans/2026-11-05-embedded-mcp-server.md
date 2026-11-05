@@ -84,10 +84,10 @@
 - Create: `src/compiler/__tests__/mcpBridge.test.ts`
 
 **Steps:**
-- [ ] Create `scripts/torque-mcp-bridge.js` reading JSON-RPC lines from `process.stdin` and forwarding via HTTP POST to `http://127.0.0.1:3030/mcp` (or specified `TORQUE_MCP_PORT`), printing JSON-RPC replies to `process.stdout`.
-- [ ] Add unit test in `src/compiler/__tests__/mcpBridge.test.ts` verifying JSON-RPC round-trip communication through the bridge script.
-- [ ] Run `npm test src/compiler/__tests__/mcpBridge.test.ts` and confirm passing.
-- [ ] Commit: `feat(mcp): add stdio bridge script for external MCP clients`
+- [x] Create `scripts/torque-mcp-bridge.js` reading JSON-RPC lines from `process.stdin` and forwarding via HTTP POST to `http://127.0.0.1:3030/mcp` (or specified `TORQUE_MCP_PORT`), printing JSON-RPC replies to `process.stdout`.
+- [x] Add unit test in `src/compiler/__tests__/mcpBridge.test.ts` verifying JSON-RPC round-trip communication through the bridge script.
+- [x] Run `npm test src/compiler/__tests__/mcpBridge.test.ts` and confirm passing.
+- [x] Commit: `feat(mcp): add stdio bridge script for external MCP clients`
 
 ---
 

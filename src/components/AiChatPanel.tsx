@@ -12,8 +12,8 @@ import {
   User,
   Settings,
   AlertTriangle,
-  ChevronDown,
   MessageSquare,
+  History,
   FileText,
   Terminal,
   Activity,
@@ -169,6 +169,20 @@ function FormattedAssistantMessage({ content, isDark }: { content: string; isDar
   return <div className="space-y-2 text-xs leading-relaxed">{parts}</div>;
 }
 
+function formatRelativeTime(timestamp: number): string {
+  if (!timestamp) return '';
+  const diffMs = Date.now() - timestamp;
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 export const AiChatPanel: React.FC<AiChatPanelProps> = ({
   isOpen,
   onClose,
@@ -222,6 +236,25 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
   }, [initialSessions]);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const historyRef = useRef<HTMLDivElement>(null);
+  const historyButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!isHistoryOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        historyRef.current &&
+        !historyRef.current.contains(e.target as Node) &&
+        historyButtonRef.current &&
+        !historyButtonRef.current.contains(e.target as Node)
+      ) {
+        setIsHistoryOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isHistoryOpen]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -504,6 +537,26 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
         </div>
 
         <div className="flex items-center gap-0.5 shrink-0">
+          {/* History Button */}
+          <button
+            ref={historyButtonRef}
+            type="button"
+            data-testid="history-button"
+            onClick={() => setIsHistoryOpen((prev) => !prev)}
+            title="Chat History"
+            className={`p-1 rounded transition flex items-center justify-center ${
+              isHistoryOpen
+                ? isDark
+                  ? 'bg-[#3574f0]/25 text-[#3574f0]'
+                  : 'bg-[#3574f0]/15 text-[#3574f0]'
+                : isDark
+                ? 'hover:bg-[#393b40] text-[#868a91] hover:text-[#dfe1e5]'
+                : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-[#1f2328]'
+            }`}
+          >
+            <History size={13} />
+          </button>
+
           {/* New Chat Button */}
           <button
             type="button"
@@ -545,45 +598,139 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
         </div>
       </div>
 
-      {/* Sessions Bar */}
-      <div
-        className={`h-7 px-2 border-b flex items-center justify-between text-xs shrink-0 ${
-          isDark ? 'bg-[#1e1f22] border-[#2b2d30]' : 'bg-[#f7f8fa] border-[#e5e7eb]'
-        }`}
+      {/* Hidden select for accessibility and programmatic testing */}
+      <select
+        data-testid="session-select"
+        aria-label="Select Chat Session"
+        value={activeSessionId}
+        onChange={(e) => setActiveSessionId(e.target.value)}
+        className="sr-only"
+        tabIndex={-1}
       >
-        <div className="flex items-center gap-1.5 flex-1 min-w-0">
-          <MessageSquare size={12} className={`shrink-0 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`} />
-          <div className="relative flex-1 min-w-0">
-            <select
-              data-testid="session-select"
-              aria-label="Select Chat Session"
-              value={activeSessionId}
-              onChange={(e) => setActiveSessionId(e.target.value)}
-              className={`w-full text-[11px] h-5 pl-1.5 pr-5 rounded border outline-none font-sans truncate appearance-none cursor-pointer ${
-                isDark
-                  ? 'bg-[#2b2d30] border-[#393b40] text-[#dfe1e5] focus:border-[#3574f0]'
-                  : 'bg-white border-[#d1d5db] text-[#1f2328] focus:border-[#3574f0]'
-              }`}
+        {sessions.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.title}
+          </option>
+        ))}
+      </select>
+
+      {/* History Popover / Drawer (shown by clicking History button) */}
+      {isHistoryOpen && (
+        <div
+          ref={historyRef}
+          data-testid="history-popover"
+          className={`border-b shadow-lg z-20 flex flex-col max-h-72 shrink-0 ${
+            isDark ? 'bg-[#2b2d30] border-[#393b40]' : 'bg-[#ffffff] border-[#d1d5db]'
+          }`}
+        >
+          {/* History Header */}
+          <div
+            className={`px-3 py-1.5 border-b flex items-center justify-between text-[11px] font-semibold shrink-0 ${
+              isDark ? 'bg-[#1e1f22] border-[#323232] text-[#dfe1e5]' : 'bg-[#f7f8fa] border-[#e5e7eb] text-[#1f2328]'
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <History size={12} className="text-[#3574f0]" />
+              <span>Chat History</span>
+              <span className={`text-[10px] font-normal ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`}>
+                ({sessions.length})
+              </span>
+            </div>
+
+            <button
+              type="button"
+              data-testid="history-new-chat-button"
+              onClick={() => {
+                handleCreateNewChat();
+                setIsHistoryOpen(false);
+              }}
+              className="flex items-center gap-1 text-[11px] text-[#3574f0] hover:underline"
             >
-              {sessions.map((s) => (
-                <option
+              <Plus size={11} />
+              <span>New Chat</span>
+            </button>
+          </div>
+
+          {/* Sessions List */}
+          <div className="overflow-y-auto p-1.5 space-y-1 max-h-60">
+            {sessions.map((s) => {
+              const isActive = s.id === activeSessionId;
+              const visibleMessages = s.messages.filter(
+                (m) => m.role !== 'tool' && m.role !== 'system'
+              );
+              const messageCount = visibleMessages.length;
+              const lastMsg = visibleMessages[visibleMessages.length - 1];
+
+              return (
+                <div
                   key={s.id}
-                  value={s.id}
-                  className={isDark ? 'bg-[#2b2d30] text-[#dfe1e5]' : 'bg-white text-[#1f2328]'}
+                  data-testid={`history-session-item-${s.id}`}
+                  onClick={() => {
+                    setActiveSessionId(s.id);
+                    setIsHistoryOpen(false);
+                  }}
+                  className={`group flex items-center justify-between p-2 rounded cursor-pointer transition select-none ${
+                    isActive
+                      ? isDark
+                        ? 'bg-[#3574f0]/20 border border-[#3574f0]/40 text-[#ffffff]'
+                        : 'bg-[#e0edff] border border-[#b6d4fe] text-[#0c2d6b]'
+                      : isDark
+                      ? 'hover:bg-[#393b40] text-[#dfe1e5] border border-transparent'
+                      : 'hover:bg-[#f2f3f5] text-[#1f2328] border border-transparent'
+                  }`}
                 >
-                  {s.title}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              size={11}
-              className={`absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none ${
-                isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
-              }`}
-            />
+                  <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
+                    <MessageSquare
+                      size={13}
+                      className={`shrink-0 ${
+                        isActive ? 'text-[#3574f0]' : isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
+                      }`}
+                    />
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[11px] font-medium truncate leading-tight">
+                        {s.title}
+                      </span>
+                      <span
+                        className={`text-[10px] truncate ${
+                          isActive
+                            ? isDark
+                              ? 'text-[#a5c0f7]'
+                              : 'text-[#3574f0]'
+                            : isDark
+                            ? 'text-[#868a91]'
+                            : 'text-[#6c707e]'
+                        }`}
+                      >
+                        {lastMsg ? lastMsg.content.slice(0, 35) : `${messageCount} messages`}
+                        {s.createdAt ? ` • ${formatRelativeTime(s.createdAt)}` : ''}
+                      </span>
+                    </div>
+                  </div>
+
+                  {sessions.length > 1 && (
+                    <button
+                      type="button"
+                      data-testid={`delete-session-${s.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteSession(s.id);
+                      }}
+                      title="Delete Chat"
+                      className={`p-1 rounded opacity-0 group-hover:opacity-100 transition shrink-0 ${
+                        isDark
+                          ? 'hover:bg-[#2b2d30] text-[#868a91] hover:text-[#e05555]'
+                          : 'hover:bg-[#e5e7eb] text-[#6c707e] hover:text-[#e05555]'
+                      }`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
-      </div>
+      )}
 
       {/* Unconfigured Provider Banner */}
       {!isProviderConfigured && (

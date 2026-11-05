@@ -360,6 +360,65 @@ describe('AiChatPanel Component', () => {
     expect(screen.getByText('Here is the summary of the LaTeX file.')).toBeInTheDocument();
   });
 
+  it('shows history popover when history button is clicked and allows selecting or deleting sessions', () => {
+    const multiSessions: ChatSession[] = [
+      {
+        id: 'sess-1',
+        title: 'Quantum Discussion',
+        createdAt: Date.now() - 60000,
+        messages: [{ id: 'm1', role: 'user', content: 'What is bra-ket notation?', timestamp: 1 }],
+      },
+      {
+        id: 'sess-2',
+        title: 'LaTeX Formatting',
+        createdAt: Date.now() - 3600000,
+        messages: [{ id: 'm2', role: 'user', content: 'How to make a 2x2 table?', timestamp: 2 }],
+      },
+    ];
+
+    render(
+      <AiChatPanel
+        {...createProps({
+          initialSessions: multiSessions,
+        })}
+      />
+    );
+
+    // History popover should be hidden initially
+    expect(screen.queryByTestId('history-popover')).not.toBeInTheDocument();
+
+    const historyBtn = screen.getByTestId('history-button');
+    expect(historyBtn).toBeInTheDocument();
+
+    // Click History button to reveal popover
+    fireEvent.click(historyBtn);
+    expect(screen.getByTestId('history-popover')).toBeInTheDocument();
+    expect(screen.getByText('Chat History')).toBeInTheDocument();
+    expect(screen.getByText('(2)')).toBeInTheDocument();
+
+    // Verify session items are shown
+    expect(screen.getByTestId('history-session-item-sess-1')).toHaveTextContent('Quantum Discussion');
+    expect(screen.getByTestId('history-session-item-sess-2')).toHaveTextContent('LaTeX Formatting');
+
+    // Clicking session 2 switches active chat and closes popover
+    fireEvent.click(screen.getByTestId('history-session-item-sess-2'));
+    expect(screen.queryByTestId('history-popover')).not.toBeInTheDocument();
+
+    // Active message feed should now show session 2 message
+    expect(screen.getByText('How to make a 2x2 table?')).toBeInTheDocument();
+
+    // Open history popover again and test deleting a session
+    fireEvent.click(historyBtn);
+    expect(screen.getByTestId('history-popover')).toBeInTheDocument();
+
+    const deleteBtn = screen.getByTestId('delete-session-sess-2');
+    fireEvent.click(deleteBtn);
+
+    // Session 2 should be removed, leaving 1 session
+    expect(screen.queryByTestId('history-session-item-sess-2')).not.toBeInTheDocument();
+    expect(screen.getByTestId('history-session-item-sess-1')).toBeInTheDocument();
+  });
+
   it('calls onClose when close button is clicked', () => {
     const onClose = vi.fn();
     render(<AiChatPanel {...createProps({ onClose })} />);

@@ -4,7 +4,7 @@
  * Standalone TeX Live Compilation Server for Torque IDE
  *
  * Runs a standalone lightweight HTTP server with native latexmk / pdflatex / xelatex / lualatex
- * execution, SyncTeX generation, and CTAN package auto-resolution.
+ * execution, SyncTeX generation, CTAN package auto-resolution, and embedded Model Context Protocol (MCP) server.
  *
  * Usage:
  *   node scripts/compiler-server.js
@@ -20,6 +20,12 @@ import { fileURLToPath } from 'node:url';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
+
+export const MCP_PROTOCOL_VERSION = '2024-11-05';
+export const SERVER_NAME = 'torque-latex-ide';
+export const SERVER_VERSION = '0.2.2';
+export const DEFAULT_MCP_PORT = 3030;
+export const FALLBACK_MCP_PORT = 3031;
 
 /** Discover common TeX install dirs (macOS texbin, TeX Live, MiKTeX) and prepend them to PATH. */
 export function ensureTexPath() {
@@ -627,70 +633,1016 @@ export function compileProject(request) {
   };
 }
 
-export const server = http.createServer((req, res) => {
-  // CORS Headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+// ---------------------------------------------------------------------------
+// Model Context Protocol (MCP) Subsystem & Tools
+// ---------------------------------------------------------------------------
 
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
-    return;
+export class McpState {
+  constructor(options = {}) {
+    this.projectsDir = options.projectsDir || process.env.TORQUE_PROJECTS_DIR || path.join(os.homedir(), '.torque', 'projects');
+    this.activeProjectId = options.activeProjectId || null;
+    this.latestDiagnostics = new Map();
+    this.sseSessions = new Map();
   }
 
-  const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const pathname = parsedUrl.pathname;
-
-  if (req.method === 'GET' && (pathname === '/' || pathname === '/api/compile')) {
-    const env = detectEnvironment();
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(env));
-    return;
-  }
-
-  if (req.method === 'POST' && (pathname === '/' || pathname === '/api/compile')) {
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk;
-    });
-
-    req.on('end', () => {
+  getProjectsDir() {
+    if (!fs.existsSync(this.projectsDir)) {
       try {
-        const payload = JSON.parse(body);
-        if (!payload || !payload.entry) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Missing required field: entry' }));
-          return;
+        fs.mkdirSync(this.projectsDir, { recursive: true });
+      } catch {
+        // ignore
+      }
+    }
+    return this.projectsDir;
+  }
+
+  setActiveProjectId(id) {
+    this.activeProjectId = id ? String(id).trim() : null;
+  }
+
+  getActiveProjectId() {
+    return this.activeProjectId;
+  }
+}
+
+export const defaultMcpState = new McpState();
+
+export function setProjectsDir(dir) {
+  defaultMcpState.projectsDir = dir;
+}
+
+export function setActiveProject(id) {
+  defaultMcpState.setActiveProjectId(id);
+}
+
+export function normalizePath(rawPath) {
+  const trimmed = (rawPath || '').trim();
+  if (!trimmed) {
+    throw new Error('Path cannot be empty');
+  }
+  const normalized = trimmed.replace(/\\/g, '/');
+  const segments = normalized.split('/').filter((s) => s && s !== '.');
+
+  for (const seg of segments) {
+    if (seg === '..') {
+      throw new Error(`Parent traversal not allowed in path: ${rawPath}`);
+    }
+  }
+
+  if (segments.length === 0) {
+    throw new Error(`Invalid path resulted in empty path: ${rawPath}`);
+  }
+
+  return segments.join('/');
+}
+
+export function isBinaryFile(filePath, bytes) {
+  const lower = (filePath || '').toLowerCase();
+  const binaryExtensions = [
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp',
+    '.pdf', '.zip', '.tar', '.gz', '.7z',
+    '.woff', '.woff2', '.ttf', '.otf', '.eot',
+    '.mp3', '.mp4', '.wav', '.bin',
+  ];
+  if (binaryExtensions.some((ext) => lower.endsWith(ext))) {
+    return true;
+  }
+  if (!bytes) return false;
+  const checkLen = Math.min(bytes.length, 8000);
+  for (let i = 0; i < checkLen; i++) {
+    if (bytes[i] === 0) return true;
+  }
+  return false;
+}
+
+export function sliceLines(content, startLine, endLine) {
+  if (typeof content !== 'string') content = '';
+  const lines = content === '' ? [] : content.split(/\r?\n/);
+  if (lines.length > 0 && lines[lines.length - 1] === '' && (content.endsWith('\n') || content.endsWith('\r\n'))) {
+    lines.pop();
+  }
+
+  const totalLines = lines.length;
+
+  if (totalLines === 0) {
+    const isSliced = (startLine !== null && startLine !== undefined) || (endLine !== null && endLine !== undefined);
+    return {
+      content: '',
+      totalLines: 0,
+      startLine: 1,
+      endLine: 0,
+      isSliced,
+    };
+  }
+
+  if ((startLine === null || startLine === undefined) && (endLine === null || endLine === undefined)) {
+    return {
+      content,
+      totalLines,
+      startLine: 1,
+      endLine: totalLines,
+      isSliced: false,
+    };
+  }
+
+  const rawStart = (startLine !== null && startLine !== undefined) ? Number(startLine) : 1;
+  const rawEnd = (endLine !== null && endLine !== undefined) ? Number(endLine) : totalLines;
+
+  const clampedStart = Math.max(1, rawStart);
+  const clampedEnd = Math.min(totalLines, rawEnd);
+
+  if (clampedStart > clampedEnd || clampedStart > totalLines || clampedEnd < 1) {
+    const finalStart = Math.max(1, Math.min(totalLines, clampedStart));
+    const finalEnd = Math.max(0, Math.min(totalLines, clampedEnd));
+    return {
+      content: '',
+      totalLines,
+      startLine: finalStart,
+      endLine: finalEnd,
+      isSliced: true,
+    };
+  }
+
+  const startIdx = clampedStart - 1;
+  const endIdx = clampedEnd;
+
+  const sliced = lines.slice(startIdx, endIdx).join('\n');
+  return {
+    content: sliced,
+    totalLines,
+    startLine: clampedStart,
+    endLine: clampedEnd,
+    isSliced: true,
+  };
+}
+
+function listProjectsFromDir(projectsDir) {
+  const projects = [];
+  if (!fs.existsSync(projectsDir)) return projects;
+
+  const entries = fs.readdirSync(projectsDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const projJsonPath = path.join(projectsDir, entry.name, 'project.json');
+      if (fs.existsSync(projJsonPath)) {
+        try {
+          const data = fs.readFileSync(projJsonPath, 'utf-8');
+          const project = JSON.parse(data);
+          projects.push(project);
+        } catch {
+          // Ignore corrupt project.json
+        }
+      }
+    }
+  }
+
+  projects.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  return projects;
+}
+
+function resolveProjectId(state, requestedId) {
+  if (requestedId && typeof requestedId === 'string' && requestedId.trim()) {
+    const clean = requestedId.trim();
+    state.setActiveProjectId(clean);
+    return clean;
+  }
+
+  const activeId = state.getActiveProjectId();
+  if (activeId) return activeId;
+
+  const projectsDir = state.getProjectsDir();
+  const projects = listProjectsFromDir(projectsDir);
+  if (projects.length > 0) {
+    state.setActiveProjectId(projects[0].id);
+    return projects[0].id;
+  }
+
+  const err = new Error('No projects found. Create or open a project first.');
+  err.code = -32602;
+  throw err;
+}
+
+export function handleToolListProjects(state) {
+  const projectsDir = state.getProjectsDir();
+  const projects = listProjectsFromDir(projectsDir);
+  return projects.map((p) => ({
+    id: p.id,
+    name: p.name,
+    rootEntry: p.rootEntry || 'main.tex',
+    createdAt: p.createdAt || 0,
+    updatedAt: p.updatedAt || 0,
+  }));
+}
+
+export function handleToolGetActiveProject(state) {
+  const projectId = resolveProjectId(state);
+  const projectsDir = state.getProjectsDir();
+  const projectDir = path.join(projectsDir, projectId);
+
+  if (!fs.existsSync(projectDir)) {
+    const err = new Error(`Active project '${projectId}' does not exist on disk`);
+    err.code = -32602;
+    throw err;
+  }
+
+  const projJsonPath = path.join(projectDir, 'project.json');
+  if (!fs.existsSync(projJsonPath)) {
+    const err = new Error(`project.json missing in project '${projectId}'`);
+    err.code = -32602;
+    throw err;
+  }
+
+  let project;
+  try {
+    project = JSON.parse(fs.readFileSync(projJsonPath, 'utf-8'));
+  } catch (e) {
+    const err = new Error(`Corrupt project.json: ${e.message}`);
+    err.code = -32603;
+    throw err;
+  }
+
+  const filesDir = path.join(projectDir, 'files');
+  const filesManifest = [];
+
+  if (fs.existsSync(filesDir)) {
+    function collectManifest(currentDir) {
+      const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(currentDir, entry.name);
+        if (entry.isDirectory()) {
+          collectManifest(fullPath);
+        } else if (entry.isFile()) {
+          const relPath = path.relative(filesDir, fullPath).replace(/\\/g, '/');
+          const bytes = fs.readFileSync(fullPath);
+          const stat = fs.statSync(fullPath);
+          const binary = isBinaryFile(relPath, bytes);
+          filesManifest.push({
+            path: relPath,
+            isBinary: binary,
+            updatedAt: Math.floor(stat.mtimeMs),
+          });
+        }
+      }
+    }
+    collectManifest(filesDir);
+    filesManifest.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  return {
+    id: project.id,
+    name: project.name,
+    rootEntry: project.rootEntry || 'main.tex',
+    createdAt: project.createdAt || 0,
+    updatedAt: project.updatedAt || 0,
+    files: filesManifest,
+  };
+}
+
+export function handleToolReadFile(state, args = {}) {
+  const rawPath = args.path;
+  if (!rawPath || typeof rawPath !== 'string') {
+    const err = new Error("Missing required argument 'path'");
+    err.code = -32602;
+    throw err;
+  }
+
+  let cleanPath;
+  try {
+    cleanPath = normalizePath(rawPath);
+  } catch (e) {
+    const err = new Error(`Invalid path: ${e.message}`);
+    err.code = -32602;
+    throw err;
+  }
+
+  const projectId = resolveProjectId(state, args.projectId);
+  const projectsDir = state.getProjectsDir();
+  const filePath = path.join(projectsDir, projectId, 'files', cleanPath);
+
+  if (!fs.existsSync(filePath)) {
+    const err = new Error(`File not found: ${rawPath}`);
+    err.code = -32602;
+    throw err;
+  }
+
+  const bytes = fs.readFileSync(filePath);
+  if (isBinaryFile(cleanPath, bytes)) {
+    const err = new Error(`Cannot read binary file as text: ${rawPath}`);
+    err.code = -32602;
+    throw err;
+  }
+
+  const content = bytes.toString('utf-8');
+  const sliced = sliceLines(content, args.startLine, args.endLine);
+
+  return {
+    content: sliced.content,
+    totalLines: sliced.totalLines,
+    startLine: sliced.startLine,
+    endLine: sliced.endLine,
+    isSliced: sliced.isSliced,
+  };
+}
+
+export function handleToolWriteFile(state, args = {}) {
+  const rawPath = args.path;
+  if (!rawPath || typeof rawPath !== 'string') {
+    const err = new Error("Missing required argument 'path'");
+    err.code = -32602;
+    throw err;
+  }
+
+  const content = args.content;
+  if (content === undefined || content === null) {
+    const err = new Error("Missing required argument 'content'");
+    err.code = -32602;
+    throw err;
+  }
+
+  let cleanPath;
+  try {
+    cleanPath = normalizePath(rawPath);
+  } catch (e) {
+    const err = new Error(`Invalid path: ${e.message}`);
+    err.code = -32602;
+    throw err;
+  }
+
+  const projectId = resolveProjectId(state, args.projectId);
+  const projectsDir = state.getProjectsDir();
+  const projectDir = path.join(projectsDir, projectId);
+  const filePath = path.join(projectDir, 'files', cleanPath);
+
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+
+  const buf = Buffer.from(String(content), 'utf-8');
+  fs.writeFileSync(filePath, buf);
+
+  // Update project updatedAt
+  const projJsonPath = path.join(projectDir, 'project.json');
+  if (fs.existsSync(projJsonPath)) {
+    try {
+      const proj = JSON.parse(fs.readFileSync(projJsonPath, 'utf-8'));
+      proj.updatedAt = Date.now();
+      fs.writeFileSync(projJsonPath, JSON.stringify(proj, null, 2), 'utf-8');
+    } catch {
+      // Ignore
+    }
+  }
+
+  return {
+    success: true,
+    path: cleanPath,
+    bytesWritten: buf.length,
+  };
+}
+
+export function handleToolEditFile(state, args = {}) {
+  const rawPath = args.path;
+  if (!rawPath || typeof rawPath !== 'string') {
+    const err = new Error("Missing required argument 'path'");
+    err.code = -32602;
+    throw err;
+  }
+
+  const target = args.target;
+  if (!target || typeof target !== 'string') {
+    const err = new Error("Argument 'target' cannot be empty");
+    err.code = -32602;
+    throw err;
+  }
+
+  const replacement = args.replacement;
+  if (replacement === undefined || replacement === null) {
+    const err = new Error("Missing required argument 'replacement'");
+    err.code = -32602;
+    throw err;
+  }
+
+  let cleanPath;
+  try {
+    cleanPath = normalizePath(rawPath);
+  } catch (e) {
+    const err = new Error(`Invalid path: ${e.message}`);
+    err.code = -32602;
+    throw err;
+  }
+
+  const projectId = resolveProjectId(state, args.projectId);
+  const projectsDir = state.getProjectsDir();
+  const projectDir = path.join(projectsDir, projectId);
+  const filePath = path.join(projectDir, 'files', cleanPath);
+
+  if (!fs.existsSync(filePath)) {
+    const err = new Error(`File not found: ${rawPath}`);
+    err.code = -32602;
+    throw err;
+  }
+
+  const bytes = fs.readFileSync(filePath);
+  if (isBinaryFile(cleanPath, bytes)) {
+    const err = new Error(`Cannot edit binary file: ${rawPath}`);
+    err.code = -32602;
+    throw err;
+  }
+
+  const content = bytes.toString('utf-8');
+  let occurrences = 0;
+  let pos = 0;
+  while ((pos = content.indexOf(target, pos)) !== -1) {
+    occurrences++;
+    pos += target.length;
+  }
+
+  if (occurrences === 0) {
+    const err = new Error(`Target text not found in file: '${target}'`);
+    err.code = -32602;
+    throw err;
+  }
+
+  const newContent = content.replaceAll(target, String(replacement));
+  fs.writeFileSync(filePath, Buffer.from(newContent, 'utf-8'));
+
+  // Update project updatedAt
+  const projJsonPath = path.join(projectDir, 'project.json');
+  if (fs.existsSync(projJsonPath)) {
+    try {
+      const proj = JSON.parse(fs.readFileSync(projJsonPath, 'utf-8'));
+      proj.updatedAt = Date.now();
+      fs.writeFileSync(projJsonPath, JSON.stringify(proj, null, 2), 'utf-8');
+    } catch {
+      // Ignore
+    }
+  }
+
+  return {
+    success: true,
+    path: cleanPath,
+    occurrencesReplaced: occurrences,
+  };
+}
+
+export function handleToolCompile(state, args = {}) {
+  const projectId = resolveProjectId(state, args.projectId);
+  const engine = args.engine || 'pdflatex';
+
+  const projectsDir = state.getProjectsDir();
+  const projectDir = path.join(projectsDir, projectId);
+
+  if (!fs.existsSync(projectDir)) {
+    const err = new Error(`Project '${projectId}' not found`);
+    err.code = -32602;
+    throw err;
+  }
+
+  const projJsonPath = path.join(projectDir, 'project.json');
+  let project = { id: projectId, rootEntry: 'main.tex' };
+  if (fs.existsSync(projJsonPath)) {
+    try {
+      project = JSON.parse(fs.readFileSync(projJsonPath, 'utf-8'));
+    } catch {
+      // fallback
+    }
+  }
+
+  const filesDir = path.join(projectDir, 'files');
+  const files = [];
+
+  if (fs.existsSync(filesDir)) {
+    function collectFiles(currentDir) {
+      const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(currentDir, entry.name);
+        if (entry.isDirectory()) {
+          collectFiles(fullPath);
+        } else if (entry.isFile()) {
+          const relPath = path.relative(filesDir, fullPath).replace(/\\/g, '/');
+          const bytes = fs.readFileSync(fullPath);
+          const binary = isBinaryFile(relPath, bytes);
+          files.push({
+            path: relPath,
+            content: binary ? bytes.toString('base64') : bytes.toString('utf-8'),
+            isBinary: binary,
+          });
+        }
+      }
+    }
+    collectFiles(filesDir);
+  }
+
+  const compileRes = compileProject({
+    projectId,
+    entry: project.rootEntry || 'main.tex',
+    files,
+    engine,
+    synctex: true,
+  });
+
+  state.latestDiagnostics.set(projectId, {
+    status: compileRes.status,
+    diagnostics: compileRes.diagnostics || [],
+  });
+
+  return {
+    status: compileRes.status,
+    durationMs: compileRes.durationMs || compileRes.duration_ms || 0,
+    diagnostics: compileRes.diagnostics || [],
+    missingPackages: compileRes.missingFiles || compileRes.missing_files || [],
+    pdfGenerated: Boolean(compileRes.pdf),
+  };
+}
+
+export function handleToolGetDiagnostics(state, args = {}) {
+  const projectId = resolveProjectId(state, args.projectId);
+
+  if (state.latestDiagnostics.has(projectId)) {
+    const cached = state.latestDiagnostics.get(projectId);
+    return {
+      status: cached.status,
+      diagnostics: cached.diagnostics,
+    };
+  }
+
+  return {
+    status: 'idle',
+    diagnostics: [],
+  };
+}
+
+export function getToolsCatalog() {
+  return {
+    tools: [
+      {
+        name: 'torque_list_projects',
+        description: 'List all LaTeX projects available in Torque.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          required: [],
+        },
+      },
+      {
+        name: 'torque_get_active_project',
+        description: 'Get the currently active LaTeX project in Torque, including file manifest and root entry file.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          required: [],
+        },
+      },
+      {
+        name: 'torque_read_file',
+        description: 'Read full or partial text content of a file in a Torque project with optional line-range slicing.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: {
+              type: 'string',
+              description: 'Relative path of the file to read',
+            },
+            startLine: {
+              type: 'integer',
+              description: 'Optional 1-based start line (inclusive)',
+            },
+            endLine: {
+              type: 'integer',
+              description: 'Optional 1-based end line (inclusive)',
+            },
+            projectId: {
+              type: 'string',
+              description: 'Optional; defaults to active project',
+            },
+          },
+          required: ['path'],
+        },
+      },
+      {
+        name: 'torque_write_file',
+        description: 'Create or update a file in a Torque project. If the file is open in the Torque editor, its contents will update live.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: {
+              type: 'string',
+              description: 'Relative path of the file to write',
+            },
+            content: {
+              type: 'string',
+              description: 'File content to write',
+            },
+            projectId: {
+              type: 'string',
+              description: 'Optional; defaults to active project',
+            },
+          },
+          required: ['path', 'content'],
+        },
+      },
+      {
+        name: 'torque_edit_file',
+        description: 'Surgically edit a specific section or block of text within a file without overwriting the entire file.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: {
+              type: 'string',
+              description: 'Relative path of the file to edit',
+            },
+            target: {
+              type: 'string',
+              description: 'Exact text string or block to find and replace',
+            },
+            replacement: {
+              type: 'string',
+              description: 'New text to substitute in place of target',
+            },
+            projectId: {
+              type: 'string',
+              description: 'Optional; defaults to active project',
+            },
+          },
+          required: ['path', 'target', 'replacement'],
+        },
+      },
+      {
+        name: 'torque_compile',
+        description: 'Compile the LaTeX project using native TeX Live (latexmk) and return status and structured diagnostics.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: {
+              type: 'string',
+              description: 'Optional; defaults to active project',
+            },
+            engine: {
+              type: 'string',
+              description: 'TeX engine to compile with',
+              enum: ['pdflatex', 'xelatex', 'lualatex'],
+            },
+          },
+          required: [],
+        },
+      },
+      {
+        name: 'torque_get_diagnostics',
+        description: 'Retrieve the latest compilation diagnostics, warnings, and errors for the project.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectId: {
+              type: 'string',
+              description: 'Optional; defaults to active project',
+            },
+          },
+          required: [],
+        },
+      },
+    ],
+  };
+}
+
+export function dispatchJsonRpc(requestInput, state = defaultMcpState) {
+  let req;
+  if (typeof requestInput === 'string') {
+    try {
+      req = JSON.parse(requestInput);
+    } catch {
+      return {
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32700,
+          message: 'Parse error',
+        },
+      };
+    }
+  } else {
+    req = requestInput;
+  }
+
+  if (!req || typeof req !== 'object') {
+    return {
+      jsonrpc: '2.0',
+      id: null,
+      error: {
+        code: -32600,
+        message: 'Invalid Request: expected object',
+      },
+    };
+  }
+
+  const id = req.id !== undefined ? req.id : null;
+  const method = req.method;
+
+  if (typeof method !== 'string') {
+    return {
+      jsonrpc: '2.0',
+      id,
+      error: {
+        code: -32600,
+        message: 'Invalid Request: missing method',
+      },
+    };
+  }
+
+  // Notification handling (no response)
+  if (method === 'notifications/initialized') {
+    return null;
+  }
+
+  switch (method) {
+    case 'initialize': {
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          protocolVersion: MCP_PROTOCOL_VERSION,
+          capabilities: {
+            tools: {},
+          },
+          serverInfo: {
+            name: SERVER_NAME,
+            version: SERVER_VERSION,
+          },
+        },
+      };
+    }
+    case 'tools/list': {
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: getToolsCatalog(),
+      };
+    }
+    case 'tools/call': {
+      const params = req.params || {};
+      const toolName = params.name || '';
+      const toolArgs = params.arguments || {};
+
+      try {
+        let toolRes;
+        switch (toolName) {
+          case 'torque_list_projects':
+            toolRes = handleToolListProjects(state);
+            break;
+          case 'torque_get_active_project':
+            toolRes = handleToolGetActiveProject(state);
+            break;
+          case 'torque_read_file':
+            toolRes = handleToolReadFile(state, toolArgs);
+            break;
+          case 'torque_write_file':
+            toolRes = handleToolWriteFile(state, toolArgs);
+            break;
+          case 'torque_edit_file':
+            toolRes = handleToolEditFile(state, toolArgs);
+            break;
+          case 'torque_compile':
+            toolRes = handleToolCompile(state, toolArgs);
+            break;
+          case 'torque_get_diagnostics':
+            toolRes = handleToolGetDiagnostics(state, toolArgs);
+            break;
+          default: {
+            const err = new Error(`Tool not found: ${toolName}`);
+            err.code = -32601;
+            throw err;
+          }
         }
 
-        const result = compileProject(payload);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(result));
+        const text = typeof toolRes === 'string' ? toolRes : JSON.stringify(toolRes);
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [
+              {
+                type: 'text',
+                text,
+              },
+            ],
+            isError: false,
+          },
+        };
       } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          status: 'failed',
-          pdf: null,
-          synctex: null,
-          diagnostics: [{ severity: 'error', message: err.message }],
-          missing_files: [],
-          missingFiles: [],
-          resolved_packages: [],
-          resolvedPackages: [],
-          duration_ms: 0,
-          durationMs: 0,
-          stdout: '',
-          stderr: String(err.stack || err),
-        }));
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: {
+            code: typeof err.code === 'number' ? err.code : -32603,
+            message: err.message,
+          },
+        };
       }
-    });
-    return;
+    }
+    case 'torque_list_projects': {
+      try {
+        const val = handleToolListProjects(state);
+        return { jsonrpc: '2.0', id, result: val };
+      } catch (err) {
+        return { jsonrpc: '2.0', id, error: { code: typeof err.code === 'number' ? err.code : -32603, message: err.message } };
+      }
+    }
+    case 'torque_get_active_project': {
+      try {
+        const val = handleToolGetActiveProject(state);
+        return { jsonrpc: '2.0', id, result: val };
+      } catch (err) {
+        return { jsonrpc: '2.0', id, error: { code: typeof err.code === 'number' ? err.code : -32603, message: err.message } };
+      }
+    }
+    case 'torque_read_file': {
+      try {
+        const val = handleToolReadFile(state, req.params || {});
+        return { jsonrpc: '2.0', id, result: val };
+      } catch (err) {
+        return { jsonrpc: '2.0', id, error: { code: typeof err.code === 'number' ? err.code : -32603, message: err.message } };
+      }
+    }
+    case 'torque_write_file': {
+      try {
+        const val = handleToolWriteFile(state, req.params || {});
+        return { jsonrpc: '2.0', id, result: val };
+      } catch (err) {
+        return { jsonrpc: '2.0', id, error: { code: typeof err.code === 'number' ? err.code : -32603, message: err.message } };
+      }
+    }
+    case 'torque_edit_file': {
+      try {
+        const val = handleToolEditFile(state, req.params || {});
+        return { jsonrpc: '2.0', id, result: val };
+      } catch (err) {
+        return { jsonrpc: '2.0', id, error: { code: typeof err.code === 'number' ? err.code : -32603, message: err.message } };
+      }
+    }
+    case 'torque_compile': {
+      try {
+        const val = handleToolCompile(state, req.params || {});
+        return { jsonrpc: '2.0', id, result: val };
+      } catch (err) {
+        return { jsonrpc: '2.0', id, error: { code: typeof err.code === 'number' ? err.code : -32603, message: err.message } };
+      }
+    }
+    case 'torque_get_diagnostics': {
+      try {
+        const val = handleToolGetDiagnostics(state, req.params || {});
+        return { jsonrpc: '2.0', id, result: val };
+      } catch (err) {
+        return { jsonrpc: '2.0', id, error: { code: typeof err.code === 'number' ? err.code : -32603, message: err.message } };
+      }
+    }
+    default: {
+      return {
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32601,
+          message: `Method not found: ${method}`,
+        },
+      };
+    }
   }
+}
 
-  res.writeHead(404, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ error: 'Not found' }));
-});
+export function createCompilerServer(options = {}) {
+  const state = options.state || (options.projectsDir || options.activeProjectId ? new McpState(options) : defaultMcpState);
+
+  return http.createServer((req, res) => {
+    // CORS Headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const pathname = parsedUrl.pathname;
+
+    // 1. Existing GET / and GET /api/compile
+    if (req.method === 'GET' && (pathname === '/' || pathname === '/api/compile')) {
+      const env = detectEnvironment();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(env));
+      return;
+    }
+
+    // 2. Existing POST / and POST /api/compile
+    if (req.method === 'POST' && (pathname === '/' || pathname === '/api/compile')) {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body);
+          if (!payload || !payload.entry) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing required field: entry' }));
+            return;
+          }
+
+          const result = compileProject(payload);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            status: 'failed',
+            pdf: null,
+            synctex: null,
+            diagnostics: [{ severity: 'error', message: err.message }],
+            missing_files: [],
+            missingFiles: [],
+            resolved_packages: [],
+            resolvedPackages: [],
+            duration_ms: 0,
+            durationMs: 0,
+            stdout: '',
+            stderr: String(err.stack || err),
+          }));
+        }
+      });
+      return;
+    }
+
+    // 3. MCP SSE: GET /sse
+    if (req.method === 'GET' && pathname === '/sse') {
+      const sessionId = `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      });
+
+      state.sseSessions.set(sessionId, res);
+
+      req.on('close', () => {
+        state.sseSessions.delete(sessionId);
+      });
+
+      res.write(`event: endpoint\ndata: /message?sessionId=${sessionId}\n\n`);
+      return;
+    }
+
+    // 4. MCP message: POST /message
+    if (req.method === 'POST' && pathname === '/message') {
+      const sessionId = parsedUrl.searchParams.get('sessionId') || '';
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+
+      req.on('end', () => {
+        const resp = dispatchJsonRpc(body, state);
+        if (resp !== null) {
+          const respStr = JSON.stringify(resp);
+          if (sessionId && state.sseSessions.has(sessionId)) {
+            const sseRes = state.sseSessions.get(sessionId);
+            sseRes.write(`event: message\ndata: ${respStr}\n\n`);
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(respStr);
+        } else {
+          res.writeHead(202, { 'Content-Type': 'application/json' });
+          res.end();
+        }
+      });
+      return;
+    }
+
+    // 5. MCP streamable HTTP: POST /mcp or POST /mcp/
+    if (req.method === 'POST' && (pathname === '/mcp' || pathname === '/mcp/')) {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+
+      req.on('end', () => {
+        const resp = dispatchJsonRpc(body, state);
+        if (resp !== null) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(resp));
+        } else {
+          res.writeHead(204);
+          res.end();
+        }
+      });
+      return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+  });
+}
+
+export const server = createCompilerServer();
 
 const currentFile = fileURLToPath(import.meta.url);
 if (process.argv[1] && path.resolve(process.argv[1]) === currentFile) {

@@ -68,11 +68,11 @@
 - Create: `src/compiler/__tests__/mcpServer.test.ts`
 
 **Steps:**
-- [ ] Write integration tests in `src/compiler/__tests__/mcpServer.test.ts` verifying `/mcp` and `/sse` endpoints, `tools/list`, `torque_read_file` slicing, and `torque_edit_file` exact replacements.
-- [ ] Add MCP request handling to `scripts/compiler-server.js`:
+- [x] Write integration tests in `src/compiler/__tests__/mcpServer.test.ts` verifying `/mcp` and `/sse` endpoints, `tools/list`, `torque_read_file` slicing, and `torque_edit_file` exact replacements.
+- [x] Add MCP request handling to `scripts/compiler-server.js`:
   - Route `GET /sse`, `POST /message`, and `POST /mcp`.
   - Implement tool execution for `torque_list_projects`, `torque_read_file`, `torque_edit_file`, `torque_write_file`, `torque_compile`.
-- [ ] Run `npm test src/compiler/__tests__/mcpServer.test.ts` and confirm passing.
+- [x] Run `npm test src/compiler/__tests__/mcpServer.test.ts` and confirm passing.
 - [ ] Commit: `feat(mcp): add MCP server endpoints to Node compiler-server`
 
 ---
@@ -91,25 +91,33 @@
 
 ---
 
-### Task 4: Frontend Live Reactive Synchronization & UI Status Pill
+### Task 4: Frontend Live Reactive Synchronization, UI Status Pill & In-App MCP Instructions
 
 **Files:**
 - Modify: `src/workspace/useWorkspace.ts`
 - Modify: `src/components/ProjectTopBar.tsx`
+- Modify: `src/components/TopMenuBar.tsx`
+- Create: `src/components/McpInstructionsModal.tsx`
 - Modify: `src/types/workspace.ts`
 - Test: `src/workspace/__tests__/mcpSync.test.ts`
+- Test: `src/components/__tests__/McpInstructionsModal.test.tsx`
 
 **Steps:**
-- [ ] Write tests in `src/workspace/__tests__/mcpSync.test.ts` verifying:
-  - Event listener handles `mcp:file-changed`, updating open tab content without losing state.
-  - Event listener handles `mcp:compile-finished`, updating `compileStatus` and diagnostics.
-- [ ] In `src/workspace/useWorkspace.ts`:
-  - Listen for Tauri events `mcp:file-changed` and `mcp:compile-finished` (or window custom events in web mode).
-  - Update files, active file buffer, and compile results upon receiving MCP notifications.
+- [ ] Create `src/components/McpInstructionsModal.tsx`:
+  - IntelliJ New UI styled dialog showing running status and active port (`http://127.0.0.1:3030/sse`).
+  - Step-by-step instructions and one-click copyable configuration snippets for Claude Desktop, Cursor, Antigravity, and Zed.
+  - Explains available tools (`torque_read_file` with line slicing, `torque_edit_file` with surgical diffs, `torque_compile`, and `torque_get_diagnostics`).
 - [ ] In `src/components/ProjectTopBar.tsx`:
-  - Add an IntelliJ New UI status pill showing `MCP` with green status dot and tooltip (`MCP Server active on port 3030`).
+  - Add clickable IntelliJ status pill showing `MCP` with green active dot that opens `McpInstructionsModal`.
+- [ ] In `src/components/TopMenuBar.tsx`:
+  - Add *Help -> MCP AI Assistant Guide...* to open `McpInstructionsModal`.
+- [ ] In `src/workspace/useWorkspace.ts`:
+  - Listen for Tauri events `mcp:file-changed` and `mcp:compile-finished`.
+  - Update files, active file buffer, and compile results upon receiving MCP notifications.
+  - Synchronize active project ID to Tauri via `tauri_set_active_project`.
+- [ ] Write tests in `src/workspace/__tests__/mcpSync.test.ts` and `src/components/__tests__/McpInstructionsModal.test.tsx`.
 - [ ] Run `npm test` and `npm run build` to verify clean frontend compilation.
-- [ ] Commit: `feat(mcp): add live reactive workspace sync and MCP status pill`
+- [ ] Commit: `feat(mcp): add live reactive workspace sync, MCP status pill, and in-app instructions modal`
 
 ---
 

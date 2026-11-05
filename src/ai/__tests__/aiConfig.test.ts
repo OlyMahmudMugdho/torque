@@ -280,5 +280,60 @@ describe('AI Config Subsystem', () => {
         fetchProviderModels('https://api.openai.com/v1', 'bad-key')
       ).rejects.toThrow(/401/);
     });
+
+    it('falls back to /api/ai-proxy when direct fetch throws a network / CORS error', async () => {
+      const mockFetch = vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [{ id: 'proxied-model-1' }, { id: 'proxied-model-2' }],
+          }),
+        });
+      globalThis.fetch = mockFetch;
+
+      const models = await fetchProviderModels('http://localhost:3001/v1', 'test-key');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        'http://localhost:3001/v1/models',
+        expect.anything()
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        '/api/ai-proxy',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+          }),
+          body: JSON.stringify({
+            url: 'http://localhost:3001/v1/models',
+            method: 'GET',
+            headers: {
+              Accept: 'application/json',
+              Authorization: 'Bearer test-key',
+            },
+          }),
+        })
+      );
+      expect(models).toEqual(['proxied-model-1', 'proxied-model-2']);
+    });
+
+    it('rethrows error when both direct fetch and /api/ai-proxy fail', async () => {
+      const directError = new TypeError('Failed to fetch');
+      const mockFetch = vi
+        .fn()
+        .mockRejectedValueOnce(directError)
+        .mockRejectedValueOnce(new Error('Proxy connection refused'));
+      globalThis.fetch = mockFetch;
+
+      await expect(
+        fetchProviderModels('http://localhost:3001/v1', 'test-key')
+      ).rejects.toThrow('Failed to fetch');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
   });
 });

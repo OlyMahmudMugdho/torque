@@ -1707,6 +1707,88 @@ export function createCompilerServer(options = {}) {
       return;
     }
 
+    // AI Proxy: POST /api/ai-proxy
+    if (req.method === 'POST' && pathname === '/api/ai-proxy') {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+
+      req.on('end', async () => {
+        try {
+          const payload = JSON.parse(body);
+          const { url, method = 'POST', headers = {}, body: reqBody, stream = false } = payload || {};
+
+          if (!url || typeof url !== 'string') {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing required field: url' }));
+            return;
+          }
+
+          const forwardHeaders = {};
+          if (headers && typeof headers === 'object') {
+            for (const [k, v] of Object.entries(headers)) {
+              if (k.toLowerCase() !== 'host') {
+                forwardHeaders[k] = String(v);
+              }
+            }
+          }
+
+          const fetchOptions = {
+            method,
+            headers: forwardHeaders,
+          };
+
+          if (reqBody !== undefined && method !== 'GET' && method !== 'HEAD') {
+            fetchOptions.body = typeof reqBody === 'string' ? reqBody : JSON.stringify(reqBody);
+          }
+
+          const upstreamRes = await fetch(url, fetchOptions);
+
+          if (stream && upstreamRes.body) {
+            res.writeHead(upstreamRes.status, {
+              'Content-Type': 'text/event-stream; charset=utf-8',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+              'Access-Control-Allow-Origin': '*',
+            });
+
+            const reader = upstreamRes.body.getReader ? upstreamRes.body.getReader() : null;
+            if (reader) {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                res.write(value);
+              }
+              res.end();
+            } else if (typeof upstreamRes.body[Symbol.asyncIterator] === 'function') {
+              for await (const chunk of upstreamRes.body) {
+                res.write(chunk);
+              }
+              res.end();
+            } else {
+              const text = await upstreamRes.text();
+              res.end(text);
+            }
+            return;
+          }
+
+          const text = await upstreamRes.text();
+          const contentType = upstreamRes.headers.get('content-type') || 'application/json';
+
+          res.writeHead(upstreamRes.status, {
+            'Content-Type': contentType,
+            'Access-Control-Allow-Origin': '*',
+          });
+          res.end(text);
+        } catch (err) {
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: `Proxy request failed: ${err?.message || String(err)}` }));
+        }
+      });
+      return;
+    }
+
     // 2. Existing POST / and POST /api/compile
     if (req.method === 'POST' && (pathname === '/' || pathname === '/api/compile')) {
       let body = '';

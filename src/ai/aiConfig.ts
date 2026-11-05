@@ -17,6 +17,14 @@ async function getInvoke(): Promise<TauriInvokeFn> {
   return core.invoke;
 }
 
+export function normalizeBaseUrl(url: string): string {
+  if (!url) return '';
+  let clean = url.trim().replace(/\/+$/, '');
+  clean = clean.replace(/\/chat\/completions\/?$/i, '');
+  clean = clean.replace(/\/chat\/?$/i, '');
+  return clean;
+}
+
 export function getDefaultAISettings(): AISettings {
   return {
     providers: [
@@ -108,7 +116,7 @@ export async function fetchProviderModels(
   baseUrl: string,
   apiKey?: string
 ): Promise<string[]> {
-  const normalizedBase = baseUrl.replace(/\/+$/, '');
+  const normalizedBase = normalizeBaseUrl(baseUrl);
   const url = `${normalizedBase}/models`;
 
   const headers: Record<string, string> = {
@@ -119,14 +127,64 @@ export async function fetchProviderModels(
     headers['Authorization'] = `Bearer ${apiKey.trim()}`;
   }
 
-  const res = await fetch(url, {
-    method: 'GET',
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'GET',
+      headers,
+    });
+  } catch (err: any) {
+    // If browser CORS or network error occurs (e.g. 'Failed to fetch', 'Load failed', TypeError),
+    // fallback to server-side AI proxy.
+    try {
+      res = await fetch('/api/ai-proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          url,
+          method: 'GET',
+          headers,
+        }),
+      });
+    } catch {
+      throw err;
+    }
+  }
 
   if (!res.ok) {
+    // If direct fetch failed with non-200 (like 404 or CORS proxy rejection), also attempt /api/ai-proxy once
+    try {
+      const proxyRes = await fetch('/api/ai-proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          url,
+          method: 'GET',
+          headers,
+        }),
+      });
+      if (proxyRes.ok) {
+        const data = await proxyRes.json();
+        if (Array.isArray(data?.data)) {
+          return data.data.map((m: any) => m.id || m.name || String(m));
+        }
+        if (Array.isArray(data?.models)) {
+          return data.models.map((m: any) => m.id || m.name || String(m));
+        }
+      }
+    } catch {
+      // ignore retry error
+    }
+
     const errText = await res.text().catch(() => '');
-    throw new Error(`Failed to fetch models (${res.status} ${res.statusText}): ${errText}`);
+    const cleanErr = cleanErrorMessage(res.status, res.statusText, errText);
+    throw new Error(`Failed to fetch models (${cleanErr})`);
   }
 
   const data = await res.json();
@@ -144,4 +202,23 @@ export async function fetchProviderModels(
   }
 
   return [];
+}
+
+function cleanErrorMessage(status: number, statusText: string, raw: string): string {
+  if (!raw) return `${status} ${statusText}`;
+  const preMatch = raw.match(/<pre>([\s\S]*?)<\/pre>/i);
+  if (preMatch && preMatch[1]) {
+    return `${status} ${statusText}: ${preMatch[1].trim()}`;
+  }
+  if (raw.includes('<html') || raw.includes('<!DOCTYPE')) {
+    return `${status} ${statusText}`;
+  }
+  try {
+    const json = JSON.parse(raw);
+    if (json.error?.message) return json.error.message;
+    if (json.message) return json.message;
+  } catch {
+    // raw text
+  }
+  return `${status} ${statusText}: ${raw.slice(0, 100)}`;
 }

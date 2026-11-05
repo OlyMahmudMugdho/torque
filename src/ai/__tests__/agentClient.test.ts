@@ -84,6 +84,76 @@ describe('AgentClient', () => {
       expect(res.toolCalls).toBeUndefined();
     });
 
+    it('falls back to /api/ai-proxy when direct fetch throws a network / CORS error', async () => {
+      const mockApiResponse = {
+        id: 'chatcmpl-fallback',
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: 'Fallback response via proxy',
+            },
+          },
+        ],
+      };
+
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => mockApiResponse,
+        } as any);
+
+      const messages: ChatMessage[] = [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: 'Hello local LLM',
+          timestamp: Date.now(),
+        },
+      ];
+
+      const res = await client.sendMessage(messages, mockContext);
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(fetchSpy.mock.calls[0][0]).toBe('https://api.openai.com/v1/chat/completions');
+      expect(fetchSpy.mock.calls[1][0]).toBe('/api/ai-proxy');
+      const proxyReq = fetchSpy.mock.calls[1][1];
+      expect(proxyReq?.method).toBe('POST');
+      const proxyBody = JSON.parse(proxyReq?.body as string);
+      expect(proxyBody.url).toBe('https://api.openai.com/v1/chat/completions');
+      expect(proxyBody.method).toBe('POST');
+      expect(proxyBody.stream).toBe(false);
+      expect(proxyBody.body.model).toBe('gpt-4o');
+      expect(res.content).toBe('Fallback response via proxy');
+    });
+
+    it('rethrows abort error without proxying when request is aborted', async () => {
+      const abortController = new AbortController();
+      abortController.abort();
+
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockRejectedValueOnce(new DOMException('The user aborted a request.', 'AbortError'));
+
+      const messages: ChatMessage[] = [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: 'Hello',
+          timestamp: Date.now(),
+        },
+      ];
+
+      await expect(
+        client.sendMessage(messages, mockContext, { signal: abortController.signal })
+      ).rejects.toThrow('The user aborted a request.');
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
     it('formats role: tool and previous assistant tool calls properly for OpenAI payload', async () => {
       vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
         ok: true,

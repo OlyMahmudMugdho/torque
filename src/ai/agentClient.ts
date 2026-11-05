@@ -1,4 +1,5 @@
 import type { AIProviderConfig } from '../types/ai';
+import { normalizeBaseUrl } from './aiConfig';
 import { WORKSPACE_TOOLS_SCHEMA, validateToolPath } from './tools';
 import { computeFileDiff, applyFilePatch, type FileDiffResult } from './diffUtils';
 
@@ -40,7 +41,8 @@ export class AgentClient {
     }
   ): Promise<ChatMessage> {
     const isStreaming = Boolean(options?.onChunk);
-    const url = `${this.config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const normalizedBase = normalizeBaseUrl(this.config.baseUrl);
+    const url = `${normalizedBase}/chat/completions`;
 
     const formattedMessages = messages.map((m) => {
       if (m.role === 'tool') {
@@ -85,12 +87,37 @@ export class AgentClient {
       Authorization: `Bearer ${this.config.apiKey}`,
     };
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody),
-      signal: options?.signal,
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody),
+        signal: options?.signal,
+      });
+    } catch (err: any) {
+      if (options?.signal?.aborted) {
+        throw err;
+      }
+      try {
+        res = await fetch('/api/ai-proxy', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            url,
+            method: 'POST',
+            headers,
+            body: requestBody,
+            stream: isStreaming,
+          }),
+          signal: options?.signal,
+        });
+      } catch {
+        throw err;
+      }
+    }
 
     if (!res.ok) {
       const errText = await res.text();

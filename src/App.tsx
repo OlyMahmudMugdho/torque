@@ -71,7 +71,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         setActiveAiProvider(active);
       })
       .catch(() => {});
-  }, [isSettingsOpen]);
+  }, [isSettingsOpen, activeLeftTab]);
 
   // Synchronize URL search params (?project=, ?id=, ?page=) on mount and popstate
   useEffect(() => {

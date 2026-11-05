@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { useThemeSafe } from '../context/ThemeContext';
 import { AiDiffCard } from './AiDiffCard';
+import { AgentClient, type WorkspaceToolContext } from '../ai/agentClient';
+import { loadAISettings } from '../ai/aiConfig';
 import type { AIProviderConfig, ChatMessage, ChatSession } from '../types/ai';
 import type { FileDiffResult } from '../ai/diffUtils';
 
@@ -229,11 +231,28 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
     return null;
   }
 
+  const [loadedProvider, setLoadedProvider] = useState<AIProviderConfig | null>(activeProvider ?? null);
+
+  useEffect(() => {
+    if (activeProvider) {
+      setLoadedProvider(activeProvider);
+    } else {
+      loadAISettings()
+        .then((s) => {
+          const active = s.providers.find((p) => p.id === s.activeProviderId) || s.providers[0] || null;
+          setLoadedProvider(active);
+        })
+        .catch(() => {});
+    }
+  }, [activeProvider, isOpen]);
+
+  const effectiveProvider = activeProvider || loadedProvider;
+
   // Check if provider is valid
   const isProviderConfigured = Boolean(
-    activeProvider &&
-      (Boolean(activeProvider.apiKey) ||
-        (activeProvider.baseUrl && activeProvider.baseUrl.includes('localhost')))
+    effectiveProvider &&
+      (Boolean(effectiveProvider.apiKey) ||
+        (effectiveProvider.baseUrl && effectiveProvider.baseUrl.includes('localhost')))
   );
 
   const handleCreateNewChat = () => {
@@ -302,6 +321,100 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
       setIsGenerating(true);
       try {
         await onSendMessage(text, { ...targetSession, messages: updatedMessages });
+      } finally {
+        setIsGenerating(false);
+      }
+    } else if (effectiveProvider) {
+      setIsGenerating(true);
+      const assistantMsgId = `asst-${Date.now()}`;
+      const placeholderAssistantMsg: ChatMessage = {
+        id: assistantMsgId,
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+      };
+
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id !== targetSession.id) return s;
+          return {
+            ...s,
+            messages: [...updatedMessages, placeholderAssistantMsg],
+          };
+        })
+      );
+
+      try {
+        const agent = new AgentClient(effectiveProvider);
+        const toolContext: WorkspaceToolContext = {
+          readFile: async (path: string) => {
+            const raw = workspace?.files?.[path] ?? workspace?.files?.[path.replace(/^\.\//, '')];
+            if (raw === undefined || raw === null) return null;
+            return typeof raw === 'string' ? raw : raw.content ?? null;
+          },
+          writeFile: async (path: string, content: string) => {
+            if (workspace?.updateFileContent) {
+              await workspace.updateFileContent(path, content);
+            }
+          },
+          compile: async (engine?: string) => {
+            if (workspace?.compileProject) {
+              const res = await workspace.compileProject(engine);
+              return { success: res?.status === 'success' || true, log: res?.log || '' };
+            }
+            return { success: true, log: '' };
+          },
+          getDiagnostics: () => {
+            return workspace?.diagnostics ?? [];
+          },
+        };
+
+        const responseMsg = await agent.sendMessage(
+          updatedMessages as any,
+          toolContext,
+          {
+            onChunk: (chunk: string) => {
+              setSessions((prev) =>
+                prev.map((s) => {
+                  if (s.id !== targetSession.id) return s;
+                  return {
+                    ...s,
+                    messages: s.messages.map((m) => {
+                      if (m.id !== assistantMsgId) return m;
+                      return { ...m, content: (m.content || '') + chunk };
+                    }),
+                  };
+                })
+              );
+            },
+          }
+        );
+
+        setSessions((prev) =>
+          prev.map((s) => {
+            if (s.id !== targetSession.id) return s;
+            return {
+              ...s,
+              messages: s.messages.map((m) => (m.id === assistantMsgId ? responseMsg : m)),
+            };
+          })
+        );
+      } catch (err: any) {
+        setSessions((prev) =>
+          prev.map((s) => {
+            if (s.id !== targetSession.id) return s;
+            return {
+              ...s,
+              messages: s.messages.map((m) => {
+                if (m.id !== assistantMsgId) return m;
+                return {
+                  ...m,
+                  content: `⚠️ Failed to get AI response: ${err?.message || String(err)}`,
+                };
+              }),
+            };
+          })
+        );
       } finally {
         setIsGenerating(false);
       }
@@ -399,9 +512,9 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
             className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium truncate max-w-[90px] ${
               isDark ? 'bg-[#1e1f22] text-[#868a91] border border-[#393b40]' : 'bg-[#ffffff] text-[#5c6066] border border-[#d1d5db]'
             }`}
-            title={activeProvider?.selectedModel || 'No Model'}
+            title={effectiveProvider?.selectedModel || 'No Model'}
           >
-            {activeProvider?.selectedModel || 'No Model'}
+            {effectiveProvider?.selectedModel || 'No Model'}
           </span>
         </div>
 

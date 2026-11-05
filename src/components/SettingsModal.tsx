@@ -15,6 +15,9 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  ChevronDown,
+  CheckCircle,
+  AlertCircle,
 } from 'lucide-react';
 import {
   loadAISettings,
@@ -471,7 +474,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             )}
 
             {activeCategory === 'ai' && (
-              <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-4">
                 <div>
                   <h3 className="text-xs font-semibold uppercase tracking-wider mb-1 opacity-70">
                     AI Assistant Configuration
@@ -482,7 +485,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 {/* AI Providers Section */}
-                <div className="flex flex-col gap-2.5">
+                <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-medium">Configured Providers</label>
                     <button
@@ -533,7 +536,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             />
                             <span className="font-semibold truncate">{p.name}</span>
                             {isActive && (
-                              <span className="text-[10px] px-1.5 py-0.5 bg-[#3574f0] text-white rounded font-medium">
+                              <span className="bg-[#3574f0] text-white text-[10px] px-1.5 py-0.5 rounded font-medium">
                                 Active
                               </span>
                             )}
@@ -551,7 +554,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   e.stopPropagation();
                                   handleDeleteProvider(p.id);
                                 }}
-                                className="p-1 rounded text-red-500 hover:bg-red-500/10 transition"
+                                className="p-1 rounded text-[#868a91] hover:text-red-500 hover:bg-red-500/10 transition cursor-pointer"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -680,38 +683,66 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     {/* Model Selection */}
-                    <div className="flex flex-col gap-1">
-                      <label
-                        className="text-[11px] font-medium opacity-80"
-                        htmlFor="ai-model-input"
-                      >
-                        Model Selection
-                      </label>
-                      {currentProvider.availableModels.length > 0 && (
-                        <select
-                          id="ai-model-select"
-                          aria-label="Available Models"
-                          value={
-                            currentProvider.availableModels.includes(currentProvider.selectedModel)
-                              ? currentProvider.selectedModel
-                              : ''
-                          }
-                          onChange={(e) => updateCurrentProvider({ selectedModel: e.target.value })}
-                          className={`px-2.5 py-1.5 mb-1 rounded text-xs border outline-none focus:border-[#3574f0] cursor-pointer ${
-                            isDark
-                              ? 'bg-[#2b2d30] border-[#393b40] text-[#dfe1e5]'
-                              : 'bg-white border-[#d1d5db] text-[#1f2328]'
-                          }`}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <label
+                          className="text-[11px] font-medium opacity-80"
+                          htmlFor="ai-model-input"
                         >
-                          <option value="" disabled>
-                            -- Select from detected models --
-                          </option>
-                          {currentProvider.availableModels.map((m) => (
-                            <option key={m} value={m}>
-                              {m}
+                          Model Selection
+                        </label>
+                      </div>
+                      <span className="text-[11px] opacity-60">
+                        Select from detected models or enter a custom model below:
+                      </span>
+                      {currentProvider.availableModels.length > 0 && (
+                        <div className="relative">
+                          <select
+                            id="ai-model-select"
+                            aria-label="Available Models"
+                            value={
+                              currentProvider.availableModels.includes(currentProvider.selectedModel)
+                                ? currentProvider.selectedModel
+                                : ''
+                            }
+                            onChange={(e) => updateCurrentProvider({ selectedModel: e.target.value })}
+                            className={`w-full appearance-none px-2.5 py-1.5 pr-8 rounded text-xs border outline-none transition focus:border-[#3574f0] cursor-pointer ${
+                              isDark
+                                ? 'bg-[#2b2d30] border-[#393b40] text-[#dfe1e5]'
+                                : 'bg-white border-[#d1d5db] text-[#1f2328]'
+                            }`}
+                          >
+                            <option
+                              value=""
+                              disabled
+                              className={
+                                isDark
+                                  ? 'bg-[#2b2d30] text-[#dfe1e5]'
+                                  : 'bg-white text-[#1f2328]'
+                              }
+                            >
+                              -- Select from detected models --
                             </option>
-                          ))}
-                        </select>
+                            {currentProvider.availableModels.map((m) => (
+                              <option
+                                key={m}
+                                value={m}
+                                className={
+                                  isDark
+                                    ? 'bg-[#2b2d30] text-[#dfe1e5]'
+                                    : 'bg-white text-[#1f2328]'
+                                }
+                              >
+                                {m}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none opacity-60 ${
+                              isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'
+                            }`}
+                          />
+                        </div>
                       )}
                       <input
                         id="ai-model-input"
@@ -738,8 +769,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           testStatus.loading
                             ? 'opacity-50 cursor-not-allowed'
                             : isDark
-                              ? 'border-[#4e5157] text-[#dfe1e5] hover:bg-[#393b40]'
-                              : 'border-[#c9ccd6] text-[#1f2328] hover:bg-[#ebecf0]'
+                              ? 'border-[#393b40] bg-[#2b2d30] text-[#dfe1e5] hover:bg-[#323438] hover:border-[#4e5157]'
+                              : 'border-[#d1d5db] bg-white text-[#1f2328] hover:bg-[#ebecf0] hover:border-[#b0b4bd]'
                         }`}
                       >
                         {testStatus.loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -747,16 +778,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </button>
 
                       {testStatus.message && (
-                        <span
+                        <div
                           role="status"
-                          className={`text-xs ${
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium border ${
                             testStatus.success
-                              ? 'text-green-500 font-medium'
-                              : 'text-red-500 font-medium'
+                              ? isDark
+                                ? 'bg-[#1b2b20] border-[#254b30] text-[#57ab5a]'
+                                : 'bg-[#dafbe1] border-[#aceebb] text-[#1a7f37]'
+                              : isDark
+                                ? 'bg-[#3b1d1d] border-[#5c2828] text-[#f85149]'
+                                : 'bg-[#ffebe9] border-[#ffc1c0] text-[#cf222e]'
                           }`}
                         >
-                          {testStatus.message}
-                        </span>
+                          {testStatus.success ? (
+                            <CheckCircle className="w-3.5 h-3.5 shrink-0 text-current" />
+                          ) : (
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-current" />
+                          )}
+                          <span>{testStatus.message}</span>
+                        </div>
                       )}
                     </div>
                   </div>

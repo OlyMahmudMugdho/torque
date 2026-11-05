@@ -228,4 +228,21 @@ describe('SettingsModal - AI Assistant Category', () => {
       expect(saveAISettings).toHaveBeenCalledTimes(2);
     });
   });
+
+  it('renders styled model dropdown and allows selecting an available model', async () => {
+    renderSettingsModal();
+    fireEvent.click(screen.getByRole('button', { name: /AI Assistant/i }));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('OpenAI')).toBeInTheDocument();
+    });
+
+    const select = screen.getByLabelText('Available Models');
+    expect(select).toBeInTheDocument();
+    expect(select).toHaveClass('appearance-none');
+
+    // Select gpt-4o-mini
+    fireEvent.change(select, { target: { value: 'gpt-4o-mini' } });
+    expect(screen.getByLabelText('Model Name')).toHaveValue('gpt-4o-mini');
+  });
 });

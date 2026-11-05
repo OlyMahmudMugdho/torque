@@ -121,6 +121,11 @@ Torque provides a full-featured LaTeX authoring environment powered by the host'
   - Automated CTAN package resolver.
   - Fetches package archives directly from CTAN mirrors (TDS zip, flat zip, raw files), unpacks them into the user TeXMF tree (`TEXMFHOME`), and runs `mktexlsr` / `texhash`.
 - [`src-tauri/src/storage.rs`](file:///home/mugdho/codes/torque/src-tauri/src/storage.rs): Native filesystem operations managing `~/.torque/projects` and `~/.torque/cache/packages`.
+- [`src-tauri/src/mcp.rs`](file:///home/mugdho/codes/torque/src-tauri/src/mcp.rs):
+  - Embedded Model Context Protocol (MCP) server listening on `127.0.0.1:3030` (fallback `3031`).
+  - Implements JSON-RPC 2.0 protocol (`2024-11-05`), `GET /sse`, `POST /message`, and `POST /mcp`.
+  - Exposes 7 workspace tools: `torque_list_projects`, `torque_get_active_project`, `torque_read_file` (with line slicing), `torque_write_file`, `torque_edit_file` (surgical diffs), `torque_compile`, `torque_get_diagnostics`.
+  - Emits Tauri IPC events (`mcp:file-changed`, `mcp:compile-finished`) for real-time frontend synchronization.
 - [`src-tauri/tauri.conf.json`](file:///home/mugdho/codes/torque/src-tauri/tauri.conf.json): Tauri v2 configuration (window size, title, permissions, bundle identifier, packaging metadata).
 
 ---
@@ -134,7 +139,9 @@ Torque provides a full-featured LaTeX authoring environment powered by the host'
   - IntelliJ New UI application menu bar: *File*, *Edit*, *View*, *Tools*, *Help*.
   - Keyboard shortcut hints (`Ctrl+B`, `Ctrl+S`), modal triggers (Settings, About), and export actions.
 - [`src/components/ProjectTopBar.tsx`](file:///home/mugdho/codes/torque/src/components/ProjectTopBar.tsx):
-  - Editor header with project breadcrumbs, active root file badge, compilation status indicator (Idle, Compiling, Success, Failed, Duration), compile button (`Ctrl+B`), and engine switcher (`pdflatex`, `xelatex`, `lualatex`). Theme toggling is accessed via *View* menu or *Settings*.
+  - Editor header with project breadcrumbs, active root file badge, compilation status indicator (Idle, Compiling, Success, Failed, Duration), compile button (`Ctrl+B`), engine switcher (`pdflatex`, `xelatex`, `lualatex`), and clickable MCP server status indicator pill. Theme toggling is accessed via *View* menu or *Settings*.
+- [`src/components/McpInstructionsModal.tsx`](file:///home/mugdho/codes/torque/src/components/McpInstructionsModal.tsx):
+  - IntelliJ-style modal providing live MCP server status (`http://127.0.0.1:3030/sse`), tool capability documentation, and one-click copyable configuration blocks for Claude Desktop, Cursor, Antigravity, and Zed.
 - [`src/components/SettingsModal.tsx`](file:///home/mugdho/codes/torque/src/components/SettingsModal.tsx):
   - IntelliJ-style Settings modal dialog (`Ctrl+Alt+S` / gear icon in rail / *File -> Settings...*).
   - Configures Appearance (Theme), Editor (Autosave toggle and status), and Build & Execution (Default TeX engine).
@@ -208,7 +215,9 @@ Torque provides a full-featured LaTeX authoring environment powered by the host'
 
 ### `scripts/` — Tooling & Development
 - [`scripts/compiler-server.js`](file:///home/mugdho/codes/torque/scripts/compiler-server.js):
-  - Standalone lightweight TeX Live HTTP compilation server with auto-resolution and SyncTeX support.
+  - Standalone lightweight TeX Live HTTP compilation server with auto-resolution, SyncTeX support, and embedded MCP endpoints (`/sse`, `/message`, `/mcp`).
+- [`scripts/torque-mcp-bridge.js`](file:///home/mugdho/codes/torque/scripts/torque-mcp-bridge.js):
+  - Standalone zero-dependency Node stdio-to-HTTP JSON-RPC bridge script for connecting stdio-only MCP clients (e.g. Claude Desktop) to Torque.
 - [`scripts/dev.js`](file:///home/mugdho/codes/torque/scripts/dev.js):
   - Spawns both the compilation server and Next.js dev server concurrently.
 - [`scripts/serve.js`](file:///home/mugdho/codes/torque/scripts/serve.js):

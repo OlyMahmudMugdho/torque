@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "torque",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "identifier": "com.torque.editor",
   "build": {
     "frontendDist": "../out",
@@ -16,7 +16,8 @@
         "width": 1280,
         "height": 800,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "url": "index.html"
       }
     ],
     "security": {

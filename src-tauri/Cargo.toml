@@ -1,6 +1,6 @@
 [package]
 name = "torque"
-version = "0.3.1"
+version = "0.3.2"
 description = "Torque - Native TeX Live LaTeX IDE"
 authors = ["Torque Contributors"]
 license = ""
@@ -26,3 +26,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-log = "2"
 tokio = { version = "1", features = ["net", "io-util", "sync", "rt", "time"] }
 uuid = { version = "1", features = ["v4"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

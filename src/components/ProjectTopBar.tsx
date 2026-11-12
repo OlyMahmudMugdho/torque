@@ -142,9 +142,11 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
           aria-label="Return to Welcome Screen"
           className="flex items-center gap-1.5 mr-1 shrink-0 cursor-pointer hover:opacity-80 transition text-left"
         >
-          <div className="w-5 h-5 bg-gradient-to-tr from-[#3574f0] via-[#59a869] to-[#e2a53b] rounded flex items-center justify-center shadow-sm">
-            <span className="text-[10px] font-black text-black tracking-tighter leading-none">TQ</span>
-          </div>
+          <img
+            src="/logo.png"
+            alt="Torque Logo"
+            className="w-5 h-5 object-contain shrink-0"
+          />
           <span
             className={`font-semibold text-xs tracking-wide hidden sm:inline ${
               isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'

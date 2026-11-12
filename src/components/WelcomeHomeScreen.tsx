@@ -208,8 +208,13 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
               {/* Branding Badge & App Info */}
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-11 h-11 rounded-xl bg-[#1e1f22] border-2 border-[#e5a035] shadow-md flex items-center justify-center shrink-0">
-                    <span className="text-base font-black tracking-tight text-[#e5a035]">TQ</span>
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
+                    <img
+                      src="/logo.png"
+                      alt="Torque Logo"
+                      className="w-11 h-11 object-contain"
+                    />
+                    <span className="sr-only">TQ</span>
                   </div>
                   <div className="flex flex-col">
                     <div className="flex items-baseline gap-1.5">

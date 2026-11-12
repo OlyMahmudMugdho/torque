@@ -146,9 +146,11 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
           }`}
         >
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-[#1e1f22] border border-[#e5a035] flex items-center justify-center">
-              <span className="text-[8px] font-black text-[#e5a035] leading-none">TQ</span>
-            </div>
+            <img
+              src="/logo.png"
+              alt="Torque Logo"
+              className="w-4 h-4 object-contain shrink-0"
+            />
             <h2 id="new-project-title" className="text-xs font-semibold tracking-wide">
               New Project
             </h2>

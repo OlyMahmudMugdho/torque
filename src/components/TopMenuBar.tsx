@@ -204,9 +204,9 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
       ref={menuBarRef}
       role="menubar"
       aria-label="Main menu"
-      className={`flex items-center text-xs select-none relative h-8 px-2 border-b ${barClasses} ${className}`}
+      className={`flex flex-nowrap items-center text-xs select-none relative h-8 px-2 border-b shrink-0 ${barClasses} ${className}`}
     >
-      <div className="flex items-center gap-0.5">
+      <div className="flex flex-nowrap items-center gap-0.5 shrink-0">
         {menus.map((menu) => {
           const isOpen = openMenu === menu.label;
 

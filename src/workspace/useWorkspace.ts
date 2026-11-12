@@ -413,7 +413,11 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
 
   const selectProject = useCallback(
     async (projectId: string) => {
-      const p = projects.find((proj) => proj.id === projectId);
+      let p = projects.find((proj) => proj.id === projectId);
+      if (!p) {
+        const fresh = await refreshProjects();
+        p = fresh.find((proj) => proj.id === projectId);
+      }
       if (!p) return;
       setActiveProject(p);
       const projFiles = await storeRef.current.listFiles(p.id);
@@ -429,7 +433,7 @@ export function useWorkspace(options?: UseWorkspaceOptions): WorkspaceState {
         setSelectedEngine(p.engine);
       }
     },
-    [projects, setSelectedEngine]
+    [projects, refreshProjects, setSelectedEngine]
   );
 
   const createNewProject = useCallback(

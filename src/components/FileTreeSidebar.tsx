@@ -14,6 +14,7 @@ import {
   FolderOpen,
   Plus,
   Upload,
+  X,
 } from 'lucide-react';
 
 export interface FileTreeSidebarProps {
@@ -487,11 +488,19 @@ export const FileTreeSidebar: React.FC<FileTreeSidebarProps> = ({
           }`}
         >
           <div
-            className={`px-3 h-8 flex items-center text-[12px] font-semibold border-b ${
+            className={`px-3 h-8 flex items-center justify-between text-[12px] font-semibold border-b ${
               isDark ? 'border-[#393b40] bg-[#2b2d30]' : 'border-[#ebecf0] bg-[#f7f8fa]'
             }`}
           >
-            {newItem.kind === 'file' ? 'New File' : 'New Directory'}
+            <span>{newItem.kind === 'file' ? 'New File' : 'New Directory'}</span>
+            <button
+              type="button"
+              onClick={() => setNewItem(null)}
+              className="p-1 rounded opacity-60 hover:opacity-100 transition cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
           <div className="p-3 space-y-1.5">
             <input
@@ -524,6 +533,30 @@ export const FileTreeSidebar: React.FC<FileTreeSidebarProps> = ({
                   ? `In ${newItem.parent}/ — use a/b/c to create nested paths`
                   : 'Use a/b/c to create nested paths')}
             </div>
+          </div>
+          <div
+            className={`px-3 py-2 border-t flex items-center justify-end gap-2 ${
+              isDark ? 'border-[#393b40] bg-[#26282b]' : 'border-[#ebecf0] bg-[#f7f8fa]'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => setNewItem(null)}
+              className={`px-3 py-1 rounded text-xs font-medium border transition cursor-pointer ${
+                isDark
+                  ? 'border-[#4e5157] text-[#dfe1e5] hover:bg-[#393b40]'
+                  : 'border-[#c9ccd6] text-[#1f2328] hover:bg-[#ebecf0]'
+              }`}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void submitNew()}
+              className="px-3 py-1 rounded text-xs font-semibold bg-[#3574f0] text-white hover:bg-[#3068d9] transition shadow-sm cursor-pointer"
+            >
+              {newItem.kind === 'file' ? 'Create File' : 'Create Folder'}
+            </button>
           </div>
         </div>
       </div>

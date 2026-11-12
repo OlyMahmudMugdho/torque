@@ -13,8 +13,11 @@ import { WelcomeHomeScreen } from './components/WelcomeHomeScreen';
 import { TexSetupGuide } from './components/TexSetupGuide';
 import { SettingsModal } from './components/SettingsModal';
 import { McpInstructionsModal } from './components/McpInstructionsModal';
+import { AboutModal } from './components/AboutModal';
+import { SplashScreen } from './components/SplashScreen';
 import { AiChatPanel } from './components/AiChatPanel';
 import { loadAISettings } from './ai/aiConfig';
+import { isTauri } from './storage/tauriStorage';
 import type { AIProviderConfig } from './types/ai';
 import type { Diagnostic } from './types/workspace';
 import { Folder, Terminal, Settings, GitBranch, CheckCircle2, Package, Sparkles } from 'lucide-react';
@@ -35,7 +38,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
   projectId: propProjectId,
 }) => {
   const workspace = useWorkspace();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, editorTheme, setEditorTheme } = useTheme();
   const isDark = theme === 'dark';
 
   const [welcomeTab, setWelcomeTab] = useState<'projects' | 'customize'>('projects');
@@ -58,6 +61,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
   const [dismissedSetupResult, setDismissedSetupResult] = useState<unknown>(null);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isMcpModalOpen, setMcpModalOpen] = useState(false);
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [activeAiProvider, setActiveAiProvider] = useState<AIProviderConfig | null>(null);
   const monacoRef = useRef<MonacoEditorHandle>(null);
 
@@ -72,6 +76,24 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
       })
       .catch(() => {});
   }, [isSettingsOpen, activeLeftTab]);
+
+  // Close native Tauri splashscreen once workspace is initialized and ready
+  useEffect(() => {
+    if (!workspace.ready) return;
+
+    if (typeof window !== 'undefined' && isTauri()) {
+      const invokeClose = async () => {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          await invoke('close_splashscreen');
+        } catch (e) {
+          console.warn('Failed to close splashscreen:', e);
+        }
+      };
+      const timer = window.setTimeout(invokeClose, 600);
+      return () => window.clearTimeout(timer);
+    }
+  }, [workspace.ready]);
 
   // Synchronize URL search params (?project=, ?id=, ?page=) on mount and popstate
   useEffect(() => {
@@ -271,18 +293,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
   };
 
   if (!workspace.ready) {
-    return (
-      <div
-        className={`w-screen h-screen flex flex-col items-center justify-center gap-3 font-sans ${
-          isDark ? 'bg-[#1e1f22] text-[#868a91]' : 'bg-[#f7f8fa] text-[#6c707e]'
-        }`}
-      >
-        <div className="w-6 h-6 border-2 border-[#3574f0] border-t-transparent rounded-full animate-spin" />
-        <span className={`text-xs font-medium ${isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'}`}>
-          Loading Torque...
-        </span>
-      </div>
-    );
+    return <SplashScreen statusMessage="Loading Torque..." />;
   }
 
   const handleSelectProject = async (projectId: string) => {
@@ -347,7 +358,6 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
     return (
       <WelcomeHomeScreen
         projects={workspace.projects}
-        activeProjectId={workspace.activeProject?.id}
         initialTab={welcomeTab}
         onTabChange={handleWelcomeTabChange}
         onSelectProject={handleSelectProject}
@@ -411,7 +421,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
           alert('Keyboard Shortcuts:\n• Ctrl+B / Shift+F10: Compile\n• Alt+1: Toggle Sidebar\n• Alt+6: Toggle Problems\n• Ctrl+Z: Undo\n• Ctrl+Y: Redo');
         }}
         onAbout={() => {
-          alert('Torque LaTeX Editor\nHigh-Performance LaTeX IDE with Native TeX Live & Auto-Package Resolution');
+          setIsAboutOpen(true);
         }}
         onOpenMcpGuide={() => setMcpModalOpen(true)}
       />
@@ -698,6 +708,8 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
         onClose={() => setSettingsOpen(false)}
         theme={theme}
         onThemeChange={setTheme}
+        editorTheme={editorTheme}
+        onEditorThemeChange={setEditorTheme}
         autoSave={workspace.autoSave}
         onAutoSaveChange={workspace.setAutoSave}
         selectedEngine={workspace.selectedEngine}
@@ -707,6 +719,11 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
       <McpInstructionsModal
         isOpen={isMcpModalOpen}
         onClose={() => setMcpModalOpen(false)}
+      />
+
+      <AboutModal
+        isOpen={isAboutOpen}
+        onClose={() => setIsAboutOpen(false)}
       />
     </div>
   );

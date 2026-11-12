@@ -1,7 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { Project, ProjectFile } from '../types/workspace';
-import { useThemeSafe } from '../context/ThemeContext';
+import { useThemeSafe, type EditorTheme } from '../context/ThemeContext';
+import { APP_VERSION } from '../version';
 import { NewProjectModal } from './NewProjectModal';
+import { CloneRepositoryModal } from './CloneRepositoryModal';
+import { AboutModal } from './AboutModal';
+import { IntellijSelect, type IntellijSelectOption } from './IntellijSelect';
+import { isTauri } from '../storage/tauriStorage';
 import { scaffoldProjectFiles, type NewProjectFormValues } from '../templates/projectTemplates';
 import {
   Folder,
@@ -18,6 +23,7 @@ import {
   FileText,
   GitBranch,
   Terminal,
+  Info,
 } from 'lucide-react';
 
 export interface WelcomeHomeScreenProps {
@@ -35,6 +41,16 @@ export interface WelcomeHomeScreenProps {
   onDeleteProject: (projectId: string) => Promise<void> | void;
 }
 
+export const MONACO_THEME_OPTIONS: IntellijSelectOption<EditorTheme>[] = [
+  { value: 'auto', label: 'Match IDE Theme (Default)', description: 'Follow active Torque appearance mode' },
+  { value: 'intellij-dark', label: 'Monaco - IntelliJ Dark', description: 'IntelliJ Darcula syntax palette' },
+  { value: 'intellij-light', label: 'Monaco - IntelliJ Light', description: 'IntelliJ light clean syntax palette' },
+  { value: 'vs-dark', label: 'Monaco - VS Dark', description: 'Classic Visual Studio Dark' },
+  { value: 'vs', label: 'Monaco - VS Light', description: 'Classic Visual Studio Light' },
+  { value: 'hc-black', label: 'Monaco - High Contrast Dark', description: 'Accessibility high-contrast dark' },
+  { value: 'hc-light', label: 'Monaco - High Contrast Light', description: 'Accessibility high-contrast light' },
+];
+
 export function formatLastModified(timestamp: number): string {
   if (!timestamp) return 'Unknown';
   const diff = Date.now() - timestamp;
@@ -50,7 +66,7 @@ export function formatLastModified(timestamp: number): string {
 
 export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
   projects,
-  activeProjectId,
+  activeProjectId: _activeProjectId,
   initialTab = 'projects',
   onTabChange,
   onSelectProject,
@@ -58,15 +74,18 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
   onImportZip,
   onDeleteProject,
 }) => {
-  const { theme, setTheme } = useThemeSafe();
+  const { theme, setTheme, editorTheme, setEditorTheme } = useThemeSafe();
   const isDark = theme === 'dark';
 
   const [activeTab, setActiveTab] = useState<'projects' | 'customize'>(initialTab);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
+  const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
+  const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>('medium');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (initialTab && initialTab !== activeTab) {
@@ -88,13 +107,12 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
     await onCreateProject(values.name, files, rootEntry);
   };
 
-  const handleCloneRepository = async () => {
-    const url = window.prompt('Enter Git repository URL:');
-    if (url?.trim()) {
-      const segments = url.trim().replace(/\.git$/i, '').split('/');
-      const repoName = segments[segments.length - 1] || 'Cloned Repository';
-      await onCreateProject(repoName);
-    }
+  const handleCloneRepository = () => {
+    setIsCloneModalOpen(true);
+  };
+
+  const handleConfirmClone = async (_url: string, projectName: string) => {
+    await onCreateProject(projectName);
   };
 
   const handleRemoteDevelopment = () => {
@@ -109,6 +127,95 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
       await onImportZip(file);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleFolderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    const firstRel = fileList[0].webkitRelativePath || '';
+    const dirName = firstRel.split('/')[0] || 'Imported Folder';
+
+    const projectFiles: Omit<ProjectFile, 'projectId' | 'updatedAt'>[] = [];
+    let detectedRoot = 'main.tex';
+    let foundDocClass = false;
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      const relPath = file.webkitRelativePath
+        ? file.webkitRelativePath.split('/').slice(1).join('/')
+        : file.name;
+
+      if (!relPath) continue;
+
+      const ext = relPath.split('.').pop()?.toLowerCase() || '';
+      if (['aux', 'log', 'out', 'fls', 'fdb_latexmk', 'synctex.gz', 'toc', 'nav', 'snm', 'vrb', 'bbl', 'blg'].includes(ext)) {
+        continue;
+      }
+
+      const isBinary = ['png', 'jpg', 'jpeg', 'pdf', 'eps', 'svg', 'ttf', 'otf', 'woff', 'woff2'].includes(ext);
+
+      if (isBinary) {
+        const buf = await file.arrayBuffer();
+        projectFiles.push({
+          path: relPath,
+          content: new Uint8Array(buf),
+          isBinary: true,
+        });
+      } else {
+        const text = await file.text();
+        projectFiles.push({
+          path: relPath,
+          content: text,
+          isBinary: false,
+        });
+
+        if (relPath === 'main.tex') {
+          detectedRoot = 'main.tex';
+          foundDocClass = true;
+        } else if (!foundDocClass && ext === 'tex') {
+          if (text.includes('\\documentclass')) {
+            detectedRoot = relPath;
+            foundDocClass = true;
+          } else if (detectedRoot === 'main.tex') {
+            detectedRoot = relPath;
+          }
+        }
+      }
+    }
+
+    if (projectFiles.length > 0) {
+      await onCreateProject(dirName, projectFiles, detectedRoot);
+    }
+
+    if (folderInputRef.current) {
+      folderInputRef.current.value = '';
+    }
+  };
+
+  const handleOpenProjectClick = async () => {
+    if (typeof window !== 'undefined' && isTauri()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const res = await invoke<any>('tauri_import_directory');
+        if (res) {
+          const [proj] = Array.isArray(res) ? res : [res.project];
+          if (proj?.id) {
+            await onSelectProject(proj.id);
+            return;
+          }
+        }
+      } catch (e: any) {
+        console.warn('Tauri directory import failed:', e);
+      }
+    } else {
+      if (folderInputRef.current) {
+        folderInputRef.current.click();
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.click();
       }
     }
   };
@@ -169,33 +276,26 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
         aria-label="Upload Zip"
       />
 
+      {/* Hidden file input for folder import */}
+      <input
+        ref={folderInputRef}
+        type="file"
+        // @ts-expect-error webkitdirectory is supported across browsers
+        webkitdirectory=""
+        directory=""
+        multiple
+        onChange={handleFolderChange}
+        className="hidden"
+        data-testid="welcome-folder-input"
+        aria-label="Upload Folder"
+      />
+
       {/* IntelliJ / OpenIDEA Window Container — flush full-window layout */}
       <div
         className={`w-full h-full rounded-none border-0 shadow-none flex flex-col overflow-hidden ${
           isDark ? 'bg-[#2b2d30]' : 'bg-[#ffffff]'
         }`}
       >
-        {/* Title Bar / Header */}
-        <div
-          className={`h-9 px-3 border-b flex items-center justify-between shrink-0 ${
-            isDark ? 'bg-[#1e1f22] border-[#323232]' : 'bg-[#ebecf0] border-[#d1d5db]'
-          }`}
-        >
-          {/* Left Title */}
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-[#1e1f22] border border-[#e5a035] flex items-center justify-center">
-              <span className="text-[8px] font-black text-[#e5a035] leading-none">T</span>
-            </div>
-            <span
-              className={`text-xs font-medium ${
-                isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'
-              }`}
-            >
-              Welcome to Torque
-            </span>
-          </div>
-        </div>
-
         {/* Window Body: Left Sidebar + Right Main Panel */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Sidebar */}
@@ -219,13 +319,10 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                   <div className="flex flex-col">
                     <div className="flex items-baseline gap-1.5">
                       <span className="font-bold text-lg tracking-tight">Torque</span>
-                      <span className="text-[11px] font-mono text-[#868a91]">0.1.0</span>
+                      <span className="text-[11px] font-mono text-[#868a91]">{APP_VERSION}</span>
                     </div>
                   </div>
                 </div>
-                <p className="text-[11px] leading-snug text-[#868a91]">
-                  An open-source IDE inspired by IntelliJ IDEA
-                </p>
               </div>
 
               {/* Navigation Menu */}
@@ -262,12 +359,12 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
               </nav>
             </div>
 
-            {/* Bottom Settings Link */}
-            <div className={`pt-3 border-t ${isDark ? 'border-[#393b40]' : 'border-[#d1d5db]'}`}>
+            {/* Bottom Settings & About Links */}
+            <div className={`pt-3 border-t flex flex-col gap-1 ${isDark ? 'border-[#393b40]' : 'border-[#d1d5db]'}`}>
               <button
                 type="button"
                 onClick={() => handleTabSwitch('customize')}
-                className={`flex items-center gap-2 text-xs p-1.5 rounded transition w-full ${
+                className={`flex items-center gap-2 text-xs p-1.5 rounded transition w-full cursor-pointer ${
                   isDark
                     ? 'text-[#c2c5cc] hover:text-[#dfe1e5] hover:bg-[#2b2d30]'
                     : 'text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
@@ -277,6 +374,20 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
               >
                 <Settings className="w-4 h-4 shrink-0" />
                 <span>Settings</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAboutModalOpen(true)}
+                className={`flex items-center gap-2 text-xs p-1.5 rounded transition w-full cursor-pointer ${
+                  isDark
+                    ? 'text-[#c2c5cc] hover:text-[#dfe1e5] hover:bg-[#2b2d30]'
+                    : 'text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
+                }`}
+                title="About Torque"
+                aria-label="About Torque"
+              >
+                <Info className="w-4 h-4 shrink-0" />
+                <span>About</span>
               </button>
             </div>
           </aside>
@@ -339,8 +450,8 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                     {/* Card 2: Open */}
                     <button
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="group flex flex-col items-center gap-2 focus:outline-none"
+                      onClick={handleOpenProjectClick}
+                      className="group flex flex-col items-center gap-2 focus:outline-none cursor-pointer"
                       aria-label="Open"
                     >
                       <div
@@ -448,10 +559,10 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
 
                       <button
                         type="button"
-                        onClick={() => fileInputRef.current?.click()}
+                        onClick={handleOpenProjectClick}
                         aria-label="Open from disk"
-                        title="Open project from disk or zip"
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold border transition shadow-sm ${
+                        title="Open project from disk, folder, or zip"
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold border transition shadow-sm cursor-pointer ${
                           isDark
                             ? 'border-[#4e5157] text-[#dfe1e5] hover:bg-[#393b40]'
                             : 'border-[#c9ccd6] text-[#1f2328] hover:bg-[#ebecf0]'
@@ -491,19 +602,14 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                       ) : (
                         <div className="divide-y divide-inherit">
                           {filteredProjects.map((p) => {
-                            const isCurrent = p.id === activeProjectId;
                             return (
                               <div
                                 key={p.id}
                                 onClick={() => onSelectProject(p.id)}
                                 className={`group px-4 py-2.5 flex items-center justify-between cursor-pointer transition ${
-                                  isCurrent
-                                    ? isDark
-                                      ? 'bg-[#3574f0]/10 hover:bg-[#3574f0]/20'
-                                      : 'bg-[#3574f0]/10 hover:bg-[#3574f0]/15'
-                                    : isDark
-                                      ? 'hover:bg-[#35373c]'
-                                      : 'hover:bg-[#f2f3f5]'
+                                  isDark
+                                    ? 'hover:bg-[#35373c]'
+                                    : 'hover:bg-[#f2f3f5]'
                                 }`}
                               >
                                 <div className="flex items-center gap-3 min-w-0">
@@ -519,11 +625,6 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                                       >
                                         {p.name}
                                       </span>
-                                      {isCurrent && (
-                                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#3574f0]/20 text-[#3574f0] font-medium">
-                                          Current
-                                        </span>
-                                      )}
                                     </div>
                                     <div className="flex items-center gap-2 mt-0.5">
                                       <span className="text-[11px] font-mono text-[#868a91]">
@@ -599,7 +700,7 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                           <Moon className="w-5 h-5 text-[#3574f0]" />
                           {isDark && <Check className="w-4 h-4 text-[#3574f0]" />}
                         </div>
-                        <span className="text-xs font-bold">IntelliJ Dark</span>
+                        <span className="text-xs font-bold">Dark</span>
                         <span className="text-[11px] text-[#868a91] mt-0.5">
                           Modern dark theme with high-contrast accents
                         </span>
@@ -609,7 +710,7 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                       <button
                         type="button"
                         onClick={() => setTheme('light')}
-                        className={`flex flex-col items-start p-4 rounded-lg border text-left transition ${
+                        className={`flex flex-col items-start p-4 rounded-lg border text-left transition cursor-pointer ${
                           !isDark
                             ? 'border-[#3574f0] ring-1 ring-[#3574f0] bg-[#ffffff]'
                             : 'border-[#393b40] hover:border-[#4e5157] bg-[#1e1f22]'
@@ -619,12 +720,30 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                           <Sun className="w-5 h-5 text-[#e2a53b]" />
                           {!isDark && <Check className="w-4 h-4 text-[#3574f0]" />}
                         </div>
-                        <span className="text-xs font-bold">IntelliJ Light</span>
+                        <span className="text-xs font-bold">Light</span>
                         <span className="text-[11px] text-[#868a91] mt-0.5">
                           Clean light palette optimized for daytime writing
                         </span>
                       </button>
                     </div>
+                  </div>
+
+                  {/* Monaco Editor Theme Section */}
+                  <div className="flex flex-col gap-3">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#868a91]">
+                      Monaco Editor Theme
+                    </span>
+                    <p className="text-[11px] text-[#868a91]">
+                      Configure syntax highlighting and color scheme for the LaTeX code editor.
+                    </p>
+                    <IntellijSelect
+                      testId="welcome-editor-theme-select"
+                      ariaLabel="Monaco Editor Theme"
+                      value={editorTheme}
+                      onChange={(theme) => setEditorTheme(theme)}
+                      options={MONACO_THEME_OPTIONS}
+                      isDark={isDark}
+                    />
                   </div>
 
                   {/* Font Size Section */}
@@ -672,6 +791,19 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
         isOpen={isNewProjectModalOpen}
         onClose={() => setIsNewProjectModalOpen(false)}
         onCreate={handleConfirmCreateProject}
+      />
+
+      {/* JetBrains-style Get from Version Control Modal */}
+      <CloneRepositoryModal
+        isOpen={isCloneModalOpen}
+        onClose={() => setIsCloneModalOpen(false)}
+        onClone={handleConfirmClone}
+      />
+
+      {/* JetBrains-style About Modal */}
+      <AboutModal
+        isOpen={isAboutModalOpen}
+        onClose={() => setIsAboutModalOpen(false)}
       />
     </div>
   );

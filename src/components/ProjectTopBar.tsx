@@ -91,6 +91,23 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
   const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const projectDropdownRef = useRef<HTMLDivElement>(null);
+  const engineDropdownRef = useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!dropdownOpen && !engineDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (dropdownOpen && projectDropdownRef.current && !projectDropdownRef.current.contains(target)) {
+        setDropdownOpen(false);
+      }
+      if (engineDropdownOpen && engineDropdownRef.current && !engineDropdownRef.current.contains(target)) {
+        setEngineDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [dropdownOpen, engineDropdownOpen]);
 
   const handleCreateNew = () => {
     setIsNewProjectModalOpen(true);
@@ -128,12 +145,12 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
 
   return (
     <header
-      className={`h-10 border-b px-3 flex items-center justify-between select-none text-[13px] font-sans transition-colors ${
+      className={`h-10 border-b px-3 flex items-center justify-between select-none text-[13px] font-sans transition-colors relative z-40 ${
         isDark ? 'bg-[#2b2d30] border-[#1e1f22] text-[#dfe1e5]' : 'bg-[#ebecf0] border-[#d1d5db] text-[#1f2328]'
       }`}
     >
-      {/* Left: IntelliJ Brand + Top Menu Bar + Project Selector */}
-      <div className="flex items-center gap-1.5 min-w-0">
+      {/* Left: IntelliJ Brand + Top Menu Bar */}
+      <div className="flex-1 flex items-center justify-start min-w-max gap-1">
         {/* IntelliJ Style App Icon */}
         <button
           type="button"
@@ -148,7 +165,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
             className="w-5 h-5 object-contain shrink-0"
           />
           <span
-            className={`font-semibold text-xs tracking-wide hidden sm:inline ${
+            className={`font-semibold text-xs tracking-wide hidden sm:inline shrink-0 ${
               isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'
             }`}
           >
@@ -178,115 +195,117 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
           onOpenMcp={onOpenMcp}
           selectedEngine={selectedEngine}
           onSelectEngine={onSelectEngine}
-          className="border-b-0 h-8 px-0"
+          className="border-b-0 h-8 px-0 shrink-0"
         />
-
-        <div className={`h-4 w-px mx-1 shrink-0 ${isDark ? 'bg-[#393b40]' : 'bg-[#d1d5db]'}`} />
-
-        {/* Project Dropdown */}
-        <div className="relative shrink-0">
-          <button
-            onClick={() => setDropdownOpen(!dropdownOpen)}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded border transition text-xs font-medium ${
-              isDark
-                ? 'hover:bg-[#393b40] border-transparent hover:border-[#4e5157] text-[#dfe1e5]'
-                : 'hover:bg-[#dfe1e5] border-transparent hover:border-[#c9ccd6] text-[#1f2328]'
-            }`}
-          >
-            <Folder className="w-3.5 h-3.5 text-[#3574f0]" />
-            <span className="max-w-[120px] truncate">{activeProject?.name ?? 'Select Project'}</span>
-            <ChevronDown className={`w-3 h-3 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`} />
-          </button>
-
-          {dropdownOpen && (
-            <div
-              className={`absolute left-0 mt-1 w-64 border rounded shadow-2xl z-50 py-1 text-xs ${
-                isDark ? 'bg-[#2b2d30] border-[#4e5157] text-[#dfe1e5]' : 'bg-[#ffffff] border-[#d1d5db] text-[#1f2328]'
-              }`}
-            >
-              <div
-                className={`px-3 py-1 text-[11px] font-semibold uppercase tracking-wider ${
-                  isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
-                }`}
-              >
-                Projects
-              </div>
-              <div className="max-h-56 overflow-y-auto">
-                {projects.map((p) => {
-                  const isCur = p.id === activeProject?.id;
-                  return (
-                    <div
-                      key={p.id}
-                      onClick={() => {
-                        onSelectProject(p.id);
-                        setDropdownOpen(false);
-                      }}
-                      className={`flex items-center justify-between px-3 py-1.5 cursor-pointer ${
-                        isCur
-                          ? 'bg-[#3574f0]/20 font-medium ' + (isDark ? 'text-white' : 'text-[#1750eb]')
-                          : isDark
-                            ? 'text-[#dfe1e5] hover:bg-[#393b40]'
-                            : 'text-[#1f2328] hover:bg-[#ebecf0]'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 truncate flex-1">
-                        {isCur ? (
-                          <Check className="w-3 h-3 text-[#3574f0] shrink-0" />
-                        ) : (
-                          <div className="w-3 h-3 shrink-0" />
-                        )}
-                        <span className="truncate">{p.name}</span>
-                      </div>
-                      <div className={`flex items-center gap-1 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`}>
-                        {isCur && (
-                          <button
-                            onClick={handleRename}
-                            className={`p-0.5 ${isDark ? 'hover:text-white' : 'hover:text-black'}`}
-                            title="Rename"
-                          >
-                            <Edit2 className="w-3 h-3" />
-                          </button>
-                        )}
-                        {projects.length > 1 && (
-                          <button
-                            onClick={(e) => handleDelete(e, p.id, p.name)}
-                            className="p-0.5 hover:text-[#e05555]"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className={`border-t mt-1 pt-1 ${isDark ? 'border-[#393b40]' : 'border-[#e5e7eb]'}`}>
-                <button
-                  onClick={handleCreateNew}
-                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-[#3574f0] font-medium ${
-                    isDark ? 'hover:bg-[#393b40]' : 'hover:bg-[#ebecf0]'
-                  }`}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>New Project...</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* Center: IntelliJ Iconic Run Widget */}
-      <div className="flex items-center gap-2 shrink-0">
+      {/* Center: Merged Project & Run Widget */}
+      <div className="flex items-center justify-center gap-2 shrink-0 px-2">
         <div
-          className={`flex items-center border rounded-md pl-2 pr-1 py-0.5 gap-2 ${
+          className={`flex items-center border rounded-md pl-1.5 pr-1 py-0.5 gap-1.5 shadow-xs ${
             isDark ? 'bg-[#1e1f22] border-[#393b40]' : 'bg-[#ffffff] border-[#d1d5db]'
           }`}
         >
+          {/* Project Switcher Dropdown */}
+          <div className="relative" ref={projectDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded transition text-xs font-medium cursor-pointer ${
+                isDark
+                  ? 'hover:bg-[#2b2d30] text-[#dfe1e5]'
+                  : 'hover:bg-[#ebecf0] text-[#1f2328]'
+              }`}
+              title="Switch Project"
+            >
+              <Folder className="w-3.5 h-3.5 text-[#3574f0] shrink-0" />
+              <span className="max-w-[130px] truncate">{activeProject?.name ?? 'Select Project'}</span>
+              <ChevronDown className={`w-3 h-3 shrink-0 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`} />
+            </button>
+
+            {dropdownOpen && (
+              <div
+                className={`absolute left-0 top-full mt-1 w-64 border rounded shadow-2xl z-50 py-1 text-xs ${
+                  isDark ? 'bg-[#2b2d30] border-[#4e5157] text-[#dfe1e5]' : 'bg-[#ffffff] border-[#d1d5db] text-[#1f2328]'
+                }`}
+              >
+                <div
+                  className={`px-3 py-1 text-[11px] font-semibold uppercase tracking-wider ${
+                    isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
+                  }`}
+                >
+                  Projects
+                </div>
+                <div className="max-h-56 overflow-y-auto">
+                  {projects.map((p) => {
+                    const isCur = p.id === activeProject?.id;
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => {
+                          onSelectProject(p.id);
+                          setDropdownOpen(false);
+                        }}
+                        className={`flex items-center justify-between px-3 py-1.5 cursor-pointer ${
+                          isCur
+                            ? 'bg-[#3574f0]/20 font-medium ' + (isDark ? 'text-white' : 'text-[#1750eb]')
+                            : isDark
+                              ? 'text-[#dfe1e5] hover:bg-[#393b40]'
+                              : 'text-[#1f2328] hover:bg-[#ebecf0]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate flex-1">
+                          {isCur ? (
+                            <Check className="w-3 h-3 text-[#3574f0] shrink-0" />
+                          ) : (
+                            <div className="w-3 h-3 shrink-0" />
+                          )}
+                          <span className="truncate">{p.name}</span>
+                        </div>
+                        <div className={`flex items-center gap-1 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`}>
+                          {isCur && (
+                            <button
+                              onClick={handleRename}
+                              className={`p-0.5 ${isDark ? 'hover:text-white' : 'hover:text-black'}`}
+                              title="Rename"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          )}
+                          {projects.length > 1 && (
+                            <button
+                              onClick={(e) => handleDelete(e, p.id, p.name)}
+                              className="p-0.5 hover:text-[#e05555]"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className={`border-t mt-1 pt-1 ${isDark ? 'border-[#393b40]' : 'border-[#e5e7eb]'}`}>
+                  <button
+                    onClick={handleCreateNew}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-[#3574f0] font-medium cursor-pointer ${
+                      isDark ? 'hover:bg-[#393b40]' : 'hover:bg-[#ebecf0]'
+                    }`}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>New Project...</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className={`h-3 w-px ${isDark ? 'bg-[#393b40]' : 'bg-[#d1d5db]'}`} />
+
           {/* Engine Selector Dropdown */}
-          <div className="relative">
+          <div className="relative" ref={engineDropdownRef}>
             <button
               type="button"
               onClick={() => setEngineDropdownOpen(!engineDropdownOpen)}
@@ -350,8 +369,9 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
 
           <div className={`h-3 w-px ${isDark ? 'bg-[#393b40]' : 'bg-[#d1d5db]'}`} />
 
+          {/* Root Entry */}
           <span
-            className={`text-[11px] font-mono truncate max-w-[120px] ${
+            className={`text-[11px] font-mono truncate max-w-[120px] px-1 ${
               isDark ? 'text-[#868a91]' : 'text-[#6c707e]'
             }`}
           >
@@ -360,10 +380,11 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
 
           <div className={`h-3 w-px ${isDark ? 'bg-[#393b40]' : 'bg-[#d1d5db]'}`} />
 
+          {/* Compile / Run Button */}
           <button
             onClick={onCompile}
             disabled={compileStatus === 'compiling'}
-            className={`flex items-center justify-center p-1 rounded-sm transition ${
+            className={`flex items-center justify-center p-1 rounded-sm transition cursor-pointer ${
               compileStatus === 'compiling'
                 ? isDark ? 'text-[#868a91] cursor-not-allowed' : 'text-[#a1a3a8] cursor-not-allowed'
                 : 'text-[#59a869] hover:bg-[#59a869]/20 hover:text-[#499c5a]'
@@ -450,7 +471,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
       </div>
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex-1 flex items-center justify-end min-w-max gap-1.5 shrink-0">
         <button
           onClick={onExportZip}
           className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition ${

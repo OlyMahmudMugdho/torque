@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "torque",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "identifier": "com.torque.editor",
   "build": {
     "frontendDist": "../out",
@@ -12,12 +12,26 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Torque LaTeX Editor",
         "width": 1280,
         "height": 800,
         "resizable": true,
         "fullscreen": false,
+        "visible": false,
         "url": "index.html"
+      },
+      {
+        "label": "splashscreen",
+        "title": "Torque",
+        "width": 640,
+        "height": 360,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "center": true,
+        "alwaysOnTop": true,
+        "url": "splashscreen.html"
       }
     ],
     "security": {

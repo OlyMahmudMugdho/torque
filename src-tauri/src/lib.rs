@@ -2,16 +2,18 @@ pub mod ai;
 pub mod compiler;
 pub mod mcp;
 pub mod package_resolver;
+pub mod splash;
 pub mod storage;
 
 use ai::{tauri_get_ai_config, tauri_save_ai_config};
 use compiler::{tauri_compile_latex, tauri_detect_texlive};
 use mcp::{tauri_get_mcp_info, tauri_set_active_project};
 use package_resolver::tauri_resolve_missing_packages;
+use splash::close_splashscreen;
 use storage::{
   get_torque_dir, save_file, select_directory, tauri_clear_package_cache, tauri_delete_project,
-  tauri_get_package_file, tauri_list_package_files, tauri_list_projects, tauri_load_project,
-  tauri_save_package_file, tauri_save_project,
+  tauri_get_package_file, tauri_import_directory, tauri_list_package_files, tauri_list_projects,
+  tauri_load_project, tauri_save_package_file, tauri_save_project,
 };
 use tauri::Manager;
 
@@ -35,6 +37,7 @@ pub fn run() {
       get_torque_dir,
       save_file,
       select_directory,
+      tauri_import_directory,
       tauri_list_projects,
       tauri_save_project,
       tauri_load_project,
@@ -50,6 +53,7 @@ pub fn run() {
       tauri_set_active_project,
       tauri_get_ai_config,
       tauri_save_ai_config,
+      close_splashscreen,
     ])
     .run(tauri::generate_context!())
     .expect("error while building tauri application");

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useThemeSafe } from '../context/ThemeContext';
+import { useThemeSafe, type EditorTheme } from '../context/ThemeContext';
 import type { LatexEngine } from '../types/workspace';
 import {
   X,
@@ -15,7 +15,6 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  ChevronDown,
   CheckCircle,
   AlertCircle,
 } from 'lucide-react';
@@ -26,6 +25,35 @@ import {
   getDefaultAISettings,
 } from '../ai/aiConfig';
 import type { AIProviderConfig, AISettings, SearchSettings } from '../types/ai';
+import { IntellijSelect, type IntellijSelectOption } from './IntellijSelect';
+
+export const MONACO_THEME_OPTIONS: IntellijSelectOption<EditorTheme>[] = [
+  { value: 'auto', label: 'Match IDE Theme (Default)', description: 'Follow active Torque appearance mode' },
+  { value: 'intellij-dark', label: 'Monaco - IntelliJ Dark', description: 'IntelliJ Darcula syntax palette' },
+  { value: 'intellij-light', label: 'Monaco - IntelliJ Light', description: 'IntelliJ light clean syntax palette' },
+  { value: 'vs-dark', label: 'Monaco - VS Dark', description: 'Classic Visual Studio Dark' },
+  { value: 'vs', label: 'Monaco - VS Light', description: 'Classic Visual Studio Light' },
+  { value: 'hc-black', label: 'Monaco - High Contrast Dark', description: 'Accessibility high-contrast dark' },
+  { value: 'hc-light', label: 'Monaco - High Contrast Light', description: 'Accessibility high-contrast light' },
+];
+
+export const SEARCH_PROVIDER_OPTIONS: IntellijSelectOption<'free' | 'tavily' | 'brave'>[] = [
+  {
+    value: 'free',
+    label: 'Built-in Free (arXiv + Semantic Scholar + DuckDuckGo)',
+    description: 'No API key needed. Public academic & web search.',
+  },
+  {
+    value: 'tavily',
+    label: 'Tavily Search API (Deep LLM Web Search)',
+    description: 'Optimized for LLM research queries.',
+  },
+  {
+    value: 'brave',
+    label: 'Brave Search API',
+    description: 'Independent global search index.',
+  },
+];
 
 export type SettingsCategory = 'appearance' | 'editor' | 'build' | 'ai';
 
@@ -34,6 +62,8 @@ export interface SettingsModalProps {
   onClose: () => void;
   theme?: 'dark' | 'light';
   onThemeChange?: (theme: 'dark' | 'light') => void;
+  editorTheme?: EditorTheme;
+  onEditorThemeChange?: (editorTheme: EditorTheme) => void;
   autoSave?: boolean;
   onAutoSaveChange?: (enabled: boolean) => void;
   selectedEngine?: LatexEngine;
@@ -45,16 +75,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   theme: propTheme,
   onThemeChange,
+  editorTheme: propEditorTheme,
+  onEditorThemeChange,
   autoSave: propAutoSave = true,
   onAutoSaveChange,
   selectedEngine: propEngine = 'pdflatex',
   onEngineChange,
 }) => {
-  const { theme: ctxTheme, setTheme: ctxSetTheme } = useThemeSafe();
+  const {
+    theme: ctxTheme,
+    setTheme: ctxSetTheme,
+    editorTheme: ctxEditorTheme,
+    setEditorTheme: ctxSetEditorTheme,
+  } = useThemeSafe();
   const activeTheme = propTheme ?? ctxTheme;
+  const activeEditorTheme = propEditorTheme ?? ctxEditorTheme;
 
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>('appearance');
   const [stagedTheme, setStagedTheme] = useState<'dark' | 'light'>(activeTheme);
+  const [stagedEditorTheme, setStagedEditorTheme] = useState<EditorTheme>(activeEditorTheme);
   const [stagedAutoSave, setStagedAutoSave] = useState<boolean>(propAutoSave);
   const [stagedEngine, setStagedEngine] = useState<LatexEngine>(propEngine);
 
@@ -73,6 +112,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setStagedTheme(propTheme ?? ctxTheme);
+      setStagedEditorTheme(propEditorTheme ?? ctxEditorTheme);
       setStagedAutoSave(propAutoSave);
       setStagedEngine(propEngine);
       setTestStatus({ loading: false });
@@ -89,7 +129,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           // Graceful fallback to default settings
         });
     }
-  }, [isOpen, propTheme, ctxTheme, propAutoSave, propEngine]);
+  }, [isOpen, propTheme, ctxTheme, propEditorTheme, ctxEditorTheme, propAutoSave, propEngine]);
 
   // Handle keyboard: Escape closes
   useEffect(() => {
@@ -106,13 +146,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isDark = activeTheme === 'dark';
+  const isDark = stagedTheme === 'dark';
 
   const applyChanges = () => {
     if (onThemeChange) {
       onThemeChange(stagedTheme);
     } else {
       ctxSetTheme(stagedTheme);
+    }
+    if (onEditorThemeChange) {
+      onEditorThemeChange(stagedEditorTheme);
+    } else {
+      ctxSetEditorTheme(stagedEditorTheme);
     }
     onAutoSaveChange?.(stagedAutoSave);
     onEngineChange?.(stagedEngine);
@@ -176,7 +221,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleDeleteProvider = (idToDelete: string) => {
-    if (stagedAiSettings.providers.length <= 1) return;
     const updated = stagedAiSettings.providers.filter((p) => p.id !== idToDelete);
     const newActive =
       stagedAiSettings.activeProviderId === idToDelete
@@ -236,11 +280,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none"
     >
       <div
-        className={`w-[720px] max-w-[95vw] h-[540px] max-h-[90vh] rounded-lg shadow-2xl border flex flex-col overflow-hidden font-sans ${
+        className={`w-[720px] max-w-[95vw] h-[520px] max-h-[85vh] rounded-lg shadow-2xl border flex flex-col overflow-hidden font-sans ${
           isDark
             ? 'bg-[#2b2d30] border-[#323232] text-[#dfe1e5]'
             : 'bg-[#ffffff] border-[#d1d5db] text-[#1f2328]'
         }`}
+        style={{ colorScheme: isDark ? 'dark' : 'light' }}
       >
         {/* IntelliJ Header */}
         <div
@@ -332,7 +377,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           className="accent-[#3574f0]"
                         />
                         <div>
-                          <div className="text-xs font-semibold">Darcula (Dark)</div>
+                          <div className="text-xs font-semibold">Dark</div>
                           <div className="text-[11px] opacity-60">
                             Dark background with high readability and IntelliJ Darcula syntax
                           </div>
@@ -362,7 +407,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           className="accent-[#3574f0]"
                         />
                         <div>
-                          <div className="text-xs font-semibold">IntelliJ Light</div>
+                          <div className="text-xs font-semibold">Light</div>
                           <div className="text-[11px] opacity-60">
                             Clean, high-visibility light theme styled after JetBrains New UI
                           </div>
@@ -371,6 +416,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {stagedTheme === 'light' && <Check className="w-4 h-4 text-[#3574f0]" />}
                     </label>
                   </div>
+                </div>
+
+                <div className="flex flex-col gap-2.5">
+                  <label className="text-xs font-medium">Monaco Editor Theme</label>
+                  <p className="text-[11px] opacity-60">
+                    Syntax highlighting and color scheme for the LaTeX code editor.
+                  </p>
+                  <IntellijSelect
+                    testId="editor-theme-select"
+                    ariaLabel="Monaco Editor Theme"
+                    value={stagedEditorTheme}
+                    onChange={(theme) => setStagedEditorTheme(theme)}
+                    options={MONACO_THEME_OPTIONS}
+                    isDark={isDark}
+                  />
                 </div>
               </div>
             )}
@@ -513,55 +573,75 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </button>
                   </div>
 
-                  <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
-                    {stagedAiSettings.providers.map((p) => {
-                      const isEditing = p.id === currentProvider?.id;
-                      const isActive = p.id === stagedAiSettings.activeProviderId;
-                      return (
-                        <div
-                          key={p.id}
-                          onClick={() => {
-                            setSelectedProviderId(p.id);
-                            setTestStatus({ loading: false });
-                          }}
-                          className={`flex items-center justify-between px-3 py-2 rounded border cursor-pointer transition text-xs ${
-                            isEditing
-                              ? isDark
-                                ? 'border-[#3574f0] bg-[#2e374d]'
-                                : 'border-[#3574f0] bg-[#f0f4ff]'
-                              : isDark
-                                ? 'border-[#393b40] bg-[#1e1f22] hover:border-[#4e5157]'
-                                : 'border-[#d1d5db] bg-[#f7f8fa] hover:border-[#9ca3af]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <input
-                              type="radio"
-                              name="active-provider-radio"
-                              aria-label={`Set ${p.name} as active`}
-                              checked={isActive}
-                              onChange={() => {
-                                setStagedAiSettings((prev) => ({
-                                  ...prev,
-                                  activeProviderId: p.id,
-                                }));
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="accent-[#3574f0]"
-                            />
-                            <span className="font-semibold truncate">{p.name}</span>
-                            {isActive && (
-                              <span className="bg-[#3574f0] text-white text-[10px] px-1.5 py-0.5 rounded font-medium">
-                                Active
-                              </span>
-                            )}
-                          </div>
+                  {stagedAiSettings.providers.length === 0 ? (
+                    <div
+                      className={`p-6 rounded border border-dashed flex flex-col items-center justify-center text-center gap-2 ${
+                        isDark ? 'border-[#393b40] bg-[#1e1f22]/50 text-[#868a91]' : 'border-[#d1d5db] bg-[#f7f8fa] text-[#6c707e]'
+                      }`}
+                    >
+                      <Sparkles className="w-5 h-5 text-[#3574f0] opacity-80" />
+                      <span className="text-xs font-semibold">No AI providers configured</span>
+                      <span className="text-[11px] opacity-75 max-w-sm">
+                        Add an OpenAI-compatible API endpoint (such as OpenAI, Ollama, LM Studio, or vLLM) to enable AI LaTeX completions.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleAddProvider}
+                        className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-[#3574f0] text-white hover:bg-[#3068d9] transition cursor-pointer shadow-xs"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Provider</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
+                      {stagedAiSettings.providers.map((p) => {
+                        const isEditing = p.id === currentProvider?.id;
+                        const isActive = p.id === stagedAiSettings.activeProviderId;
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => {
+                              setSelectedProviderId(p.id);
+                              setTestStatus({ loading: false });
+                            }}
+                            className={`flex items-center justify-between px-3 py-2 rounded border cursor-pointer transition text-xs ${
+                              isEditing
+                                ? isDark
+                                  ? 'border-[#3574f0] bg-[#2e374d]'
+                                  : 'border-[#3574f0] bg-[#f0f4ff]'
+                                : isDark
+                                  ? 'border-[#393b40] bg-[#1e1f22] hover:border-[#4e5157]'
+                                  : 'border-[#d1d5db] bg-[#f7f8fa] hover:border-[#9ca3af]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <input
+                                type="radio"
+                                name="active-provider-radio"
+                                aria-label={`Set ${p.name} as active`}
+                                checked={isActive}
+                                onChange={() => {
+                                  setStagedAiSettings((prev) => ({
+                                    ...prev,
+                                    activeProviderId: p.id,
+                                  }));
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="accent-[#3574f0]"
+                              />
+                              <span className="font-semibold truncate">{p.name}</span>
+                              {isActive && (
+                                <span className="bg-[#3574f0] text-white text-[10px] px-1.5 py-0.5 rounded font-medium">
+                                  Active
+                                </span>
+                              )}
+                            </div>
 
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] opacity-60 truncate max-w-[140px]">
-                              {p.selectedModel || 'No model selected'}
-                            </span>
-                            {stagedAiSettings.providers.length > 1 && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] opacity-60 truncate max-w-[140px]">
+                                {p.selectedModel || 'No model selected'}
+                              </span>
                               <button
                                 type="button"
                                 aria-label={`Delete provider ${p.name}`}
@@ -573,12 +653,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
-                            )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 {/* Selected Provider Form Fields */}
@@ -711,53 +791,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Select from detected models or enter a custom model below:
                       </span>
                       {currentProvider.availableModels.length > 0 && (
-                        <div className="relative">
-                          <select
-                            id="ai-model-select"
-                            aria-label="Available Models"
-                            value={
-                              currentProvider.availableModels.includes(currentProvider.selectedModel)
-                                ? currentProvider.selectedModel
-                                : ''
-                            }
-                            onChange={(e) => updateCurrentProvider({ selectedModel: e.target.value })}
-                            className={`w-full appearance-none px-2.5 py-1.5 pr-8 rounded text-xs border outline-none transition focus:border-[#3574f0] cursor-pointer ${
-                              isDark
-                                ? 'bg-[#2b2d30] border-[#393b40] text-[#dfe1e5]'
-                                : 'bg-white border-[#d1d5db] text-[#1f2328]'
-                            }`}
-                          >
-                            <option
-                              value=""
-                              disabled
-                              className={
-                                isDark
-                                  ? 'bg-[#2b2d30] text-[#dfe1e5]'
-                                  : 'bg-white text-[#1f2328]'
-                              }
-                            >
-                              -- Select from detected models --
-                            </option>
-                            {currentProvider.availableModels.map((m) => (
-                              <option
-                                key={m}
-                                value={m}
-                                className={
-                                  isDark
-                                    ? 'bg-[#2b2d30] text-[#dfe1e5]'
-                                    : 'bg-white text-[#1f2328]'
-                                }
-                              >
-                                {m}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none opacity-60 ${
-                              isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'
-                            }`}
-                          />
-                        </div>
+                        <IntellijSelect
+                          id="ai-model-select"
+                          ariaLabel="Available Models"
+                          value={
+                            currentProvider.availableModels.includes(currentProvider.selectedModel)
+                              ? currentProvider.selectedModel
+                              : ''
+                          }
+                          onChange={(model) => updateCurrentProvider({ selectedModel: model })}
+                          options={[
+                            { value: '', label: '-- Select from detected models --' },
+                            ...currentProvider.availableModels.map((m) => ({ value: m, label: m })),
+                          ]}
+                          isDark={isDark}
+                        />
                       )}
                       <input
                         id="ai-model-input"
@@ -840,59 +888,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     >
                       Search Provider
                     </label>
-                    <div className="relative">
-                      <select
-                        id="search-provider-select"
-                        aria-label="Search Provider"
-                        value={stagedAiSettings.search?.provider || 'free'}
-                        onChange={(e) =>
-                          updateSearchSettings({
-                            provider: e.target.value as 'free' | 'tavily' | 'brave',
-                          })
-                        }
-                        className={`w-full appearance-none px-2.5 py-1.5 pr-8 rounded text-xs border outline-none transition focus:border-[#3574f0] cursor-pointer ${
-                          isDark
-                            ? 'bg-[#2b2d30] border-[#393b40] text-[#dfe1e5]'
-                            : 'bg-white border-[#d1d5db] text-[#1f2328]'
-                        }`}
-                      >
-                        <option
-                          value="free"
-                          className={
-                            isDark
-                              ? 'bg-[#2b2d30] text-[#dfe1e5]'
-                              : 'bg-white text-[#1f2328]'
-                          }
-                        >
-                          Built-in Free (arXiv + Semantic Scholar + DuckDuckGo)
-                        </option>
-                        <option
-                          value="tavily"
-                          className={
-                            isDark
-                              ? 'bg-[#2b2d30] text-[#dfe1e5]'
-                              : 'bg-white text-[#1f2328]'
-                          }
-                        >
-                          Tavily Search API (Deep LLM Web Search)
-                        </option>
-                        <option
-                          value="brave"
-                          className={
-                            isDark
-                              ? 'bg-[#2b2d30] text-[#dfe1e5]'
-                              : 'bg-white text-[#1f2328]'
-                          }
-                        >
-                          Brave Search API
-                        </option>
-                      </select>
-                      <ChevronDown
-                        className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none opacity-60 ${
-                          isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'
-                        }`}
-                      />
-                    </div>
+                    <IntellijSelect<'free' | 'tavily' | 'brave'>
+                      id="search-provider-select"
+                      ariaLabel="Search Provider"
+                      value={(stagedAiSettings.search?.provider || 'free') as 'free' | 'tavily' | 'brave'}
+                      onChange={(provider) =>
+                        updateSearchSettings({
+                          provider,
+                        })
+                      }
+                      options={SEARCH_PROVIDER_OPTIONS}
+                      isDark={isDark}
+                    />
                   </div>
 
                   {/* API Key (shown only for Tavily or Brave) */}

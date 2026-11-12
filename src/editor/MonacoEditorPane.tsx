@@ -1,4 +1,4 @@
-import React, { useEffect, useImperativeHandle, useRef } from 'react';
+import React, { useEffect, useImperativeHandle, useRef, useMemo } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
 import type { ProjectFile, Diagnostic } from '../types/workspace';
 import { useThemeSafe } from '../context/ThemeContext';
@@ -39,10 +39,17 @@ export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEdito
     },
     ref
   ) => {
-  const { theme } = useThemeSafe();
+  const { theme, editorTheme } = useThemeSafe();
   const isDark = theme === 'dark';
   const monaco = useMonaco();
   const editorRef = useRef<any>(null);
+
+  const effectiveEditorTheme = useMemo(() => {
+    if (editorTheme && editorTheme !== 'auto') {
+      return editorTheme;
+    }
+    return theme === 'dark' ? 'intellij-dark' : 'intellij-light';
+  }, [theme, editorTheme]);
 
   useEffect(() => {
     const handleUnhandledRejection = (e: PromiseRejectionEvent) => {
@@ -69,9 +76,9 @@ export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEdito
   useEffect(() => {
     if (monaco) {
       registerLatexLanguage(monaco);
-      monaco.editor.setTheme(theme === 'dark' ? 'intellij-dark' : 'intellij-light');
+      monaco.editor.setTheme(effectiveEditorTheme);
     }
-  }, [monaco, theme]);
+  }, [monaco, effectiveEditorTheme]);
 
   const activeFile = files.find((f) => f.path === activeFilePath);
   const isBinary = activeFile?.isBinary ?? false;
@@ -263,7 +270,8 @@ export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEdito
             path={activeFilePath}
             height="100%"
             language={activeFilePath.endsWith('.tex') ? 'latex' : 'plaintext'}
-            theme={theme === 'dark' ? 'intellij-dark' : 'intellij-light'}
+            theme={effectiveEditorTheme}
+            beforeMount={(m) => registerLatexLanguage(m)}
             value={textContent}
             defaultValue={textContent}
             onChange={(val) => onContentChange(val ?? '')}

@@ -3,10 +3,11 @@ import { render, screen, act } from '@testing-library/react';
 import { ThemeProvider, useTheme } from '../ThemeContext';
 
 const TestComponent = () => {
-  const { theme, toggleTheme, setTheme } = useTheme();
+  const { theme, toggleTheme, setTheme, editorTheme, setEditorTheme } = useTheme();
   return (
     <div>
       <span data-testid="current-theme">{theme}</span>
+      <span data-testid="current-editor-theme">{editorTheme}</span>
       <button data-testid="toggle-btn" onClick={toggleTheme}>
         Toggle
       </button>
@@ -15,6 +16,9 @@ const TestComponent = () => {
       </button>
       <button data-testid="set-light-btn" onClick={() => setTheme('light')}>
         Set Light
+      </button>
+      <button data-testid="set-editor-theme-btn" onClick={() => setEditorTheme('vs-dark')}>
+        Set VS Dark
       </button>
     </div>
   );
@@ -134,5 +138,36 @@ describe('ThemeContext & ThemeProvider', () => {
     expect(screen.getByTestId('current-theme').textContent).toBe('dark');
     expect(localStorage.getItem('torque_theme')).toBe('dark');
     expect(document.documentElement.classList.contains('dark')).toBe(true);
+  });
+
+  it('manages editorTheme and persists to localStorage', () => {
+    render(
+      <ThemeProvider>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    // Default editorTheme is 'auto'
+    expect(screen.getByTestId('current-editor-theme').textContent).toBe('auto');
+
+    // Update editorTheme
+    act(() => {
+      screen.getByTestId('set-editor-theme-btn').click();
+    });
+
+    expect(screen.getByTestId('current-editor-theme').textContent).toBe('vs-dark');
+    expect(localStorage.getItem('torque_editor_theme')).toBe('vs-dark');
+  });
+
+  it('initializes editorTheme from localStorage if present', () => {
+    localStorage.setItem('torque_editor_theme', 'intellij-light');
+
+    render(
+      <ThemeProvider>
+        <TestComponent />
+      </ThemeProvider>
+    );
+
+    expect(screen.getByTestId('current-editor-theme').textContent).toBe('intellij-light');
   });
 });

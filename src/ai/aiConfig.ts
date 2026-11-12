@@ -27,25 +27,8 @@ export function normalizeBaseUrl(url: string): string {
 
 export function getDefaultAISettings(): AISettings {
   return {
-    providers: [
-      {
-        id: 'openai-default',
-        name: 'OpenAI',
-        baseUrl: 'https://api.openai.com/v1',
-        apiKey: '',
-        selectedModel: 'gpt-4o',
-        availableModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-      },
-      {
-        id: 'ollama-default',
-        name: 'Ollama Local',
-        baseUrl: 'http://localhost:11434/v1',
-        apiKey: '',
-        selectedModel: 'llama3:latest',
-        availableModels: ['llama3:latest'],
-      },
-    ],
-    activeProviderId: 'openai-default',
+    providers: [],
+    activeProviderId: null,
   };
 }
 

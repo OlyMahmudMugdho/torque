@@ -473,6 +473,173 @@ pub async fn select_directory(
     .map_err(|e| format!("Task error: {}", e))?
 }
 
+fn walk_import_dir(
+    base: &Path,
+    current: &Path,
+    project_id: &str,
+    files: &mut Vec<ProjectFile>,
+    now: u64,
+) -> Result<(), String> {
+    let entries = std::fs::read_dir(current)
+        .map_err(|e| format!("Failed to read directory {}: {}", current.display(), e))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+        let path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().to_string();
+
+        if file_name.starts_with('.') || file_name == "node_modules" || file_name == "target" || file_name == "dist" {
+            continue;
+        }
+
+        if path.is_dir() {
+            walk_import_dir(base, &path, project_id, files, now)?;
+        } else if path.is_file() {
+            let rel_path = path
+                .strip_prefix(base)
+                .map_err(|e| e.to_string())?
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            if matches!(ext.as_str(), "aux" | "log" | "out" | "fls" | "fdb_latexmk" | "synctex.gz" | "toc" | "nav" | "snm" | "vrb" | "bbl" | "blg") {
+                continue;
+            }
+
+            let is_binary = matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "pdf" | "eps" | "svg" | "ttf" | "otf" | "woff" | "woff2");
+            let content_value = if is_binary {
+                let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+                serde_json::Value::String(base64_utils::encode(&bytes))
+            } else {
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                serde_json::Value::String(text)
+            };
+
+            files.push(ProjectFile {
+                project_id: project_id.to_string(),
+                path: rel_path,
+                content: content_value,
+                is_binary,
+                updated_at: now,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Open a native directory picker dialog (or use provided path) and import the directory as a Torque project.
+#[tauri::command]
+pub async fn tauri_import_directory(
+    app: tauri::AppHandle,
+    path: Option<String>,
+) -> Result<Option<(Project, Vec<ProjectFile>)>, String> {
+    let chosen = match path {
+        Some(p) => Some(p),
+        None => {
+            tauri::async_runtime::spawn_blocking(move || {
+                use tauri_plugin_dialog::DialogExt;
+                let builder = app.dialog().file();
+                let folder = builder.blocking_pick_folder();
+                folder.and_then(|f| f.into_path().ok()).map(|p| p.to_string_lossy().to_string())
+            })
+            .await
+            .map_err(|e| format!("Task error: {}", e))?
+        }
+    };
+
+    let folder_path_str = match chosen {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    let folder_path = PathBuf::from(&folder_path_str);
+    if !folder_path.exists() || !folder_path.is_dir() {
+        return Err(format!("Path does not exist or is not a directory: {}", folder_path_str));
+    }
+
+    let raw_name = folder_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Imported Project");
+    let project_name = if raw_name.trim().is_empty() {
+        "Imported Project".to_string()
+    } else {
+        raw_name.trim().to_string()
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    let sanitized_id = project_name
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect::<String>();
+    let clean_slug = sanitized_id.trim_matches('-');
+    let project_id = format!("{}-{}", if clean_slug.is_empty() { "project" } else { clean_slug }, now);
+
+    let mut files = Vec::new();
+    walk_import_dir(&folder_path, &folder_path, &project_id, &mut files, now)?;
+
+    let mut root_entry = "main.tex".to_string();
+    let mut found_main = false;
+    let mut found_doc_class = false;
+
+    for f in &files {
+        if f.path == "main.tex" {
+            root_entry = "main.tex".to_string();
+            found_main = true;
+            break;
+        }
+    }
+
+    if !found_main {
+        for f in &files {
+            if f.path.ends_with(".tex") {
+                if let serde_json::Value::String(ref s) = f.content {
+                    if s.contains("\\documentclass") {
+                        root_entry = f.path.clone();
+                        found_doc_class = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if !found_main && !found_doc_class {
+        if let Some(first_tex) = files.iter().find(|f| f.path.ends_with(".tex")) {
+            root_entry = first_tex.path.clone();
+        }
+    }
+
+    if files.is_empty() || !files.iter().any(|f| f.path.ends_with(".tex")) {
+        files.push(ProjectFile {
+            project_id: project_id.clone(),
+            path: "main.tex".to_string(),
+            content: serde_json::Value::String(
+                format!("\\documentclass{{article}}\n\\title{{{}}}\n\\begin{{document}}\n\\maketitle\n\n\\end{{document}}\n", project_name)
+            ),
+            is_binary: false,
+            updated_at: now,
+        });
+        root_entry = "main.tex".to_string();
+    }
+
+    let project = Project {
+        id: project_id,
+        name: project_name,
+        root_entry,
+        created_at: now,
+        updated_at: now,
+    };
+
+    tauri_save_project(project.clone(), files.clone())?;
+    Ok(Some((project, files)))
+}
+
 #[tauri::command]
 pub fn tauri_get_package_file(filename: String) -> Result<Option<String>, String> {
     let sanitized = normalize_path(&filename)?;

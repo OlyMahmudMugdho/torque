@@ -33,7 +33,7 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
   const isDark = theme === 'dark';
   const containerRef = useRef<HTMLDivElement>(null);
   const [numPages, setNumPages] = useState<number>(0);
-  const [scale, setScale] = useState<number>(1.1);
+  const [scale, setScale] = useState<number>(1.0);
   const [renderError, setRenderError] = useState<boolean>(false);
   const [pages, setPages] = useState<Map<number, any>>(new Map());
   const [pdfDoc, setPdfDoc] = useState<any>(null);

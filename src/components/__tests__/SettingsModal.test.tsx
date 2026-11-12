@@ -67,7 +67,7 @@ describe('SettingsModal', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Appearance/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Editor/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Editor$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Build & Execution/i })).toBeInTheDocument();
   });
 
@@ -75,11 +75,11 @@ describe('SettingsModal', () => {
     renderSettingsModal();
 
     // Defaults to Appearance category
-    expect(screen.getByText('Darcula (Dark)')).toBeInTheDocument();
-    expect(screen.getByText('IntelliJ Light')).toBeInTheDocument();
+    expect(screen.getByText('Dark')).toBeInTheDocument();
+    expect(screen.getByText('Light')).toBeInTheDocument();
 
     // Switch to Editor category
-    fireEvent.click(screen.getByRole('button', { name: /Editor/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Editor$/i }));
     expect(screen.getByTestId('autosave-checkbox')).toBeInTheDocument();
     expect(screen.getByText(/Enable Auto-save/i)).toBeInTheDocument();
 
@@ -96,7 +96,7 @@ describe('SettingsModal', () => {
     renderSettingsModal({ theme: 'dark', onThemeChange, onClose });
 
     // Select light theme
-    const lightRadio = screen.getByLabelText(/IntelliJ Light/i);
+    const lightRadio = screen.getByRole('radio', { name: /Light/i });
     fireEvent.click(lightRadio);
 
     // Click Apply
@@ -114,13 +114,32 @@ describe('SettingsModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('allows changing monaco editor theme and calls onEditorThemeChange on OK', () => {
+    const onEditorThemeChange = vi.fn();
+    const onClose = vi.fn();
+    renderSettingsModal({ onEditorThemeChange, onClose });
+
+    const editorThemeSelect = screen.getByTestId('editor-theme-select') as HTMLSelectElement;
+    expect(editorThemeSelect).toBeInTheDocument();
+    expect(editorThemeSelect.value).toBe('auto');
+
+    fireEvent.change(editorThemeSelect, { target: { value: 'vs-dark' } });
+    expect(editorThemeSelect.value).toBe('vs-dark');
+
+    const okBtn = screen.getByRole('button', { name: 'OK' });
+    fireEvent.click(okBtn);
+
+    expect(onEditorThemeChange).toHaveBeenCalledWith('vs-dark');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('allows toggling autosave and calls onAutoSaveChange on Apply or OK', () => {
     const onAutoSaveChange = vi.fn();
     const onClose = vi.fn();
     renderSettingsModal({ autoSave: true, onAutoSaveChange, onClose });
 
     // Switch to Editor category
-    fireEvent.click(screen.getByRole('button', { name: /Editor/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Editor$/i }));
 
     const checkbox = screen.getByTestId('autosave-checkbox');
     expect(checkbox).toBeChecked();
@@ -162,7 +181,7 @@ describe('SettingsModal', () => {
     renderSettingsModal({ theme: 'dark', autoSave: true, onThemeChange, onAutoSaveChange, onClose });
 
     // Switch to Editor category and toggle
-    fireEvent.click(screen.getByRole('button', { name: /Editor/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Editor$/i }));
     const checkbox = screen.getByTestId('autosave-checkbox');
     fireEvent.click(checkbox);
 

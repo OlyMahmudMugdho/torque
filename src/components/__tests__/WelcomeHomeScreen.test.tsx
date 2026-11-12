@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { WelcomeHomeScreen, formatLastModified } from '../WelcomeHomeScreen';
 import { ThemeProvider, THEME_STORAGE_KEY } from '../../context/ThemeContext';
+import { APP_VERSION } from '../../version';
 import type { Project } from '../../types/workspace';
 
 const mockProjects: Project[] = [
@@ -58,11 +59,14 @@ describe('WelcomeHomeScreen', () => {
   };
 
   describe('Title Bar & Sidebar Branding', () => {
-    it('renders title bar with app title and no window control buttons', () => {
+    it('renders clean window container with sidebar branding and no redundant title bar', () => {
       renderComponent();
 
-      // Window title
-      expect(screen.getByText('Welcome to Torque', { selector: 'span' })).toBeInTheDocument();
+      // Sidebar branding title is present
+      expect(screen.getByText('Torque', { selector: 'span' })).toBeInTheDocument();
+
+      // Redundant inner title bar is removed
+      expect(screen.queryByText('Welcome to Torque', { selector: 'span' })).not.toBeInTheDocument();
 
       // No window control buttons (minimize/maximize/close removed)
       expect(screen.queryByRole('button', { name: 'Minimize' })).not.toBeInTheDocument();
@@ -86,15 +90,15 @@ describe('WelcomeHomeScreen', () => {
       expect(windowContainer.className).toContain('border-0');
     });
 
-    it('renders left sidebar branding with app name, version, and subtitle', () => {
+    it('renders left sidebar branding with app name and version', () => {
       renderComponent();
 
       // Sidebar branding
       expect(screen.getByText('Torque')).toBeInTheDocument();
-      expect(screen.getByText('0.1.0')).toBeInTheDocument();
+      expect(screen.getByText(APP_VERSION)).toBeInTheDocument();
       expect(
-        screen.getByText('An open-source IDE inspired by IntelliJ IDEA')
-      ).toBeInTheDocument();
+        screen.queryByText('An open-source IDE inspired by IntelliJ IDEA')
+      ).not.toBeInTheDocument();
       expect(screen.getByText('TQ')).toBeInTheDocument();
     });
 
@@ -172,27 +176,37 @@ describe('WelcomeHomeScreen', () => {
       expect(clickSpy).toHaveBeenCalled();
     });
 
-    it('clicking "Clone Repository" card prompts for Git URL and creates project', async () => {
-      const promptSpy = vi
-        .spyOn(window, 'prompt')
-        .mockReturnValue('https://github.com/example/quantum-mechanics.git');
+    it('clicking "Clone Repository" card opens Clone modal and creates project', async () => {
       const { props } = renderComponent({ projects: [] });
 
       const cloneCard = screen.getByRole('button', { name: 'Clone Repository' });
       fireEvent.click(cloneCard);
 
-      expect(promptSpy).toHaveBeenCalledWith('Enter Git repository URL:');
-      expect(props.onCreateProject).toHaveBeenCalledWith('quantum-mechanics');
+      expect(screen.getByRole('dialog', { name: 'Get from Version Control' })).toBeInTheDocument();
+
+      const urlInput = screen.getByLabelText('URL');
+      fireEvent.change(urlInput, { target: { value: 'https://github.com/example/quantum-mechanics.git' } });
+
+      const cloneSubmitBtn = screen.getByRole('button', { name: 'Clone' });
+      fireEvent.click(cloneSubmitBtn);
+
+      await waitFor(() => {
+        expect(props.onCreateProject).toHaveBeenCalledWith('quantum-mechanics');
+      });
+      expect(screen.queryByRole('dialog', { name: 'Get from Version Control' })).not.toBeInTheDocument();
     });
 
-    it('cancelling Git URL prompt does not trigger onCreateProject', async () => {
-      vi.spyOn(window, 'prompt').mockReturnValue(null);
+    it('cancelling Clone modal does not trigger onCreateProject', async () => {
       const { props } = renderComponent({ projects: [] });
 
       const cloneCard = screen.getByRole('button', { name: 'Clone Repository' });
       fireEvent.click(cloneCard);
 
+      expect(screen.getByRole('dialog', { name: 'Get from Version Control' })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
       expect(props.onCreateProject).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog', { name: 'Get from Version Control' })).not.toBeInTheDocument();
     });
 
     it('clicking "Remote Development" card alerts user about coming soon', () => {
@@ -286,8 +300,8 @@ describe('WelcomeHomeScreen', () => {
       expect(screen.getByText('Algebraic Geometry Notes')).toBeInTheDocument();
       expect(screen.getByText('notes.tex')).toBeInTheDocument();
 
-      // Current badge for active project
-      expect(screen.getByText('Current')).toBeInTheDocument();
+      // No project should be marked as Current or pre-selected by default on Welcome screen
+      expect(screen.queryByText('Current')).not.toBeInTheDocument();
     });
 
     it('filters projects by search query matching name or rootEntry', () => {
@@ -383,18 +397,18 @@ describe('WelcomeHomeScreen', () => {
       fireEvent.click(customizeNavBtn);
 
       expect(screen.getByRole('heading', { name: 'Customize' })).toBeInTheDocument();
-      expect(screen.getByText('IntelliJ Dark')).toBeInTheDocument();
-      expect(screen.getByText('IntelliJ Light')).toBeInTheDocument();
+      expect(screen.getByText('Dark')).toBeInTheDocument();
+      expect(screen.getByText('Light')).toBeInTheDocument();
 
-      // Click IntelliJ Light
-      const lightOption = screen.getByText('IntelliJ Light');
+      // Click Light
+      const lightOption = screen.getByText('Light');
       fireEvent.click(lightOption);
 
       expect(document.documentElement.classList.contains('light')).toBe(true);
       expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
 
-      // Click IntelliJ Dark
-      const darkOption = screen.getByText('IntelliJ Dark');
+      // Click Dark
+      const darkOption = screen.getByText('Dark');
       fireEvent.click(darkOption);
 
       expect(document.documentElement.classList.contains('dark')).toBe(true);
@@ -410,6 +424,20 @@ describe('WelcomeHomeScreen', () => {
       fireEvent.click(largeFontBtn);
 
       expect(largeFontBtn.className).toContain('border-[#3574f0]');
+    });
+
+    it('allows selecting monaco editor theme in Customize tab', () => {
+      renderComponent();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Customize' }));
+
+      const editorThemeSelect = screen.getByTestId('welcome-editor-theme-select') as HTMLSelectElement;
+      expect(editorThemeSelect).toBeInTheDocument();
+      expect(editorThemeSelect.value).toBe('auto');
+
+      fireEvent.change(editorThemeSelect, { target: { value: 'vs-dark' } });
+      expect(editorThemeSelect.value).toBe('vs-dark');
+      expect(localStorage.getItem('torque_editor_theme')).toBe('vs-dark');
     });
 
     it('navigates to Customize tab when bottom Settings button is clicked', () => {

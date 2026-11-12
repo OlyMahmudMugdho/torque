@@ -29,26 +29,27 @@ describe('AI Config Subsystem', () => {
   });
 
   describe('getDefaultAISettings', () => {
-    it('returns default AI settings with at least one provider and activeProviderId', () => {
+    it('returns clean default AI settings with empty providers array and null activeProviderId', () => {
       const defaults = getDefaultAISettings();
       expect(defaults).toBeDefined();
       expect(Array.isArray(defaults.providers)).toBe(true);
-      expect(defaults.providers.length).toBeGreaterThan(0);
-      expect(defaults.activeProviderId).toBeDefined();
-
-      const active = defaults.providers.find((p) => p.id === defaults.activeProviderId);
-      expect(active).toBeDefined();
-      expect(active?.baseUrl).toBeTruthy();
-      expect(active?.selectedModel).toBeTruthy();
-      expect(Array.isArray(active?.availableModels)).toBe(true);
+      expect(defaults.providers.length).toBe(0);
+      expect(defaults.activeProviderId).toBeNull();
     });
 
     it('returns a fresh clone each time so modifications do not leak', () => {
       const defaults1 = getDefaultAISettings();
       const defaults2 = getDefaultAISettings();
       expect(defaults1).not.toBe(defaults2);
-      defaults1.providers[0].name = 'Modified';
-      expect(defaults2.providers[0].name).not.toBe('Modified');
+      defaults1.providers.push({
+        id: 'test',
+        name: 'Test',
+        baseUrl: 'http://localhost:11434/v1',
+        apiKey: '',
+        selectedModel: '',
+        availableModels: [],
+      });
+      expect(defaults2.providers.length).toBe(0);
     });
   });
 

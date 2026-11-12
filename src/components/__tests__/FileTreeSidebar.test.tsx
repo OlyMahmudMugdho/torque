@@ -81,18 +81,20 @@ describe('FileTreeSidebar (IntelliJ project tree)', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(screen.getByRole('alert')).toHaveTextContent(/"\.\."/);
     fireEvent.change(input, { target: { value: 'a/b/c.tex' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
+    // Click Create File button instead of Enter
+    fireEvent.click(screen.getByRole('button', { name: 'Create File' }));
     await waitFor(() => expect(p.onCreateFile).toHaveBeenCalledWith('a/b/c.tex'));
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('creates a directory in the context-menu target folder; Esc cancels', async () => {
+  it('creates a directory in the context-menu target folder; Cancel button cancels', async () => {
     const p = setup();
     fireEvent.contextMenu(screen.getByText('chapters'));
     fireEvent.click(within(screen.getByTestId('tree-context-menu')).getByText('New'));
     fireEvent.click(screen.getByText('Directory'));
     expect(screen.getByRole('dialog', { name: 'New Directory' })).toBeInTheDocument();
-    fireEvent.keyDown(screen.getByLabelText('Directory name'), { key: 'Escape' });
+    // Click Cancel button
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).toBeNull();
 
     fireEvent.contextMenu(screen.getByText('chapters'));
@@ -100,7 +102,7 @@ describe('FileTreeSidebar (IntelliJ project tree)', () => {
     fireEvent.click(screen.getByText('Directory'));
     const input = screen.getByLabelText('Directory name');
     fireEvent.change(input, { target: { value: 'tables' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Folder' }));
     await waitFor(() => expect(p.onCreateFolder).toHaveBeenCalledWith('chapters/tables'));
   });
 

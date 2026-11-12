@@ -1,4 +1,5 @@
 import { normalizeFilePath } from '../storage/pathUtils';
+export type { AcademicSearchResult, WebSearchResult } from '../types/ai';
 
 export interface OpenAIFunctionParameterProperty {
   type: string;
@@ -122,6 +123,53 @@ export const WORKSPACE_TOOLS_SCHEMA: OpenAIToolDefinition[] = [
         type: 'object',
         properties: {},
         required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'torque_search_academic',
+      description: 'Search academic papers on arXiv and Semantic Scholar to find citations, literature, and BibTeX entries.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The search query, topic, author, or research question.',
+          },
+          source: {
+            type: 'string',
+            enum: ['all', 'arxiv', 'semanticscholar'],
+            description: 'Academic source to query (all, arxiv, or semanticscholar). Defaults to all.',
+          },
+          maxResults: {
+            type: 'number',
+            description: 'Maximum number of paper results to return (default: 5, max: 10).',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'torque_search_web',
+      description: 'Search the web for LaTeX documentation, package usage, coding questions, or real-time information.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The web search query.',
+          },
+          maxResults: {
+            type: 'number',
+            description: 'Maximum number of web search results to return (default: 5).',
+          },
+        },
+        required: ['query'],
       },
     },
   },

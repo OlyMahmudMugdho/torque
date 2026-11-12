@@ -123,7 +123,7 @@ fn test_jsonrpc_tools_list() {
 
     assert_eq!(resp["id"], "list-1");
     let tools = resp["result"]["tools"].as_array().expect("Tools must be an array");
-    assert_eq!(tools.len(), 8);
+    assert_eq!(tools.len(), 10);
 
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert!(names.contains(&"torque_create_project"));
@@ -134,6 +134,8 @@ fn test_jsonrpc_tools_list() {
     assert!(names.contains(&"torque_edit_file"));
     assert!(names.contains(&"torque_compile"));
     assert!(names.contains(&"torque_get_diagnostics"));
+    assert!(names.contains(&"torque_search_academic"));
+    assert!(names.contains(&"torque_search_web"));
 }
 
 #[test]

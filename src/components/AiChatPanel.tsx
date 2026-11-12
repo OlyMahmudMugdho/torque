@@ -20,12 +20,17 @@ import {
   Check,
   AlertCircle,
   Loader2,
+  BookOpen,
+  Globe,
+  Copy,
 } from 'lucide-react';
 import { useThemeSafe } from '../context/ThemeContext';
 import { AiDiffCard } from './AiDiffCard';
 import { AgentClient, buildWorkspaceSystemPrompt, type WorkspaceToolContext } from '../ai/agentClient';
 import { loadAISettings } from '../ai/aiConfig';
-import type { AIProviderConfig, ChatMessage, ChatSession } from '../types/ai';
+import { isTauri } from '../storage/tauriStorage';
+import { searchAcademic, searchWeb } from '../ai/searchService';
+import type { AIProviderConfig, ChatMessage, ChatSession, SearchSettings } from '../types/ai';
 import type { FileDiffResult } from '../ai/diffUtils';
 
 export interface AiChatPanelProps {
@@ -46,8 +51,17 @@ export interface AiChatPanelProps {
   onSendMessage?: (message: string, session: ChatSession) => Promise<void> | void;
 }
 
-function renderInlineTokens(text: string, keyPrefix: string, isDark: boolean) {
-  const tokenRegex = /(\$\$[\s\S]*?\$\$|\$[^$\n]+\$|`[^`\n]+`)/g;
+function renderInlineTokens(text: string, keyPrefix: string, isDark: boolean): React.ReactNode[] {
+  // Matches:
+  // 1. Math block: $$...$$
+  // 2. Math inline: $...$
+  // 3. Inline code: `...`
+  // 4. Link: [text](url)
+  // 5. Bold: **text** or __text__
+  // 6. Italic: *text* or _text_
+  const tokenRegex =
+    /(\$\$[\s\S]*?\$\$|\$[^$\n]+\$|`[^`\n]+`|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g;
+
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -57,6 +71,7 @@ function renderInlineTokens(text: string, keyPrefix: string, isDark: boolean) {
       parts.push(text.slice(lastIndex, match.index));
     }
     const token = match[0];
+
     if (token.startsWith('$$') && token.endsWith('$$')) {
       const formula = token.slice(2, -2);
       parts.push(
@@ -93,7 +108,49 @@ function renderInlineTokens(text: string, keyPrefix: string, isDark: boolean) {
           {code}
         </code>
       );
+    } else if (token.startsWith('[') && token.includes('](') && token.endsWith(')')) {
+      const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (linkMatch) {
+        const linkText = linkMatch[1];
+        const linkUrl = linkMatch[2];
+        parts.push(
+          <a
+            key={`${keyPrefix}-link-${match.index}`}
+            href={linkUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#3574f0] underline hover:opacity-80 inline-flex items-center gap-0.5 font-medium"
+          >
+            {linkText}
+          </a>
+        );
+      } else {
+        parts.push(token);
+      }
+    } else if (
+      (token.startsWith('**') && token.endsWith('**')) ||
+      (token.startsWith('__') && token.endsWith('__'))
+    ) {
+      const boldText = token.slice(2, -2);
+      parts.push(
+        <strong key={`${keyPrefix}-bold-${match.index}`} className="font-semibold text-current">
+          {renderInlineTokens(boldText, `${keyPrefix}-bold-${match.index}`, isDark)}
+        </strong>
+      );
+    } else if (
+      (token.startsWith('*') && token.endsWith('*')) ||
+      (token.startsWith('_') && token.endsWith('_'))
+    ) {
+      const italicText = token.slice(1, -1);
+      parts.push(
+        <em key={`${keyPrefix}-italic-${match.index}`} className="italic">
+          {renderInlineTokens(italicText, `${keyPrefix}-italic-${match.index}`, isDark)}
+        </em>
+      );
+    } else {
+      parts.push(token);
     }
+
     lastIndex = match.index + match[0].length;
   }
 
@@ -104,24 +161,188 @@ function renderInlineTokens(text: string, keyPrefix: string, isDark: boolean) {
   return parts;
 }
 
-function renderTextWithMathAndInline(text: string, keyPrefix: string, isDark: boolean) {
-  const paragraphs = text.split(/\n\n+/);
-  return (
-    <React.Fragment key={keyPrefix}>
-      {paragraphs.map((para, pIdx) => {
-        const lines = para.split('\n');
-        return (
-          <p key={`${keyPrefix}-p-${pIdx}`} className="leading-relaxed">
-            {lines.map((line, lIdx) => (
-              <React.Fragment key={`${keyPrefix}-p-${pIdx}-l-${lIdx}`}>
-                {lIdx > 0 && <br />}
-                {renderInlineTokens(line, `${keyPrefix}-p-${pIdx}-l-${lIdx}`, isDark)}
-              </React.Fragment>
-            ))}
-          </p>
+function renderMarkdownBlocks(text: string, keyPrefix: string, isDark: boolean): React.ReactNode {
+  const lines = text.split('\n');
+  const nodes: React.ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // 1. Empty lines
+    if (!trimmed) {
+      i++;
+      continue;
+    }
+
+    // 2. Headings (# , ## , ### , #### )
+    const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const content = headingMatch[2];
+      const inline = renderInlineTokens(content, `${keyPrefix}-h${level}-${i}`, isDark);
+
+      if (level === 1) {
+        nodes.push(
+          <h1 key={`${keyPrefix}-h1-${i}`} className="text-sm font-bold my-2 text-current border-b pb-1 opacity-95">
+            {inline}
+          </h1>
         );
-      })}
-    </React.Fragment>
+      } else if (level === 2) {
+        nodes.push(
+          <h2 key={`${keyPrefix}-h2-${i}`} className="text-xs font-bold my-1.5 text-current border-b pb-0.5 opacity-90">
+            {inline}
+          </h2>
+        );
+      } else if (level === 3) {
+        nodes.push(
+          <h3 key={`${keyPrefix}-h3-${i}`} className="text-xs font-semibold my-1 text-current opacity-90">
+            {inline}
+          </h3>
+        );
+      } else {
+        nodes.push(
+          <h4 key={`${keyPrefix}-h4-${i}`} className="text-xs font-medium my-0.5 text-current opacity-85">
+            {inline}
+          </h4>
+        );
+      }
+      i++;
+      continue;
+    }
+
+    // 3. Horizontal rules (---, ***, ___)
+    if (/^(\*{3,}|-{3,}|_{3,})$/.test(trimmed)) {
+      nodes.push(
+        <hr key={`${keyPrefix}-hr-${i}`} className="my-2 border-t border-current opacity-20" />
+      );
+      i++;
+      continue;
+    }
+
+    // 4. Blockquotes (> ...)
+    if (trimmed.startsWith('>')) {
+      const quoteLines: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith('>')) {
+        quoteLines.push(lines[i].replace(/^>\s?/, ''));
+        i++;
+      }
+      nodes.push(
+        <blockquote
+          key={`${keyPrefix}-quote-${i}`}
+          className={`border-l-2 pl-2.5 my-1.5 opacity-85 italic ${
+            isDark ? 'border-[#3574f0] text-[#c9d1d9]' : 'border-[#3574f0] text-[#4a5568]'
+          }`}
+        >
+          {quoteLines.map((ql, qIdx) => (
+            <React.Fragment key={`${keyPrefix}-ql-${qIdx}`}>
+              {qIdx > 0 && <br />}
+              {renderInlineTokens(ql, `${keyPrefix}-ql-${qIdx}`, isDark)}
+            </React.Fragment>
+          ))}
+        </blockquote>
+      );
+      continue;
+    }
+
+    // 5. Unordered List (- item, * item)
+    if (/^[-*+]\s+/.test(trimmed)) {
+      const listItems: string[] = [];
+      while (i < lines.length && /^[-*+]\s+/.test(lines[i].trim())) {
+        listItems.push(lines[i].trim().replace(/^[-*+]\s+/, ''));
+        i++;
+      }
+      nodes.push(
+        <ul key={`${keyPrefix}-ul-${i}`} className="list-disc list-inside space-y-1 my-1.5 pl-1 leading-relaxed">
+          {listItems.map((item, idx) => (
+            <li key={`${keyPrefix}-li-${idx}`} className="text-xs">
+              {renderInlineTokens(item, `${keyPrefix}-ul-item-${idx}`, isDark)}
+            </li>
+          ))}
+        </ul>
+      );
+      continue;
+    }
+
+    // 6. Ordered List (1. item)
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const listItems: string[] = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+        listItems.push(lines[i].trim().replace(/^\d+\.\s+/, ''));
+        i++;
+      }
+      nodes.push(
+        <ol key={`${keyPrefix}-ol-${i}`} className="list-decimal list-inside space-y-1 my-1.5 pl-1 leading-relaxed">
+          {listItems.map((item, idx) => (
+            <li key={`${keyPrefix}-oli-${idx}`} className="text-xs">
+              {renderInlineTokens(item, `${keyPrefix}-ol-item-${idx}`, isDark)}
+            </li>
+          ))}
+        </ol>
+      );
+      continue;
+    }
+
+    // 7. Regular paragraph (collect contiguous non-block lines)
+    const paraLines: string[] = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !lines[i].trim().startsWith('#') &&
+      !lines[i].trim().startsWith('>') &&
+      !/^[-*+]\s+/.test(lines[i].trim()) &&
+      !/^\d+\.\s+/.test(lines[i].trim()) &&
+      !/^(\*{3,}|-{3,}|_{3,})$/.test(lines[i].trim())
+    ) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+
+    if (paraLines.length > 0) {
+      nodes.push(
+        <p key={`${keyPrefix}-p-${i}`} className="leading-relaxed my-1">
+          {paraLines.map((pl, lIdx) => (
+            <React.Fragment key={`${keyPrefix}-pl-${lIdx}`}>
+              {lIdx > 0 && <br />}
+              {renderInlineTokens(pl, `${keyPrefix}-pl-${lIdx}`, isDark)}
+            </React.Fragment>
+          ))}
+        </p>
+      );
+    }
+  }
+
+  return <div key={keyPrefix} className="space-y-1">{nodes}</div>;
+}
+
+function CopyCodeButton({ code, isDark }: { code: string; isDark: boolean }) {
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopy = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className={`flex items-center gap-1 text-[10px] font-sans font-medium px-1.5 py-0.5 rounded transition ${
+        copied
+          ? 'text-emerald-400 bg-emerald-500/15'
+          : isDark
+            ? 'text-[#c2c5cc] hover:text-[#dfe1e5] hover:bg-[#2b2d30]'
+            : 'text-[#5c6066] hover:text-[#1f2328] hover:bg-[#e1e4e8]'
+      }`}
+      title="Copy code"
+    >
+      {copied ? <Check size={11} /> : <Copy size={11} />}
+      <span>{copied ? 'Copied' : 'Copy'}</span>
+    </button>
   );
 }
 
@@ -134,7 +355,7 @@ function FormattedAssistantMessage({ content, isDark }: { content: string; isDar
   while ((match = codeBlockRegex.exec(content)) !== null) {
     if (match.index > lastIndex) {
       const textBefore = content.slice(lastIndex, match.index);
-      parts.push(renderTextWithMathAndInline(textBefore, `text-${lastIndex}`, isDark));
+      parts.push(renderMarkdownBlocks(textBefore, `text-${lastIndex}`, isDark));
     }
     const lang = match[1];
     const code = match[2];
@@ -145,15 +366,14 @@ function FormattedAssistantMessage({ content, isDark }: { content: string; isDar
           isDark ? 'bg-[#18191b] border-[#323232] text-[#e6edf3]' : 'bg-[#f6f8fa] border-[#d0d7de] text-[#1f2328]'
         }`}
       >
-        {lang && (
-          <div
-            className={`px-2.5 py-1 text-[10px] uppercase font-semibold border-b ${
-              isDark ? 'border-[#323232] text-[#8b949e]' : 'border-[#d0d7de] text-[#656d76]'
-            }`}
-          >
-            {lang}
-          </div>
-        )}
+        <div
+          className={`px-2.5 py-1 text-[10px] font-semibold border-b flex items-center justify-between ${
+            isDark ? 'border-[#323232] bg-[#222326] text-[#c2c5cc]' : 'border-[#d0d7de] bg-[#f0f2f5] text-[#656d76]'
+          }`}
+        >
+          <span className="uppercase font-mono">{lang || 'code'}</span>
+          <CopyCodeButton code={code} isDark={isDark} />
+        </div>
         <pre className="p-2.5 leading-relaxed">
           <code>{code}</code>
         </pre>
@@ -163,7 +383,7 @@ function FormattedAssistantMessage({ content, isDark }: { content: string; isDar
   }
 
   if (lastIndex < content.length) {
-    parts.push(renderTextWithMathAndInline(content.slice(lastIndex), `text-${lastIndex}`, isDark));
+    parts.push(renderMarkdownBlocks(content.slice(lastIndex), `text-${lastIndex}`, isDark));
   }
 
   return <div className="space-y-2 text-xs leading-relaxed">{parts}</div>;
@@ -271,17 +491,23 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
   }
 
   const [loadedProvider, setLoadedProvider] = useState<AIProviderConfig | null>(activeProvider ?? null);
+  const [searchSettings, setSearchSettings] = useState<SearchSettings | undefined>(undefined);
 
   useEffect(() => {
-    if (activeProvider) {
-      setLoadedProvider(activeProvider);
-    } else {
-      loadAISettings()
-        .then((s) => {
+    loadAISettings()
+      .then((s) => {
+        if (!activeProvider) {
           const active = s.providers.find((p) => p.id === s.activeProviderId) || s.providers[0] || null;
           setLoadedProvider(active);
-        })
-        .catch(() => {});
+        }
+        if (s.search) {
+          setSearchSettings(s.search);
+        }
+      })
+      .catch(() => {});
+
+    if (activeProvider) {
+      setLoadedProvider(activeProvider);
     }
   }, [activeProvider, isOpen]);
 
@@ -392,6 +618,45 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
           },
           getDiagnostics: () => {
             return workspace?.diagnostics ?? [];
+          },
+          searchAcademic: async (query: string, options?: { source?: 'all' | 'arxiv' | 'semanticscholar'; maxResults?: number }) => {
+            if (!isTauri() && typeof window !== 'undefined') {
+              try {
+                const params = new URLSearchParams();
+                params.set('query', query.trim());
+                if (options?.source) params.set('source', options.source);
+                if (options?.maxResults) params.set('maxResults', String(options.maxResults));
+                const res = await fetch(`/api/search/academic?${params.toString()}`);
+                if (res.ok) {
+                  const data = await res.json();
+                  if (Array.isArray(data?.results)) {
+                    return data.results;
+                  }
+                }
+              } catch {
+                // fall through to direct search
+              }
+            }
+            return searchAcademic(query, options);
+          },
+          searchWeb: async (query: string, maxResults?: number) => {
+            if (!isTauri() && typeof window !== 'undefined') {
+              try {
+                const params = new URLSearchParams();
+                params.set('query', query.trim());
+                if (maxResults) params.set('maxResults', String(maxResults));
+                const res = await fetch(`/api/search/web?${params.toString()}`);
+                if (res.ok) {
+                  const data = await res.json();
+                  if (Array.isArray(data?.results)) {
+                    return data.results;
+                  }
+                }
+              } catch {
+                // fall through to direct search
+              }
+            }
+            return searchWeb(query, searchSettings, maxResults);
           },
         };
 
@@ -528,7 +793,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
           <span
             data-testid="active-model-pill"
             className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium truncate max-w-[90px] ${
-              isDark ? 'bg-[#1e1f22] text-[#868a91] border border-[#393b40]' : 'bg-[#ffffff] text-[#5c6066] border border-[#d1d5db]'
+              isDark ? 'bg-[#1e1f22] text-[#c2c5cc] border border-[#393b40]' : 'bg-[#ffffff] text-[#5c6066] border border-[#d1d5db]'
             }`}
             title={effectiveProvider?.selectedModel || 'No Model'}
           >
@@ -550,7 +815,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                   ? 'bg-[#3574f0]/25 text-[#3574f0]'
                   : 'bg-[#3574f0]/15 text-[#3574f0]'
                 : isDark
-                ? 'hover:bg-[#393b40] text-[#868a91] hover:text-[#dfe1e5]'
+                ? 'hover:bg-[#393b40] text-[#c2c5cc] hover:text-[#dfe1e5]'
                 : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-[#1f2328]'
             }`}
           >
@@ -564,7 +829,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
             onClick={handleCreateNewChat}
             title="New Chat"
             className={`p-1 rounded transition ${
-              isDark ? 'hover:bg-[#393b40] text-[#868a91] hover:text-[#dfe1e5]' : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-[#1f2328]'
+              isDark ? 'hover:bg-[#393b40] text-[#c2c5cc] hover:text-[#dfe1e5]' : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-[#1f2328]'
             }`}
           >
             <Plus size={14} />
@@ -577,7 +842,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
             onClick={() => handleDeleteSession(activeSessionId)}
             title="Delete Chat Session"
             className={`p-1 rounded transition ${
-              isDark ? 'hover:bg-[#393b40] text-[#868a91] hover:text-[#e05555]' : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-[#e05555]'
+              isDark ? 'hover:bg-[#393b40] text-[#c2c5cc] hover:text-[#e05555]' : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-[#e05555]'
             }`}
           >
             <Trash2 size={13} />
@@ -590,7 +855,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
             onClick={onClose}
             title="Close Assistant"
             className={`p-1 rounded transition ${
-              isDark ? 'hover:bg-[#393b40] text-[#868a91] hover:text-[#dfe1e5]' : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-[#1f2328]'
+              isDark ? 'hover:bg-[#393b40] text-[#c2c5cc] hover:text-[#dfe1e5]' : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-[#1f2328]'
             }`}
           >
             <X size={14} />
@@ -718,7 +983,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                       title="Delete Chat"
                       className={`p-1 rounded opacity-0 group-hover:opacity-100 transition shrink-0 ${
                         isDark
-                          ? 'hover:bg-[#2b2d30] text-[#868a91] hover:text-[#e05555]'
+                          ? 'hover:bg-[#2b2d30] text-[#c2c5cc] hover:text-[#e05555]'
                           : 'hover:bg-[#e5e7eb] text-[#6c707e] hover:text-[#e05555]'
                       }`}
                     >
@@ -872,7 +1137,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                               data-testid="tool-badge-read-file"
                               className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono border ${
                                 isDark
-                                  ? 'bg-[#1e1f22] border-[#323232] text-[#868a91]'
+                                  ? 'bg-[#1e1f22] border-[#393b40] text-[#c2c5cc]'
                                   : 'bg-[#ffffff] border-[#d1d5db] text-[#5c6066]'
                               }`}
                             >
@@ -905,7 +1170,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                               data-testid="tool-badge-compile"
                               className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono border ${
                                 isDark
-                                  ? 'bg-[#1e1f22] border-[#323232] text-[#868a91]'
+                                  ? 'bg-[#1e1f22] border-[#393b40] text-[#c2c5cc]'
                                   : 'bg-[#ffffff] border-[#d1d5db] text-[#5c6066]'
                               }`}
                             >
@@ -937,7 +1202,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                               data-testid="tool-badge-diagnostics"
                               className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono border ${
                                 isDark
-                                  ? 'bg-[#1e1f22] border-[#323232] text-[#868a91]'
+                                  ? 'bg-[#1e1f22] border-[#393b40] text-[#c2c5cc]'
                                   : 'bg-[#ffffff] border-[#d1d5db] text-[#5c6066]'
                               }`}
                             >
@@ -946,6 +1211,76 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                               <span className="ml-auto text-[10px] text-green-500 font-sans flex items-center gap-0.5 shrink-0">
                                 <Check size={11} /> Done
                               </span>
+                            </div>
+                          );
+                        }
+
+                        if (tc.name === 'torque_search_academic') {
+                          return (
+                            <div
+                              key={tc.id}
+                              data-testid="tool-badge-search-academic"
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono border ${
+                                isDark
+                                  ? 'bg-[#1e1f22] border-[#393b40] text-[#c2c5cc]'
+                                  : 'bg-[#ffffff] border-[#d1d5db] text-[#5c6066]'
+                              }`}
+                            >
+                              <BookOpen size={12} className="text-[#3574f0] shrink-0" />
+                              <span className="truncate">
+                                academic search{' '}
+                                <span className={isDark ? 'text-[#dfe1e5] font-semibold' : 'text-[#1f2328] font-semibold'}>
+                                   &quot;{tc.args?.query || ''}&quot;
+                                </span>
+                              </span>
+                              {tc.status === 'done' ? (
+                                <span className="ml-auto text-[10px] text-green-500 font-sans flex items-center gap-0.5 shrink-0">
+                                  <Check size={11} /> {Array.isArray(tc.result) ? `${tc.result.length} papers` : 'Done'}
+                                </span>
+                              ) : tc.status === 'failed' ? (
+                                <span className="ml-auto text-[10px] text-[#e05555] font-sans flex items-center gap-0.5 shrink-0">
+                                  <AlertCircle size={11} /> Failed
+                                </span>
+                              ) : (
+                                <span className="ml-auto text-[10px] text-amber-500 font-sans flex items-center gap-0.5 shrink-0">
+                                  <Loader2 size={10} className="animate-spin" /> Searching...
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (tc.name === 'torque_search_web') {
+                          return (
+                            <div
+                              key={tc.id}
+                              data-testid="tool-badge-search-web"
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono border ${
+                                isDark
+                                  ? 'bg-[#1e1f22] border-[#393b40] text-[#c2c5cc]'
+                                  : 'bg-[#ffffff] border-[#d1d5db] text-[#5c6066]'
+                              }`}
+                            >
+                              <Globe size={12} className="text-[#3574f0] shrink-0" />
+                              <span className="truncate">
+                                web search{' '}
+                                <span className={isDark ? 'text-[#dfe1e5] font-semibold' : 'text-[#1f2328] font-semibold'}>
+                                  &quot;{tc.args?.query || ''}&quot;
+                                </span>
+                              </span>
+                              {tc.status === 'done' ? (
+                                <span className="ml-auto text-[10px] text-green-500 font-sans flex items-center gap-0.5 shrink-0">
+                                  <Check size={11} /> {Array.isArray(tc.result) ? `${tc.result.length} results` : 'Done'}
+                                </span>
+                              ) : tc.status === 'failed' ? (
+                                <span className="ml-auto text-[10px] text-[#e05555] font-sans flex items-center gap-0.5 shrink-0">
+                                  <AlertCircle size={11} /> Failed
+                                </span>
+                              ) : (
+                                <span className="ml-auto text-[10px] text-amber-500 font-sans flex items-center gap-0.5 shrink-0">
+                                  <Loader2 size={10} className="animate-spin" /> Searching...
+                                </span>
+                              )}
                             </div>
                           );
                         }

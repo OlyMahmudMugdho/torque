@@ -159,6 +159,47 @@ pub fn get_tools_catalog() -> Value {
                     },
                     "required": []
                 }
+            },
+            {
+                "name": "torque_search_academic",
+                "description": "Search arXiv and Semantic Scholar for scientific literature, paper metadata, and BibTeX citations.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Keywords, paper title, author, or research query"
+                        },
+                        "source": {
+                            "type": "string",
+                            "enum": ["all", "arxiv", "semanticscholar"],
+                            "description": "Optional academic repository source"
+                        },
+                        "maxResults": {
+                            "type": "integer",
+                            "description": "Optional maximum number of search results to retrieve (default: 5)"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "torque_search_web",
+                "description": "Search the web for LaTeX documentation, technical references, and facts.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query"
+                        },
+                        "maxResults": {
+                            "type": "integer",
+                            "description": "Optional maximum number of results (default: 5)"
+                        }
+                    },
+                    "required": ["query"]
+                }
             }
         ]
     })

@@ -157,7 +157,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            className="w-6 h-6 flex items-center justify-center rounded text-[#868a91] hover:text-white hover:bg-[#e05555] transition"
+            className="w-6 h-6 flex items-center justify-center rounded text-[#c2c5cc] hover:text-white hover:bg-[#e05555] transition"
           >
             <X className="w-3.5 h-3.5" />
           </button>

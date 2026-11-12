@@ -228,7 +228,7 @@ export const McpInstructionsModal: React.FC<McpInstructionsModalProps> = ({
             aria-label="Close MCP Guide"
             className={`p-1 rounded transition cursor-pointer ${
               isDark
-                ? 'text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#393b40]'
+                ? 'text-[#c2c5cc] hover:text-[#dfe1e5] hover:bg-[#393b40]'
                 : 'text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
             }`}
           >
@@ -267,7 +267,7 @@ export const McpInstructionsModal: React.FC<McpInstructionsModalProps> = ({
                     ? 'bg-[#3574f0] text-white'
                     : 'bg-[#3574f0] text-white'
                   : isDark
-                  ? 'text-[#868a91] hover:text-[#dfe1e5]'
+                  ? 'text-[#c2c5cc] hover:text-[#dfe1e5]'
                   : 'text-[#6c707e] hover:text-[#1f2328]'
               }`}
             >
@@ -282,7 +282,7 @@ export const McpInstructionsModal: React.FC<McpInstructionsModalProps> = ({
                     ? 'bg-[#3574f0] text-white'
                     : 'bg-[#3574f0] text-white'
                   : isDark
-                  ? 'text-[#868a91] hover:text-[#dfe1e5]'
+                  ? 'text-[#c2c5cc] hover:text-[#dfe1e5]'
                   : 'text-[#6c707e] hover:text-[#1f2328]'
               }`}
             >

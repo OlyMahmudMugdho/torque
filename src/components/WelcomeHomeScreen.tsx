@@ -264,7 +264,7 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                 onClick={() => handleTabSwitch('customize')}
                 className={`flex items-center gap-2 text-xs p-1.5 rounded transition w-full ${
                   isDark
-                    ? 'text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#2b2d30]'
+                    ? 'text-[#c2c5cc] hover:text-[#dfe1e5] hover:bg-[#2b2d30]'
                     : 'text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
                 }`}
                 title="Settings"
@@ -423,7 +423,7 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                           type="button"
                           onClick={() => setSearchQuery('')}
                           aria-label="Clear search"
-                          className="text-[#868a91] hover:text-white"
+                          className="text-[#c2c5cc] hover:text-white"
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -549,7 +549,7 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
                                     onClick={(e) => handleDelete(e, p.id, p.name)}
                                     aria-label={`Delete project ${p.name}`}
                                     title="Delete project"
-                                    className="p-1 rounded text-[#868a91] hover:text-[#e05555] hover:bg-[#e05555]/15 transition"
+                                    className="p-1 rounded text-[#c2c5cc] hover:text-[#e05555] hover:bg-[#e05555]/15 transition"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>

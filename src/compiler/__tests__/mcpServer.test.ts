@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import * as serverModule from '../../../scripts/compiler-server.js';
+import * as searchService from '../../ai/searchService';
 
 describe('MCP Server Endpoints & Tool Handlers in compiler-server.js', () => {
   let testProjectsDir: string;
@@ -204,7 +205,7 @@ describe('MCP Server Endpoints & Tool Handlers in compiler-server.js', () => {
       expect(res.status).toBe(204);
     });
 
-    it('handles tools/list returning 8 Torque tools', async () => {
+    it('handles tools/list returning 10 Torque tools', async () => {
       const res = await fetch(`${baseUrl}/mcp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -220,7 +221,7 @@ describe('MCP Server Endpoints & Tool Handlers in compiler-server.js', () => {
       expect(json.id).toBe('list-1');
       const tools = json.result.tools;
       expect(Array.isArray(tools)).toBe(true);
-      expect(tools.length).toBe(8);
+      expect(tools.length).toBe(10);
 
       const names = tools.map((t: any) => t.name);
       expect(names).toContain('torque_create_project');
@@ -231,6 +232,8 @@ describe('MCP Server Endpoints & Tool Handlers in compiler-server.js', () => {
       expect(names).toContain('torque_edit_file');
       expect(names).toContain('torque_compile');
       expect(names).toContain('torque_get_diagnostics');
+      expect(names).toContain('torque_search_academic');
+      expect(names).toContain('torque_search_web');
     });
 
     it('calls torque_list_projects via tools/call', async () => {
@@ -510,6 +513,112 @@ describe('MCP Server Endpoints & Tool Handlers in compiler-server.js', () => {
       const data = JSON.parse(json.result.content[0].text);
       expect(data.status).toBeDefined();
       expect(Array.isArray(data.diagnostics)).toBe(true);
+    });
+
+    it('calls torque_search_academic via tools/call', async () => {
+      vi.spyOn(searchService, 'searchAcademic').mockResolvedValueOnce([
+        {
+          title: 'Quantum Field Theory',
+          authors: ['Steven Weinberg'],
+          year: 1995,
+          abstract: 'Foundations of QFT',
+          url: 'https://arxiv.org/abs/hep-th/9501001',
+          citationKey: 'weinberg1995quantum',
+          bibtex: '@book{weinberg1995quantum,\n  title = {Quantum Field Theory}\n}',
+          source: 'arxiv',
+        },
+      ]);
+
+      const res = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'search-acad-1',
+          method: 'tools/call',
+          params: {
+            name: 'torque_search_academic',
+            arguments: { query: 'quantum field', source: 'arxiv', maxResults: 1 },
+          },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.id).toBe('search-acad-1');
+      expect(json.result.isError).toBe(false);
+
+      const data = JSON.parse(json.result.content[0].text);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data).toHaveLength(1);
+      expect(data[0].title).toBe('Quantum Field Theory');
+      expect(data[0].citationKey).toBe('weinberg1995quantum');
+    });
+
+    it('calls torque_search_web via tools/call', async () => {
+      vi.spyOn(searchService, 'searchWeb').mockResolvedValueOnce([
+        {
+          title: 'CTAN: Package microtype',
+          snippet: 'Subliminal refinements towards typographical perfection in LaTeX',
+          url: 'https://ctan.org/pkg/microtype',
+          source: 'ctan',
+        },
+      ]);
+
+      const res = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'search-web-1',
+          method: 'tools/call',
+          params: {
+            name: 'torque_search_web',
+            arguments: { query: 'latex microtype documentation', maxResults: 1 },
+          },
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.id).toBe('search-web-1');
+      expect(json.result.isError).toBe(false);
+
+      const data = JSON.parse(json.result.content[0].text);
+      expect(Array.isArray(data)).toBe(true);
+      expect(data).toHaveLength(1);
+      expect(data[0].title).toBe('CTAN: Package microtype');
+      expect(data[0].url).toBe('https://ctan.org/pkg/microtype');
+    });
+
+    it('dispatches JSON-RPC requests via dispatchJsonRpc directly', async () => {
+      vi.spyOn(searchService, 'searchAcademic').mockResolvedValueOnce([
+        {
+          title: 'Direct Dispatch Paper',
+          authors: ['Author A'],
+          year: 2024,
+          abstract: 'Abstract',
+          url: 'https://arxiv.org/abs/2401.00001',
+          citationKey: 'author2024direct',
+          bibtex: '@article{author2024direct,\n  title = {Direct Dispatch Paper}\n}',
+          source: 'arxiv',
+        },
+      ]);
+
+      const resp = await (serverModule as any).dispatchJsonRpc({
+        jsonrpc: '2.0',
+        id: 'direct-1',
+        method: 'tools/call',
+        params: {
+          name: 'torque_search_academic',
+          arguments: { query: 'direct dispatch' },
+        },
+      });
+
+      expect(resp.id).toBe('direct-1');
+      expect(resp.result.isError).toBe(false);
+      const data = JSON.parse(resp.result.content[0].text);
+      expect(data[0].title).toBe('Direct Dispatch Paper');
     });
 
     it('supports direct method calling format', async () => {

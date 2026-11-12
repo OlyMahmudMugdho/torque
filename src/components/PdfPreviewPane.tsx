@@ -218,7 +218,7 @@ export const PdfPreviewPane: React.FC<PdfPreviewPaneProps> = ({
           )}
         </div>
 
-        <div className={`flex items-center gap-1 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`}>
+        <div className={`flex items-center gap-1 ${isDark ? 'text-[#c2c5cc]' : 'text-[#6c707e]'}`}>
           {/* Zoom controls */}
           <button
             onClick={() => setScale((s) => Math.max(0.6, s - 0.2))}

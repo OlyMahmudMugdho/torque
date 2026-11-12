@@ -6,9 +6,9 @@ import {
 
 describe('tools', () => {
   describe('WORKSPACE_TOOLS_SCHEMA', () => {
-    it('defines an array of 5 OpenAI-compatible tool specifications', () => {
+    it('defines an array of 7 OpenAI-compatible tool specifications', () => {
       expect(Array.isArray(WORKSPACE_TOOLS_SCHEMA)).toBe(true);
-      expect(WORKSPACE_TOOLS_SCHEMA).toHaveLength(5);
+      expect(WORKSPACE_TOOLS_SCHEMA).toHaveLength(7);
       for (const tool of WORKSPACE_TOOLS_SCHEMA) {
         expect(tool.type).toBe('function');
         expect(tool.function).toBeDefined();
@@ -67,6 +67,31 @@ describe('tools', () => {
       expect(tool).toBeDefined();
       const params = tool?.function.parameters;
       expect(params?.required ?? []).toHaveLength(0);
+    });
+
+    it('contains torque_search_academic schema with query, source, and maxResults', () => {
+      const tool = WORKSPACE_TOOLS_SCHEMA.find((t) => t.function.name === 'torque_search_academic');
+      expect(tool).toBeDefined();
+      const params = tool?.function.parameters;
+      expect(params?.properties?.query).toBeDefined();
+      expect(params?.properties?.query.type).toBe('string');
+      expect(params?.properties?.source).toBeDefined();
+      expect(params?.properties?.source.type).toBe('string');
+      expect(params?.properties?.source.enum).toEqual(['all', 'arxiv', 'semanticscholar']);
+      expect(params?.properties?.maxResults).toBeDefined();
+      expect(params?.properties?.maxResults.type).toBe('number');
+      expect(params?.required).toEqual(['query']);
+    });
+
+    it('contains torque_search_web schema with query and maxResults', () => {
+      const tool = WORKSPACE_TOOLS_SCHEMA.find((t) => t.function.name === 'torque_search_web');
+      expect(tool).toBeDefined();
+      const params = tool?.function.parameters;
+      expect(params?.properties?.query).toBeDefined();
+      expect(params?.properties?.query.type).toBe('string');
+      expect(params?.properties?.maxResults).toBeDefined();
+      expect(params?.properties?.maxResults.type).toBe('number');
+      expect(params?.required).toEqual(['query']);
     });
   });
 

@@ -1,9 +1,20 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SettingsModal, type SettingsModalProps } from '../SettingsModal';
 import { ThemeProvider } from '../../context/ThemeContext';
+import { loadAISettings, saveAISettings } from '../../ai/aiConfig';
+
+vi.mock('../../ai/aiConfig', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../ai/aiConfig')>();
+  return {
+    ...actual,
+    loadAISettings: vi.fn(),
+    saveAISettings: vi.fn(),
+    fetchProviderModels: vi.fn(),
+  };
+});
 
 function renderSettingsModal(props: Partial<SettingsModalProps> = {}) {
   const defaultProps: SettingsModalProps = {
@@ -29,6 +40,23 @@ function renderSettingsModal(props: Partial<SettingsModalProps> = {}) {
 }
 
 describe('SettingsModal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(loadAISettings).mockResolvedValue({
+      providers: [
+        {
+          id: 'openai-default',
+          name: 'OpenAI',
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: '',
+          selectedModel: 'gpt-4o',
+          availableModels: ['gpt-4o'],
+        },
+      ],
+      activeProviderId: 'openai-default',
+    });
+    vi.mocked(saveAISettings).mockResolvedValue(undefined);
+  });
   it('does not render when isOpen is false', () => {
     renderSettingsModal({ isOpen: false });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -159,5 +187,108 @@ describe('SettingsModal', () => {
     const closeBtn = screen.getByLabelText('Close Settings');
     fireEvent.click(closeBtn);
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  describe('Search Settings in AI Category', () => {
+    it('displays the Search Engine section when switching to the AI tab', async () => {
+      renderSettingsModal();
+
+      const aiButton = screen.getByRole('button', { name: /AI Assistant/i });
+      fireEvent.click(aiButton);
+
+      expect(screen.getByText('Search Engine & Literature Lookup')).toBeInTheDocument();
+      expect(
+        screen.getByText(/Configure search engines for automated literature discovery/i)
+      ).toBeInTheDocument();
+    });
+
+    it('defaults the search provider dropdown to Built-in Free', async () => {
+      renderSettingsModal();
+      fireEvent.click(screen.getByRole('button', { name: /AI Assistant/i }));
+
+      const providerSelect = await screen.findByLabelText(/Search Provider/i);
+      expect(providerSelect).toBeInTheDocument();
+      expect(providerSelect).toHaveValue('free');
+      expect(
+        screen.getByRole('option', { name: /Built-in Free/i })
+      ).toBeInTheDocument();
+      expect(screen.queryByLabelText('Search API Key')).not.toBeInTheDocument();
+    });
+
+    it('displays Search API Key input when selecting Tavily Search API or Brave Search API', async () => {
+      renderSettingsModal();
+      fireEvent.click(screen.getByRole('button', { name: /AI Assistant/i }));
+
+      await waitFor(() => {
+        expect(loadAISettings).toHaveBeenCalled();
+      });
+
+      const providerSelect = screen.getByLabelText(/Search Provider/i);
+
+      // Select Tavily
+      fireEvent.change(providerSelect, { target: { value: 'tavily' } });
+      expect(providerSelect).toHaveValue('tavily');
+
+      const apiKeyInput = screen.getByLabelText('Search API Key');
+      expect(apiKeyInput).toBeInTheDocument();
+      expect(apiKeyInput).toHaveAttribute('placeholder', 'e.g. tvly-...');
+
+      // Select Brave
+      fireEvent.change(providerSelect, { target: { value: 'brave' } });
+      expect(providerSelect).toHaveValue('brave');
+      expect(apiKeyInput).toHaveAttribute('placeholder', 'e.g. BSAE...');
+
+      // Toggle visibility
+      expect(apiKeyInput).toHaveAttribute('type', 'password');
+      const toggleBtn = screen.getByLabelText(/Show Search API Key/i);
+      fireEvent.click(toggleBtn);
+      expect(apiKeyInput).toHaveAttribute('type', 'text');
+    });
+
+    it('saves search settings with provider and apiKey when Apply or OK is clicked', async () => {
+      renderSettingsModal();
+      fireEvent.click(screen.getByRole('button', { name: /AI Assistant/i }));
+
+      await waitFor(() => {
+        expect(loadAISettings).toHaveBeenCalled();
+      });
+
+      const providerSelect = screen.getByLabelText(/Search Provider/i);
+      fireEvent.change(providerSelect, { target: { value: 'tavily' } });
+
+      const apiKeyInput = screen.getByLabelText('Search API Key');
+      fireEvent.change(apiKeyInput, { target: { value: 'tvly-secret-12345' } });
+
+      // Click Apply
+      const applyBtn = screen.getByRole('button', { name: 'Apply' });
+      fireEvent.click(applyBtn);
+
+      await waitFor(() => {
+        expect(saveAISettings).toHaveBeenCalledWith(
+          expect.objectContaining({
+            search: {
+              provider: 'tavily',
+              apiKey: 'tvly-secret-12345',
+            },
+          })
+        );
+      });
+
+      // Click OK
+      const okBtn = screen.getByRole('button', { name: 'OK' });
+      fireEvent.click(okBtn);
+
+      await waitFor(() => {
+        expect(saveAISettings).toHaveBeenCalledTimes(2);
+        expect(saveAISettings).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            search: {
+              provider: 'tavily',
+              apiKey: 'tvly-secret-12345',
+            },
+          })
+        );
+      });
+    });
   });
 });

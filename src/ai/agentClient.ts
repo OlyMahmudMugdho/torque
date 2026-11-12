@@ -2,6 +2,7 @@ import type { AIProviderConfig, ChatMessage, ToolCallItem as ToolCallState } fro
 import { normalizeBaseUrl } from './aiConfig';
 import { WORKSPACE_TOOLS_SCHEMA, validateToolPath } from './tools';
 import { computeFileDiff, applyFilePatch } from './diffUtils';
+import { searchAcademic, searchWeb } from './searchService';
 
 export type { ToolCallState, ChatMessage };
 
@@ -10,6 +11,8 @@ export interface WorkspaceToolContext {
   writeFile: (path: string, content: string) => Promise<void> | void;
   compile?: (engine?: string) => Promise<{ success: boolean; log: string }> | { success: boolean; log: string };
   getDiagnostics?: () => Promise<any> | any;
+  searchAcademic?: (query: string, options?: { source?: 'all' | 'arxiv' | 'semanticscholar'; maxResults?: number }) => Promise<any> | any;
+  searchWeb?: (query: string, maxResults?: number) => Promise<any> | any;
 }
 
 export interface AgentLoopOptions {
@@ -44,11 +47,15 @@ Available Workspace Tools:
 - torque_write_file: Create or overwrite a file (parameters: path, content). Generates interactive diff for user review.
 - torque_compile: Compile the project (optional parameter: engine: pdflatex | xelatex | lualatex).
 - torque_get_diagnostics: Get latest compilation diagnostics and error details.
+- torque_search_academic: Search arXiv and Semantic Scholar for research papers, author info, abstracts, and BibTeX citations. (parameters: query, optional source: 'all' | 'arxiv' | 'semanticscholar', optional maxResults).
+- torque_search_web: Search the web for documentation, packages, syntax, and technical references. (parameters: query, optional maxResults).
 
 CRITICAL INSTRUCTIONS:
 1. When asked to inspect, summarize, analyze, or fix errors in any document (including the active document), ALWAYS use torque_read_file first to read the file contents. Do NOT invent or guess file contents.
 2. When asked to make changes, add sections, fix LaTeX syntax, or generate code, use torque_edit_file for specific replacements or torque_write_file for full files.
-3. Be concise, precise, and professional. Focus on LaTeX best practices.`;
+3. When asked to find papers, review literature, or cite sources, use torque_search_academic to retrieve verified metadata and BibTeX entries.
+4. When adding citations to the document, append the generated BibTeX entry to the project's .bib file using torque_edit_file (or torque_write_file), and reference it in the .tex file with \\cite{citationKey}.
+5. Be concise, precise, and professional. Focus on LaTeX best practices.`;
 }
 
 export class AgentClient {
@@ -357,6 +364,49 @@ export class AgentClient {
               tcState.status = 'failed';
               tcState.error = err.message || 'Failed to get diagnostics';
             }
+          }
+          break;
+        }
+
+        case 'torque_search_academic': {
+          try {
+            if (!parsedArgs.query || typeof parsedArgs.query !== 'string' || !parsedArgs.query.trim()) {
+              tcState.status = 'failed';
+              tcState.error = 'Search query is required';
+            } else {
+              const options = {
+                source: parsedArgs.source,
+                maxResults: typeof parsedArgs.maxResults === 'number' ? parsedArgs.maxResults : undefined,
+              };
+              const results = context.searchAcademic
+                ? await context.searchAcademic(parsedArgs.query, options)
+                : await searchAcademic(parsedArgs.query, options);
+              tcState.status = 'done';
+              tcState.result = results;
+            }
+          } catch (err: any) {
+            tcState.status = 'failed';
+            tcState.error = err.message || 'Academic search failed';
+          }
+          break;
+        }
+
+        case 'torque_search_web': {
+          try {
+            if (!parsedArgs.query || typeof parsedArgs.query !== 'string' || !parsedArgs.query.trim()) {
+              tcState.status = 'failed';
+              tcState.error = 'Search query is required';
+            } else {
+              const maxResults = typeof parsedArgs.maxResults === 'number' ? parsedArgs.maxResults : undefined;
+              const results = context.searchWeb
+                ? await context.searchWeb(parsedArgs.query, maxResults)
+                : await searchWeb(parsedArgs.query, undefined, maxResults);
+              tcState.status = 'done';
+              tcState.result = results;
+            }
+          } catch (err: any) {
+            tcState.status = 'failed';
+            tcState.error = err.message || 'Web search failed';
           }
           break;
         }

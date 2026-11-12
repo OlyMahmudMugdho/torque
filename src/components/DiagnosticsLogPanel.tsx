@@ -75,7 +75,7 @@ export const DiagnosticsLogPanel: React.FC<DiagnosticsLogPanelProps> = ({
                   ? 'border-[#3574f0] text-white bg-[#1e1f22]'
                   : 'border-[#3574f0] text-[#1f2328] bg-[#ffffff]'
                 : isDark
-                  ? 'border-transparent text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#313438]'
+                  ? 'border-transparent text-[#c2c5cc] hover:text-white hover:bg-[#313438]'
                   : 'border-transparent text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
             }`}
           >
@@ -101,7 +101,7 @@ export const DiagnosticsLogPanel: React.FC<DiagnosticsLogPanelProps> = ({
                   ? 'border-[#3574f0] text-white bg-[#1e1f22]'
                   : 'border-[#3574f0] text-[#1f2328] bg-[#ffffff]'
                 : isDark
-                  ? 'border-transparent text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#313438]'
+                  ? 'border-transparent text-[#c2c5cc] hover:text-white hover:bg-[#313438]'
                   : 'border-transparent text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
             }`}
           >
@@ -116,7 +116,7 @@ export const DiagnosticsLogPanel: React.FC<DiagnosticsLogPanelProps> = ({
             onClick={handleClose}
             className={`p-1 rounded text-xs transition ${
               isDark
-                ? 'text-[#868a91] hover:text-white hover:bg-[#393b40]'
+                ? 'text-[#c2c5cc] hover:text-white hover:bg-[#393b40]'
                 : 'text-[#6c707e] hover:text-black hover:bg-[#dfe1e5]'
             }`}
             title="Close Problems Panel"

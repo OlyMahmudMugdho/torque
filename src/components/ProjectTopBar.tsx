@@ -453,7 +453,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
           onClick={onExportZip}
           className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition ${
             isDark
-              ? 'text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#393b40]'
+              ? 'text-[#c2c5cc] hover:text-white hover:bg-[#393b40]'
               : 'text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
           }`}
           title="Export Project (.zip)"
@@ -465,7 +465,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
         <label
           className={`flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition ${
             isDark
-              ? 'text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#393b40]'
+              ? 'text-[#c2c5cc] hover:text-white hover:bg-[#393b40]'
               : 'text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
           }`}
         >

@@ -319,6 +319,20 @@ describe('AiChatPanel Component', () => {
                 status: 'done',
                 result: [],
               },
+              {
+                id: 'tc-acad-1',
+                name: 'torque_search_academic',
+                args: { query: 'transformers attention' },
+                status: 'done',
+                result: [{ title: 'Attention Is All You Need' }],
+              },
+              {
+                id: 'tc-web-1',
+                name: 'torque_search_web',
+                args: { query: 'latex microtype documentation' },
+                status: 'done',
+                result: [{ title: 'Microtype package docs' }],
+              },
             ],
           },
           {
@@ -352,6 +366,10 @@ describe('AiChatPanel Component', () => {
     expect(screen.getByTestId('tool-badge-compile')).toBeInTheDocument();
     expect(screen.getByTestId('tool-badge-compile')).toHaveTextContent('compile project (pdflatex)');
     expect(screen.getByTestId('tool-badge-diagnostics')).toBeInTheDocument();
+    expect(screen.getByTestId('tool-badge-search-academic')).toBeInTheDocument();
+    expect(screen.getByTestId('tool-badge-search-academic')).toHaveTextContent('transformers attention');
+    expect(screen.getByTestId('tool-badge-search-web')).toBeInTheDocument();
+    expect(screen.getByTestId('tool-badge-search-web')).toHaveTextContent('latex microtype documentation');
 
     // The raw tool payload should NOT be rendered as a visible message bubble
     expect(screen.queryByText('RAW_FILE_PAYLOAD_SHOULD_BE_HIDDEN')).not.toBeInTheDocument();
@@ -427,5 +445,66 @@ describe('AiChatPanel Component', () => {
     fireEvent.click(closeBtn);
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders rich markdown formatting including headings, bold, links, lists, and code blocks', () => {
+    const markdownContent = [
+      '### Literature Summary',
+      'Here is the **Transformers Milestone** paper by *Vaswani et al.*:',
+      '- Title: [Attention Is All You Need](https://arxiv.org/abs/1706.03762)',
+      '- Year: 2017',
+      '> Groundbreaking transformer architecture.',
+      '```latex',
+      '\\cite{vaswani2017attention}',
+      '```',
+    ].join('\n');
+
+    const sessionsWithMarkdown: ChatSession[] = [
+      {
+        id: 'sess-md',
+        title: 'Markdown Test',
+        createdAt: 1,
+        messages: [
+          {
+            id: 'msg-u1',
+            role: 'user',
+            content: 'Find attention paper',
+            timestamp: 1,
+          },
+          {
+            id: 'msg-a1',
+            role: 'assistant',
+            content: markdownContent,
+            timestamp: 2,
+          },
+        ],
+      },
+    ];
+
+    render(
+      <AiChatPanel
+        {...createProps({
+          initialSessions: sessionsWithMarkdown,
+        })}
+      />
+    );
+
+    // Heading should render as h3
+    const heading = screen.getByRole('heading', { level: 3 });
+    expect(heading).toHaveTextContent('Literature Summary');
+
+    // Bold text
+    expect(screen.getByText('Transformers Milestone')).toBeInTheDocument();
+
+    // Link
+    const link = screen.getByRole('link', { name: 'Attention Is All You Need' });
+    expect(link).toHaveAttribute('href', 'https://arxiv.org/abs/1706.03762');
+    expect(link).toHaveAttribute('target', '_blank');
+
+    // List item
+    expect(screen.getByText('Year: 2017')).toBeInTheDocument();
+
+    // Code block
+    expect(screen.getByText('\\cite{vaswani2017attention}')).toBeInTheDocument();
   });
 });

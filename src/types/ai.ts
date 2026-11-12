@@ -7,9 +7,34 @@ export interface AIProviderConfig {
   availableModels: string[];
 }
 
+export interface SearchSettings {
+  provider: 'free' | 'tavily' | 'brave';
+  apiKey?: string;
+  academicSource?: 'all' | 'arxiv' | 'semanticscholar';
+}
+
 export interface AISettings {
   providers: AIProviderConfig[];
   activeProviderId: string | null;
+  search?: SearchSettings;
+}
+
+export interface AcademicSearchResult {
+  title: string;
+  authors: string[];
+  year: number | string;
+  abstract: string;
+  url: string;
+  citationKey: string;
+  bibtex: string;
+  source: 'arxiv' | 'semanticscholar';
+}
+
+export interface WebSearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+  source: string;
 }
 
 export type { DiffHunkItem, FileDiffResult } from '../ai/diffUtils';

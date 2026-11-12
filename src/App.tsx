@@ -435,7 +435,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
                     ? 'text-[#3574f0] bg-[#1e1f22]'
                     : 'text-[#3574f0] bg-[#ffffff]'
                   : isDark
-                    ? 'text-[#868a91] hover:bg-[#393b40]'
+                    ? 'text-[#c2c5cc] hover:bg-[#393b40] hover:text-white'
                     : 'text-[#6c707e] hover:bg-[#dfe1e5]'
               }`}
               title="Project (Alt+1)"
@@ -457,7 +457,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
                       ? 'text-[#e05555] bg-[#1e1f22]'
                       : 'text-[#e05555] bg-[#ffffff]'
                     : isDark
-                      ? 'text-[#868a91] hover:bg-[#393b40]'
+                      ? 'text-[#c2c5cc] hover:bg-[#393b40] hover:text-white'
                       : 'text-[#6c707e] hover:bg-[#dfe1e5]'
                 }`}
                 title={`Problems / Build (${diagnostics.length} issues)`}
@@ -477,7 +477,7 @@ export const WorkspaceUI: React.FC<WorkspaceUIProps> = ({
                     ? 'text-[#3574f0] bg-[#1e1f22]'
                     : 'text-[#3574f0] bg-[#ffffff]'
                   : isDark
-                    ? 'text-[#868a91] hover:bg-[#393b40]'
+                    ? 'text-[#c2c5cc] hover:bg-[#393b40] hover:text-white'
                     : 'text-[#6c707e] hover:bg-[#dfe1e5]'
               }`}
               title="AI Assistant (Alt+7)"

@@ -173,7 +173,7 @@ export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEdito
                     ? 'bg-[#1e1f22] text-[#dfe1e5] font-medium border-b-2 border-b-[#3574f0] border-r-[#1e1f22]'
                     : 'bg-[#ffffff] text-[#1f2328] font-medium border-b-2 border-b-[#3574f0] border-r-[#d1d5db]'
                   : isDark
-                    ? 'bg-[#2b2d30] text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#313438] border-r-[#1e1f22]'
+                    ? 'bg-[#2b2d30] text-[#c2c5cc] hover:text-white hover:bg-[#313438] border-r-[#1e1f22]'
                     : 'bg-[#ebecf0] text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5] border-r-[#d1d5db]'
               }`}
             >
@@ -187,7 +187,7 @@ export const MonacoEditorPane = React.forwardRef<MonacoEditorHandle, MonacoEdito
                   }}
                   className={`p-0.5 rounded ${
                     isDark
-                      ? 'hover:bg-[#393b40] text-[#868a91] hover:text-white'
+                      ? 'hover:bg-[#393b40] text-[#c2c5cc] hover:text-white'
                       : 'hover:bg-[#dfe1e5] text-[#6c707e] hover:text-black'
                   }`}
                 >

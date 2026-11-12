@@ -398,12 +398,12 @@ export const FileTreeSidebar: React.FC<FileTreeSidebarProps> = ({
       return <FileImage className="w-4 h-4 text-[#3574f0] shrink-0" />;
     }
     if (ext === 'pdf') return <FileText className="w-4 h-4 text-[#e05555] shrink-0" />;
-    return <FileIcon className={`w-4 h-4 shrink-0 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`} />;
+    return <FileIcon className={`w-4 h-4 shrink-0 ${isDark ? 'text-[#c2c5cc]' : 'text-[#6c707e]'}`} />;
   };
 
-  const muted = isDark ? 'text-[#868a91]' : 'text-[#6c707e]';
+  const muted = isDark ? 'text-[#c2c5cc]' : 'text-[#6c707e]';
   const btn = `p-1 rounded transition ${
-    isDark ? 'hover:bg-[#393b40] hover:text-[#dfe1e5]' : 'hover:bg-[#dfe1e5] hover:text-[#1f2328]'
+    isDark ? 'text-[#c2c5cc] hover:bg-[#393b40] hover:text-white' : 'text-[#6c707e] hover:bg-[#dfe1e5] hover:text-[#1f2328]'
   }`;
   const inputCls = `w-full h-5 px-1 text-[12px] outline-none border rounded-sm ${
     isDark ? 'bg-[#1e1f22] text-[#dfe1e5]' : 'bg-white text-[#1f2328]'

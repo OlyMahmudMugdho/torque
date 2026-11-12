@@ -18,6 +18,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import * as searchService from '../src/ai/searchService.ts';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -1413,11 +1414,52 @@ export function getToolsCatalog() {
           required: [],
         },
       },
+      {
+        name: 'torque_search_academic',
+        description: 'Search arXiv and Semantic Scholar for scientific literature, paper metadata, and BibTeX citations.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Keywords, paper title, author, or research query',
+            },
+            source: {
+              type: 'string',
+              enum: ['all', 'arxiv', 'semanticscholar'],
+              description: 'Optional academic repository source',
+            },
+            maxResults: {
+              type: 'integer',
+              description: 'Optional maximum number of search results to retrieve (default: 5)',
+            },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'torque_search_web',
+        description: 'Search the web for LaTeX documentation, technical references, and facts.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Search query',
+            },
+            maxResults: {
+              type: 'integer',
+              description: 'Optional maximum number of results (default: 5)',
+            },
+          },
+          required: ['query'],
+        },
+      },
     ],
   };
 }
 
-export function dispatchJsonRpc(requestInput, state = defaultMcpState) {
+export async function dispatchJsonRpc(requestInput, state = defaultMcpState) {
   let req;
   if (typeof requestInput === 'string') {
     try {
@@ -1522,6 +1564,22 @@ export function dispatchJsonRpc(requestInput, state = defaultMcpState) {
           case 'torque_get_diagnostics':
             toolRes = handleToolGetDiagnostics(state, toolArgs);
             break;
+          case 'torque_search_academic': {
+            const query = typeof toolArgs.query === 'string' ? toolArgs.query.trim() : '';
+            const source = toolArgs.source;
+            const maxResults = typeof toolArgs.maxResults === 'number' ? toolArgs.maxResults : undefined;
+            const results = await searchService.searchAcademic(query, { source, maxResults });
+            toolRes = JSON.stringify(results, null, 2);
+            break;
+          }
+          case 'torque_search_web': {
+            const query = typeof toolArgs.query === 'string' ? toolArgs.query.trim() : '';
+            const maxResults = typeof toolArgs.maxResults === 'number' ? toolArgs.maxResults : undefined;
+            const settings = getLocalSearchSettings();
+            const results = await searchService.searchWeb(query, settings, maxResults);
+            toolRes = JSON.stringify(results, null, 2);
+            break;
+          }
           default: {
             const err = new Error(`Tool not found: ${toolName}`);
             err.code = -32601;
@@ -1618,6 +1676,30 @@ export function dispatchJsonRpc(requestInput, state = defaultMcpState) {
         return { jsonrpc: '2.0', id, error: { code: typeof err.code === 'number' ? err.code : -32603, message: err.message } };
       }
     }
+    case 'torque_search_academic': {
+      try {
+        const params = req.params || {};
+        const query = typeof params.query === 'string' ? params.query.trim() : '';
+        const source = params.source;
+        const maxResults = typeof params.maxResults === 'number' ? params.maxResults : undefined;
+        const val = await searchService.searchAcademic(query, { source, maxResults });
+        return { jsonrpc: '2.0', id, result: val };
+      } catch (err) {
+        return { jsonrpc: '2.0', id, error: { code: typeof err.code === 'number' ? err.code : -32603, message: err.message } };
+      }
+    }
+    case 'torque_search_web': {
+      try {
+        const params = req.params || {};
+        const query = typeof params.query === 'string' ? params.query.trim() : '';
+        const maxResults = typeof params.maxResults === 'number' ? params.maxResults : undefined;
+        const settings = getLocalSearchSettings();
+        const val = await searchService.searchWeb(query, settings, maxResults);
+        return { jsonrpc: '2.0', id, result: val };
+      } catch (err) {
+        return { jsonrpc: '2.0', id, error: { code: typeof err.code === 'number' ? err.code : -32603, message: err.message } };
+      }
+    }
     default: {
       return {
         jsonrpc: '2.0',
@@ -1631,10 +1713,26 @@ export function dispatchJsonRpc(requestInput, state = defaultMcpState) {
   }
 }
 
+export function getLocalSearchSettings() {
+  try {
+    const aiConfigFile = path.join(os.homedir(), '.torque', 'ai_config.json');
+    if (fs.existsSync(aiConfigFile)) {
+      const content = fs.readFileSync(aiConfigFile, 'utf8');
+      const parsed = JSON.parse(content);
+      if (parsed && parsed.search) {
+        return parsed.search;
+      }
+    }
+  } catch {
+    // Ignore error
+  }
+  return undefined;
+}
+
 export function createCompilerServer(options = {}) {
   const state = options.state || (options.projectsDir || options.activeProjectId ? new McpState(options) : defaultMcpState);
 
-  return http.createServer((req, res) => {
+  return http.createServer(async (req, res) => {
     // CORS Headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -1789,6 +1887,182 @@ export function createCompilerServer(options = {}) {
       return;
     }
 
+    // Search Academic: GET /api/search/academic
+    if (req.method === 'GET' && pathname === '/api/search/academic') {
+      try {
+        const query = parsedUrl.searchParams.get('query');
+        if (!query || !query.trim()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing required parameter: query' }));
+          return;
+        }
+
+        const source = parsedUrl.searchParams.get('source') || undefined;
+        const maxResultsParam = parsedUrl.searchParams.get('maxResults');
+        const maxResults = maxResultsParam ? parseInt(maxResultsParam, 10) : undefined;
+
+        const results = await searchService.searchAcademic(query.trim(), {
+          source,
+          maxResults: Number.isFinite(maxResults) ? maxResults : undefined,
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ results }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: String(err?.message || err) }));
+      }
+      return;
+    }
+
+    // Search Academic: POST /api/search/academic
+    if (req.method === 'POST' && pathname === '/api/search/academic') {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+
+      req.on('end', async () => {
+        try {
+          let payload = {};
+          try {
+            payload = JSON.parse(body);
+          } catch {
+            payload = {};
+          }
+
+          const query =
+            typeof payload?.query === 'string' && payload.query.trim()
+              ? payload.query
+              : parsedUrl.searchParams.get('query');
+
+          if (!query || !query.trim()) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing required parameter: query' }));
+            return;
+          }
+
+          const source = payload?.source || undefined;
+          const maxResults =
+            typeof payload?.maxResults === 'number'
+              ? payload.maxResults
+              : payload?.maxResults
+              ? parseInt(payload.maxResults, 10)
+              : undefined;
+
+          const results = await searchService.searchAcademic(query.trim(), {
+            source,
+            maxResults: Number.isFinite(maxResults) ? maxResults : undefined,
+          });
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ results }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: String(err?.message || err) }));
+        }
+      });
+      return;
+    }
+
+    // Search Web: GET /api/search/web
+    if (req.method === 'GET' && pathname === '/api/search/web') {
+      try {
+        const query = parsedUrl.searchParams.get('query');
+        if (!query || !query.trim()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing required parameter: query' }));
+          return;
+        }
+
+        const maxResultsParam = parsedUrl.searchParams.get('maxResults');
+        const maxResults = maxResultsParam ? parseInt(maxResultsParam, 10) : undefined;
+
+        let settings;
+        const provider = parsedUrl.searchParams.get('provider');
+        const apiKey = parsedUrl.searchParams.get('apiKey');
+        if (provider) {
+          settings = { provider, ...(apiKey ? { apiKey } : {}) };
+        } else {
+          settings = getLocalSearchSettings();
+        }
+
+        const results = await searchService.searchWeb(
+          query.trim(),
+          settings,
+          Number.isFinite(maxResults) ? maxResults : undefined
+        );
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ results }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: String(err?.message || err) }));
+      }
+      return;
+    }
+
+    // Search Web: POST /api/search/web
+    if (req.method === 'POST' && pathname === '/api/search/web') {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+
+      req.on('end', async () => {
+        try {
+          let payload = {};
+          try {
+            payload = JSON.parse(body);
+          } catch {
+            payload = {};
+          }
+
+          const query =
+            typeof payload?.query === 'string' && payload.query.trim()
+              ? payload.query
+              : parsedUrl.searchParams.get('query');
+
+          if (!query || !query.trim()) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing required parameter: query' }));
+            return;
+          }
+
+          const maxResults =
+            typeof payload?.maxResults === 'number'
+              ? payload.maxResults
+              : payload?.maxResults
+              ? parseInt(payload.maxResults, 10)
+              : undefined;
+
+          let settings = payload?.settings;
+          if (!settings && payload?.provider) {
+            settings = {
+              provider: payload.provider,
+              ...(payload.apiKey ? { apiKey: payload.apiKey } : {}),
+            };
+          }
+          if (!settings) {
+            settings = getLocalSearchSettings();
+          }
+
+          const results = await searchService.searchWeb(
+            query.trim(),
+            settings,
+            Number.isFinite(maxResults) ? maxResults : undefined
+          );
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ results }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: String(err?.message || err) }));
+        }
+      });
+      return;
+    }
+
     // 2. Existing POST / and POST /api/compile
     if (req.method === 'POST' && (pathname === '/' || pathname === '/api/compile')) {
       let body = '';
@@ -1858,8 +2132,8 @@ export function createCompilerServer(options = {}) {
         body += chunk;
       });
 
-      req.on('end', () => {
-        const resp = dispatchJsonRpc(body, state);
+      req.on('end', async () => {
+        const resp = await dispatchJsonRpc(body, state);
         if (resp !== null) {
           const respStr = JSON.stringify(resp);
           if (sessionId && state.sseSessions.has(sessionId)) {
@@ -1883,8 +2157,8 @@ export function createCompilerServer(options = {}) {
         body += chunk;
       });
 
-      req.on('end', () => {
-        const resp = dispatchJsonRpc(body, state);
+      req.on('end', async () => {
+        const resp = await dispatchJsonRpc(body, state);
         if (resp !== null) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(resp));

@@ -25,7 +25,7 @@ import {
   fetchProviderModels,
   getDefaultAISettings,
 } from '../ai/aiConfig';
-import type { AIProviderConfig, AISettings } from '../types/ai';
+import type { AIProviderConfig, AISettings, SearchSettings } from '../types/ai';
 
 export type SettingsCategory = 'appearance' | 'editor' | 'build' | 'ai';
 
@@ -62,6 +62,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [stagedAiSettings, setStagedAiSettings] = useState<AISettings>(getDefaultAISettings);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
+  const [showSearchApiKey, setShowSearchApiKey] = useState<boolean>(false);
   const [testStatus, setTestStatus] = useState<{
     loading: boolean;
     success?: boolean;
@@ -75,6 +76,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setStagedAutoSave(propAutoSave);
       setStagedEngine(propEngine);
       setTestStatus({ loading: false });
+      setShowSearchApiKey(false);
 
       loadAISettings()
         .then((cfg) => {
@@ -190,6 +192,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const updateSearchSettings = (patch: Partial<SearchSettings>) => {
+    setStagedAiSettings((prev) => {
+      const currentSearch = prev.search || { provider: 'free', apiKey: '' };
+      return {
+        ...prev,
+        search: {
+          ...currentSearch,
+          ...patch,
+        },
+      };
+    });
+  };
+
   const handleTestConnection = async () => {
     if (!currentProvider) return;
     setTestStatus({ loading: true, message: undefined });
@@ -241,7 +256,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             aria-label="Close Settings"
             className={`p-1 rounded transition ${
               isDark
-                ? 'text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#393b40]'
+                ? 'text-[#c2c5cc] hover:text-white hover:bg-[#393b40]'
                 : 'text-[#6c707e] hover:text-[#1f2328] hover:bg-[#dfe1e5]'
             }`}
           >
@@ -667,7 +682,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           onClick={() => setShowApiKey(!showApiKey)}
                           className={`absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded cursor-pointer ${
                             isDark
-                              ? 'text-[#868a91] hover:text-[#dfe1e5]'
+                              ? 'text-[#c2c5cc] hover:text-[#dfe1e5]'
                               : 'text-[#6c707e] hover:text-[#1f2328]'
                           }`}
                           title={showApiKey ? 'Hide API Key' : 'Show API Key'}
@@ -801,6 +816,142 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   </div>
                 )}
+
+                {/* Search Engine & Literature Lookup Section */}
+                <div
+                  className={`p-3.5 rounded border flex flex-col gap-3 ${
+                    isDark
+                      ? 'border-[#323232] bg-[#1e1f22]'
+                      : 'border-[#d1d5db] bg-[#f7f8fa]'
+                  }`}
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <h4 className="text-xs font-semibold">Search Engine & Literature Lookup</h4>
+                    <p className="text-[11px] opacity-60">
+                      Configure search engines for automated literature discovery and web lookups.
+                    </p>
+                  </div>
+
+                  {/* Provider Selection */}
+                  <div className="flex flex-col gap-1">
+                    <label
+                      className="text-[11px] font-medium opacity-80"
+                      htmlFor="search-provider-select"
+                    >
+                      Search Provider
+                    </label>
+                    <div className="relative">
+                      <select
+                        id="search-provider-select"
+                        aria-label="Search Provider"
+                        value={stagedAiSettings.search?.provider || 'free'}
+                        onChange={(e) =>
+                          updateSearchSettings({
+                            provider: e.target.value as 'free' | 'tavily' | 'brave',
+                          })
+                        }
+                        className={`w-full appearance-none px-2.5 py-1.5 pr-8 rounded text-xs border outline-none transition focus:border-[#3574f0] cursor-pointer ${
+                          isDark
+                            ? 'bg-[#2b2d30] border-[#393b40] text-[#dfe1e5]'
+                            : 'bg-white border-[#d1d5db] text-[#1f2328]'
+                        }`}
+                      >
+                        <option
+                          value="free"
+                          className={
+                            isDark
+                              ? 'bg-[#2b2d30] text-[#dfe1e5]'
+                              : 'bg-white text-[#1f2328]'
+                          }
+                        >
+                          Built-in Free (arXiv + Semantic Scholar + DuckDuckGo)
+                        </option>
+                        <option
+                          value="tavily"
+                          className={
+                            isDark
+                              ? 'bg-[#2b2d30] text-[#dfe1e5]'
+                              : 'bg-white text-[#1f2328]'
+                          }
+                        >
+                          Tavily Search API (Deep LLM Web Search)
+                        </option>
+                        <option
+                          value="brave"
+                          className={
+                            isDark
+                              ? 'bg-[#2b2d30] text-[#dfe1e5]'
+                              : 'bg-white text-[#1f2328]'
+                          }
+                        >
+                          Brave Search API
+                        </option>
+                      </select>
+                      <ChevronDown
+                        className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none opacity-60 ${
+                          isDark ? 'text-[#dfe1e5]' : 'text-[#1f2328]'
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  {/* API Key (shown only for Tavily or Brave) */}
+                  {(stagedAiSettings.search?.provider === 'tavily' ||
+                    stagedAiSettings.search?.provider === 'brave') && (
+                    <div className="flex flex-col gap-1">
+                      <label
+                        className="text-[11px] font-medium opacity-80"
+                        htmlFor="search-api-key"
+                      >
+                        Search API Key
+                      </label>
+                      <div className="relative">
+                        <input
+                          id="search-api-key"
+                          aria-label="Search API Key"
+                          type={showSearchApiKey ? 'text' : 'password'}
+                          value={stagedAiSettings.search?.apiKey || ''}
+                          onChange={(e) => updateSearchSettings({ apiKey: e.target.value })}
+                          placeholder={
+                            stagedAiSettings.search?.provider === 'tavily'
+                              ? 'e.g. tvly-...'
+                              : 'e.g. BSAE...'
+                          }
+                          className={`w-full px-2.5 py-1.5 pr-8 rounded text-xs border outline-none focus:border-[#3574f0] ${
+                            isDark
+                              ? 'bg-[#2b2d30] border-[#393b40] text-[#dfe1e5]'
+                              : 'bg-white border-[#d1d5db] text-[#1f2328]'
+                          }`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowSearchApiKey(!showSearchApiKey)}
+                          className={`absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded cursor-pointer ${
+                            isDark
+                              ? 'text-[#c2c5cc] hover:text-[#dfe1e5]'
+                              : 'text-[#6c707e] hover:text-[#1f2328]'
+                          }`}
+                          title={
+                            showSearchApiKey
+                              ? 'Hide Search API Key'
+                              : 'Show Search API Key'
+                          }
+                          aria-label={
+                            showSearchApiKey
+                              ? 'Hide Search API Key'
+                              : 'Show Search API Key'
+                          }
+                        >
+                          {showSearchApiKey ? (
+                            <EyeOff className="w-3.5 h-3.5" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

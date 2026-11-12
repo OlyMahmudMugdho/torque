@@ -788,5 +788,156 @@ describe('AgentClient', () => {
       expect(res.toolCalls![0].status).toBe('done');
       expect(res.toolCalls![0].result).toContain('\\documentclass{article}');
     });
+
+    it('handles alternative parameter names (filePath, code, etc.) resiliently', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                tool_calls: [
+                  {
+                    id: 'call_resilient_1',
+                    type: 'function',
+                    function: {
+                      name: 'torque_write_file',
+                      arguments: JSON.stringify({
+                        filePath: 'chapter1.tex',
+                        code: '% new content',
+                      }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      } as any);
+
+      const res = await client.sendMessage(
+        [{ id: '1', role: 'user', content: 'Create chapter1.tex', timestamp: 1 }],
+        mockContext
+      );
+
+      expect(res.toolCalls).toHaveLength(1);
+      expect(res.toolCalls![0].status).toBe('pending_approval');
+      expect(res.toolCalls![0].diff?.path).toBe('chapter1.tex');
+      expect(res.toolCalls![0].diff?.newContent).toBe('% new content');
+    });
+
+    it('emits onStatusChange events during sendMessage and runTurn', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                tool_calls: [
+                  {
+                    id: 'call_status_1',
+                    type: 'function',
+                    function: {
+                      name: 'torque_read_file',
+                      arguments: JSON.stringify({ filename: 'main.tex' }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      } as any);
+
+      const statusEvents: any[] = [];
+      await client.sendMessage(
+        [{ id: '1', role: 'user', content: 'Read file', timestamp: 1 }],
+        mockContext,
+        {
+          onStatusChange: (status) => statusEvents.push(status),
+        }
+      );
+
+      expect(statusEvents.some((s) => s?.type === 'thinking')).toBe(true);
+      expect(statusEvents.some((s) => s?.type === 'executing_tool' && s.toolName === 'torque_read_file')).toBe(true);
+    });
+
+    it('instructs model on iterative multi-turn loop and error retries in buildWorkspaceSystemPrompt', () => {
+      const prompt = buildWorkspaceSystemPrompt({ activeFilePath: 'main.tex', files: { 'main.tex': '' } });
+      expect(prompt).toContain('iterative multi-turn loop');
+      expect(prompt).toContain('retry until the issue is solved');
+    });
+
+    it('auto-applies changes and continues turn loop when autoApply is true', async () => {
+      const writeSpy = vi.fn();
+      const customContext: WorkspaceToolContext = {
+        ...mockContext,
+        writeFile: writeSpy,
+      };
+
+      // Turn 1: tool call to write file
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  tool_calls: [
+                    {
+                      id: 'call_auto_1',
+                      type: 'function',
+                      function: {
+                        name: 'torque_write_file',
+                        arguments: JSON.stringify({
+                          path: 'auto.tex',
+                          content: '% Auto applied content',
+                        }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        } as any)
+        // Turn 2: final assistant message
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: 'File auto.tex has been written successfully.',
+                },
+              },
+            ],
+          }),
+        } as any);
+
+      const result = await client.runTurn(
+        [{ id: '1', role: 'user', content: 'Create auto.tex', timestamp: 1 }],
+        customContext,
+        { autoApply: true }
+      );
+
+      // Verify context.writeFile was called automatically
+      expect(writeSpy).toHaveBeenCalledWith('auto.tex', '% Auto applied content');
+
+      // Verify the turn continued and final message was received
+      expect(result.some((m) => m.content === 'File auto.tex has been written successfully.')).toBe(true);
+
+      // Verify tool call was marked accepted
+      const firstAssistant = result.find((m) => m.role === 'assistant' && m.toolCalls);
+      expect(firstAssistant?.toolCalls?.[0].status).toBe('accepted');
+    });
   });
 });

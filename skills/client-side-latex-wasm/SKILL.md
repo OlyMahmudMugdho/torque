@@ -1,9 +1,15 @@
 ---
 name: client-side-latex-wasm
-description: Use when building, debugging, or integrating client-side LaTeX compilation in the browser using WebAssembly (Tectonic / glyphtex-engine), handling in-browser virtual filesystems, on-demand TeX package fetching, Web Worker isolation, Monaco diagnostic mapping, or Next.js WASM asset configuration.
+description: Historical reference for building, debugging, or integrating client-side LaTeX compilation in the browser using WebAssembly (Tectonic / glyphtex-engine). Note that Torque has migrated to Native TeX Live and Tauri architecture.
 ---
 
 # Client-Side LaTeX Compilation with WebAssembly
+
+> [!NOTE] Architecture Migration Notice
+> **Torque has migrated from in-browser WebAssembly to Native TeX Live & Tauri Architecture**:
+> Production compilation in Torque is now executed natively via the host's TeX Live installation (`latexmk`, `pdflatex`, `xelatex`, `lualatex`) paired with automated CTAN package resolution into `TEXMFHOME` via Tauri IPC and the lightweight compilation server.
+> For current Torque IDE development, refer to [`skills/torque-ide-development/SKILL.md`](file:///home/mugdho/codes/torque/skills/torque-ide-development/SKILL.md) and [`MAP.md`](file:///home/mugdho/codes/torque/MAP.md).
+> This document is preserved as an engineering reference for WebAssembly-based client-side TeX, virtual filesystems, and Web Worker isolation patterns.
 
 Compile LaTeX documents directly inside the browser using WebAssembly (Tectonic compiled to WASM via `glyphtex-engine`). Eliminates backend TeX servers, preserves privacy, enables offline-capable compilation, and provides zero-server infrastructure cost.
 

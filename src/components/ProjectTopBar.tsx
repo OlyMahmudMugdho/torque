@@ -150,7 +150,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
       }`}
     >
       {/* Left: IntelliJ Brand + Top Menu Bar */}
-      <div className="flex-1 flex items-center justify-start min-w-max gap-1">
+      <div className="flex-1 flex items-center justify-start min-w-0 gap-1">
         {/* IntelliJ Style App Icon */}
         <button
           type="button"
@@ -219,7 +219,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
               title="Switch Project"
             >
               <Folder className="w-3.5 h-3.5 text-[#3574f0] shrink-0" />
-              <span className="max-w-[130px] truncate">{activeProject?.name ?? 'Select Project'}</span>
+              <span className="max-w-[80px] sm:max-w-[130px] md:max-w-[180px] truncate">{activeProject?.name ?? 'Select Project'}</span>
               <ChevronDown className={`w-3 h-3 shrink-0 ${isDark ? 'text-[#868a91]' : 'text-[#6c707e]'}`} />
             </button>
 
@@ -471,7 +471,7 @@ export const ProjectTopBar: React.FC<ProjectTopBarProps> = ({
       </div>
 
       {/* Right: Actions */}
-      <div className="flex-1 flex items-center justify-end min-w-max gap-1.5 shrink-0">
+      <div className="flex-1 flex items-center justify-end min-w-0 gap-1.5 shrink-0">
         <button
           onClick={onExportZip}
           className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition ${

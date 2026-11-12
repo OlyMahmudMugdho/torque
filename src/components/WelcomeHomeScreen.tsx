@@ -641,17 +641,6 @@ export const WelcomeHomeScreen: React.FC<WelcomeHomeScreenProps> = ({
 
                                   <button
                                     type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onSelectProject(p.id);
-                                    }}
-                                    className="px-2.5 py-1 text-xs font-medium rounded bg-[#3574f0]/15 text-[#3574f0] hover:bg-[#3574f0] hover:text-white transition"
-                                  >
-                                    Open
-                                  </button>
-
-                                  <button
-                                    type="button"
                                     onClick={(e) => handleDelete(e, p.id, p.name)}
                                     aria-label={`Delete project ${p.name}`}
                                     title="Delete project"

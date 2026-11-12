@@ -11,6 +11,7 @@ export interface AiDiffCardProps {
   onAccept: () => void;
   onReject: () => void;
   defaultExpanded?: boolean;
+  autoApplied?: boolean;
 }
 
 export const AiDiffCard: React.FC<AiDiffCardProps> = ({
@@ -19,6 +20,7 @@ export const AiDiffCard: React.FC<AiDiffCardProps> = ({
   onAccept,
   onReject,
   defaultExpanded = true,
+  autoApplied = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(defaultExpanded);
   const { theme } = useThemeSafe();
@@ -187,7 +189,7 @@ export const AiDiffCard: React.FC<AiDiffCardProps> = ({
               }}
             >
               <Check size={14} className="stroke-[2.5]" />
-              <span>Accepted</span>
+              <span>{autoApplied ? 'Auto-applied' : 'Accepted'}</span>
             </span>
           )}
           {status === 'rejected' && (

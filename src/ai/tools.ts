@@ -182,3 +182,182 @@ export const WORKSPACE_TOOLS_SCHEMA: OpenAIToolDefinition[] = [
 export function validateToolPath(path: string): string {
   return normalizeFilePath(path);
 }
+
+/**
+ * Unwraps nested argument structures (e.g. `args.params`, `args.arguments`, `args.input`)
+ * commonly produced by LLMs or different tool calling schemas.
+ */
+export function unwrapToolArgs(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {};
+  }
+  const obj = raw as Record<string, unknown>;
+  if (obj.params && typeof obj.params === 'object' && !Array.isArray(obj.params)) {
+    return unwrapToolArgs(obj.params);
+  }
+  if (typeof obj.arguments === 'string') {
+    try {
+      const parsed = JSON.parse(obj.arguments);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return unwrapToolArgs(parsed);
+      }
+    } catch {
+      // not JSON string
+    }
+  }
+  if (obj.arguments && typeof obj.arguments === 'object' && !Array.isArray(obj.arguments)) {
+    return unwrapToolArgs(obj.arguments);
+  }
+  if (obj.input && typeof obj.input === 'object' && !Array.isArray(obj.input)) {
+    return unwrapToolArgs(obj.input);
+  }
+  return obj;
+}
+
+const PATH_KEYS = [
+  'path',
+  'filePath',
+  'filepath',
+  'filename',
+  'fileName',
+  'file',
+  'targetPath',
+  'relPath',
+  'relative_path',
+  'Path',
+  'FilePath',
+];
+
+const CONTENT_KEYS = [
+  'content',
+  'code',
+  'text',
+  'contents',
+  'data',
+  'Content',
+  'Code',
+];
+
+const TARGET_KEYS = [
+  'target',
+  'find',
+  'search',
+  'original',
+  'oldText',
+  'old_text',
+  'Target',
+];
+
+const REPLACEMENT_KEYS = [
+  'replacement',
+  'replace',
+  'substitute',
+  'newText',
+  'new_text',
+  'Replacement',
+];
+
+const QUERY_KEYS = [
+  'query',
+  'q',
+  'search',
+  'prompt',
+  'Query',
+];
+
+/**
+ * Extracts a normalized workspace file path from alternative argument keys or nested payloads.
+ * Falls back to `fallbackPath` (e.g. active file) if candidate is missing or empty.
+ */
+export function extractToolPath(args: unknown, fallbackPath?: string): string {
+  const unwrapped = unwrapToolArgs(args);
+  for (const key of PATH_KEYS) {
+    const val = unwrapped[key];
+    if (typeof val === 'string' && val.trim().length > 0) {
+      return validateToolPath(val);
+    }
+  }
+
+  if (fallbackPath && typeof fallbackPath === 'string' && fallbackPath.trim().length > 0) {
+    return validateToolPath(fallbackPath);
+  }
+
+  throw new Error('Invalid path: path must be a non-empty string');
+}
+
+/**
+ * Extracts content from alternative argument keys (content, code, text, contents, data, etc.).
+ */
+export function extractToolContent(args: unknown): string {
+  const unwrapped = unwrapToolArgs(args);
+  for (const key of CONTENT_KEYS) {
+    const val = unwrapped[key];
+    if (typeof val === 'string') {
+      return val;
+    }
+    if (typeof val === 'number' || typeof val === 'boolean') {
+      return String(val);
+    }
+  }
+  throw new Error('Missing required parameter: content');
+}
+
+/**
+ * Extracts target and replacement strings for surgical file editing.
+ */
+export function extractToolEditTargets(args: unknown): { target: string; replacement: string } {
+  const unwrapped = unwrapToolArgs(args);
+
+  let target: string | undefined;
+  for (const key of TARGET_KEYS) {
+    const val = unwrapped[key];
+    if (typeof val === 'string') {
+      target = val;
+      break;
+    }
+    if (typeof val === 'number') {
+      target = String(val);
+      break;
+    }
+  }
+
+  let replacement: string | undefined;
+  for (const key of REPLACEMENT_KEYS) {
+    const val = unwrapped[key];
+    if (typeof val === 'string') {
+      replacement = val;
+      break;
+    }
+    if (typeof val === 'number' || typeof val === 'boolean') {
+      replacement = String(val);
+      break;
+    }
+  }
+
+  if (target === undefined || target === null) {
+    throw new Error('Missing required parameter: target');
+  }
+  if (target.length === 0) {
+    throw new Error("Argument 'target' cannot be empty");
+  }
+  if (replacement === undefined || replacement === null) {
+    throw new Error('Missing required parameter: replacement');
+  }
+
+  return { target, replacement };
+}
+
+/**
+ * Extracts search query from alternative keys (query, q, search, prompt, Query).
+ */
+export function extractToolQuery(args: unknown): string {
+  const unwrapped = unwrapToolArgs(args);
+  for (const key of QUERY_KEYS) {
+    const val = unwrapped[key];
+    if (typeof val === 'string' && val.trim().length > 0) {
+      return val.trim();
+    }
+  }
+  throw new Error('Search query is required');
+}
+

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { AiChatPanel, type AiChatPanelProps } from '../AiChatPanel';
 import type { AIProviderConfig, ChatSession } from '../../types/ai';
 import type { FileDiffResult } from '../../ai/diffUtils';
@@ -506,5 +506,126 @@ describe('AiChatPanel Component', () => {
 
     // Code block
     expect(screen.getByText('\\cite{vaswani2017attention}')).toBeInTheDocument();
+  });
+
+  it('queues messages when submitted while isGenerating is true, and automatically dequeues upon completion', async () => {
+    let resolveFirstSend: () => void = () => {};
+    const firstSendPromise = new Promise<void>((resolve) => {
+      resolveFirstSend = resolve;
+    });
+
+    const sentMessages: string[] = [];
+    const handleSendMessage = vi.fn().mockImplementation((text: string) => {
+      sentMessages.push(text);
+      if (sentMessages.length === 1) {
+        return firstSendPromise;
+      }
+      return Promise.resolve();
+    });
+
+    render(
+      <AiChatPanel
+        {...createProps({
+          onSendMessage: handleSendMessage,
+        })}
+      />
+    );
+
+    const textarea = screen.getByTestId('chat-textarea');
+    const sendButton = screen.getByTestId('send-message-button');
+
+    // 1. Send first message
+    fireEvent.change(textarea, { target: { value: 'First task' } });
+    fireEvent.click(sendButton);
+
+    expect(handleSendMessage).toHaveBeenCalledWith('First task', expect.anything());
+    expect(screen.getByTestId('agent-status-indicator')).toBeInTheDocument();
+
+    // 2. Submit second message while generating -> should be queued
+    fireEvent.change(textarea, { target: { value: 'Second queued task' } });
+    fireEvent.click(sendButton);
+
+    expect(screen.getByTestId('queued-messages-container')).toBeInTheDocument();
+    expect(screen.getByText('Queued Messages (1)')).toBeInTheDocument();
+    expect(screen.getByText('Second queued task')).toBeInTheDocument();
+
+    // 3. Submit third message -> queue count should be 2
+    fireEvent.change(textarea, { target: { value: 'Third queued task' } });
+    fireEvent.click(sendButton);
+
+    expect(screen.getByText('Queued Messages (2)')).toBeInTheDocument();
+
+    // 4. Resolve first task -> second task automatically dequeues
+    await act(async () => {
+      resolveFirstSend();
+    });
+
+    await waitFor(() => {
+      expect(sentMessages).toContain('Second queued task');
+    });
+
+    // 5. Third task automatically dequeues as well
+    await waitFor(() => {
+      expect(sentMessages).toContain('Third queued task');
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('queued-messages-container')).not.toBeInTheDocument();
+    });
+  });
+
+  it('allows removing an individual queued item and clearing the entire queue', async () => {
+    const neverResolvingPromise = new Promise<void>(() => {});
+    render(
+      <AiChatPanel
+        {...createProps({
+          onSendMessage: () => neverResolvingPromise,
+        })}
+      />
+    );
+
+    const textarea = screen.getByTestId('chat-textarea');
+    const sendButton = screen.getByTestId('send-message-button');
+
+    fireEvent.change(textarea, { target: { value: 'Initial message' } });
+    fireEvent.click(sendButton);
+
+    // Queue item 1 and item 2
+    fireEvent.change(textarea, { target: { value: 'Queue 1' } });
+    fireEvent.click(sendButton);
+    fireEvent.change(textarea, { target: { value: 'Queue 2' } });
+    fireEvent.click(sendButton);
+
+    expect(screen.getByText('Queued Messages (2)')).toBeInTheDocument();
+
+    // Remove first queued item
+    const removeBtn0 = screen.getByTestId('remove-queued-0');
+    fireEvent.click(removeBtn0);
+
+    expect(screen.getByText('Queued Messages (1)')).toBeInTheDocument();
+    expect(screen.getByText('Queue 2')).toBeInTheDocument();
+    expect(screen.queryByText('Queue 1')).not.toBeInTheDocument();
+
+    // Clear all
+    const clearBtn = screen.getByTestId('clear-queue-button');
+    fireEvent.click(clearBtn);
+
+    expect(screen.queryByTestId('queued-messages-container')).not.toBeInTheDocument();
+  });
+
+  it('renders Auto Edit toggle in header and toggles/persists state', () => {
+    render(<AiChatPanel {...createProps()} />);
+
+    const autoEditToggle = screen.getByTestId('auto-edit-toggle');
+    expect(autoEditToggle).toBeInTheDocument();
+    expect(autoEditToggle).toHaveTextContent('Auto Edit');
+
+    // Click toggle to enable
+    fireEvent.click(autoEditToggle);
+    expect(localStorage.getItem('torque_ai_auto_edit')).toBe('true');
+
+    // Click toggle to disable
+    fireEvent.click(autoEditToggle);
+    expect(localStorage.getItem('torque_ai_auto_edit')).toBe('false');
   });
 });

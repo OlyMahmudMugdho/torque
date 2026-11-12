@@ -970,8 +970,99 @@ export function handleToolGetActiveProject(state) {
   };
 }
 
+function unwrapMcpArgs(args) {
+  if (!args || typeof args !== 'object') return {};
+  if (args.params && typeof args.params === 'object' && !Array.isArray(args.params)) return unwrapMcpArgs(args.params);
+  if (args.arguments && typeof args.arguments === 'object' && !Array.isArray(args.arguments)) return unwrapMcpArgs(args.arguments);
+  if (args.input && typeof args.input === 'object' && !Array.isArray(args.input)) return unwrapMcpArgs(args.input);
+  return args;
+}
+
+function extractMcpPath(args) {
+  const unwrapped = unwrapMcpArgs(args);
+  const candidates = [
+    'path',
+    'filePath',
+    'filepath',
+    'filename',
+    'fileName',
+    'file',
+    'targetPath',
+    'relPath',
+    'relative_path',
+    'Path',
+    'FilePath',
+  ];
+  for (const key of candidates) {
+    const val = unwrapped[key];
+    if (typeof val === 'string' && val.trim().length > 0) {
+      return val.trim();
+    }
+  }
+  return null;
+}
+
+function extractMcpContent(args) {
+  const unwrapped = unwrapMcpArgs(args);
+  const candidates = [
+    'content',
+    'code',
+    'text',
+    'contents',
+    'data',
+    'Content',
+    'Code',
+  ];
+  for (const key of candidates) {
+    const val = unwrapped[key];
+    if (val !== undefined && val !== null) {
+      return String(val);
+    }
+  }
+  return null;
+}
+
+function extractMcpTarget(args) {
+  const unwrapped = unwrapMcpArgs(args);
+  const candidates = [
+    'target',
+    'find',
+    'search',
+    'original',
+    'oldText',
+    'old_text',
+    'Target',
+  ];
+  for (const key of candidates) {
+    const val = unwrapped[key];
+    if (val !== undefined && val !== null) {
+      return String(val);
+    }
+  }
+  return null;
+}
+
+function extractMcpReplacement(args) {
+  const unwrapped = unwrapMcpArgs(args);
+  const candidates = [
+    'replacement',
+    'replace',
+    'substitute',
+    'newText',
+    'new_text',
+    'Replacement',
+  ];
+  for (const key of candidates) {
+    const val = unwrapped[key];
+    if (val !== undefined && val !== null) {
+      return String(val);
+    }
+  }
+  return null;
+}
+
 export function handleToolReadFile(state, args = {}) {
-  const rawPath = args.path;
+  const rawPath = extractMcpPath(args);
   if (!rawPath || typeof rawPath !== 'string') {
     const err = new Error("Missing required argument 'path'");
     err.code = -32602;
@@ -1017,14 +1108,14 @@ export function handleToolReadFile(state, args = {}) {
 }
 
 export function handleToolWriteFile(state, args = {}) {
-  const rawPath = args.path;
+  const rawPath = extractMcpPath(args);
   if (!rawPath || typeof rawPath !== 'string') {
     const err = new Error("Missing required argument 'path'");
     err.code = -32602;
     throw err;
   }
 
-  const content = args.content;
+  const content = extractMcpContent(args);
   if (content === undefined || content === null) {
     const err = new Error("Missing required argument 'content'");
     err.code = -32602;
@@ -1085,21 +1176,21 @@ export function handleToolWriteFile(state, args = {}) {
 }
 
 export function handleToolEditFile(state, args = {}) {
-  const rawPath = args.path;
+  const rawPath = extractMcpPath(args);
   if (!rawPath || typeof rawPath !== 'string') {
     const err = new Error("Missing required argument 'path'");
     err.code = -32602;
     throw err;
   }
 
-  const target = args.target !== undefined ? args.target : args.search;
+  const target = extractMcpTarget(args);
   if (target === undefined || target === null || typeof target !== 'string' || target.length === 0) {
     const err = new Error("Argument 'target' cannot be empty");
     err.code = -32602;
     throw err;
   }
 
-  const replacement = args.replacement !== undefined ? args.replacement : args.replace;
+  const replacement = extractMcpReplacement(args);
   if (replacement === undefined || replacement === null) {
     const err = new Error("Missing required argument 'replacement'");
     err.code = -32602;

@@ -5,10 +5,101 @@ use serde_json::{json, Value};
 use super::{McpState, slice_lines};
 use crate::storage::{self, is_binary_file, normalize_path};
 
+fn unwrap_args<'a>(args: &'a Value) -> &'a Value {
+    if let Some(params) = args.get("params").filter(|v| v.is_object()) {
+        unwrap_args(params)
+    } else if let Some(arguments) = args.get("arguments").filter(|v| v.is_object()) {
+        unwrap_args(arguments)
+    } else if let Some(input) = args.get("input").filter(|v| v.is_object()) {
+        unwrap_args(input)
+    } else {
+        args
+    }
+}
+
+fn extract_path<'a>(args: &'a Value) -> Option<&'a str> {
+    const CANDIDATES: &[&str] = &[
+        "path",
+        "filePath",
+        "filepath",
+        "filename",
+        "fileName",
+        "file",
+        "targetPath",
+        "relPath",
+        "relative_path",
+        "Path",
+        "FilePath",
+    ];
+    let unwrapped = unwrap_args(args);
+    for key in CANDIDATES {
+        if let Some(s) = unwrapped.get(*key).and_then(|v| v.as_str()) {
+            if !s.trim().is_empty() {
+                return Some(s.trim());
+            }
+        }
+    }
+    None
+}
+
+fn extract_content<'a>(args: &'a Value) -> Option<&'a str> {
+    const CANDIDATES: &[&str] = &[
+        "content",
+        "code",
+        "text",
+        "contents",
+        "data",
+        "Content",
+        "Code",
+    ];
+    let unwrapped = unwrap_args(args);
+    for key in CANDIDATES {
+        if let Some(s) = unwrapped.get(*key).and_then(|v| v.as_str()) {
+            return Some(s);
+        }
+    }
+    None
+}
+
+fn extract_target<'a>(args: &'a Value) -> Option<&'a str> {
+    const CANDIDATES: &[&str] = &[
+        "target",
+        "find",
+        "search",
+        "original",
+        "oldText",
+        "old_text",
+        "Target",
+    ];
+    let unwrapped = unwrap_args(args);
+    for key in CANDIDATES {
+        if let Some(s) = unwrapped.get(*key).and_then(|v| v.as_str()) {
+            return Some(s);
+        }
+    }
+    None
+}
+
+fn extract_replacement<'a>(args: &'a Value) -> Option<&'a str> {
+    const CANDIDATES: &[&str] = &[
+        "replacement",
+        "replace",
+        "substitute",
+        "newText",
+        "new_text",
+        "Replacement",
+    ];
+    let unwrapped = unwrap_args(args);
+    for key in CANDIDATES {
+        if let Some(s) = unwrapped.get(*key).and_then(|v| v.as_str()) {
+            return Some(s);
+        }
+    }
+    None
+}
+
 pub fn handle_tool_read_file(state: &McpState, args: &Value) -> Result<Value, (i64, String)> {
-    let raw_path = args
-        .get("path")
-        .and_then(|p| p.as_str())
+    let raw_path = extract_path(args)
         .ok_or_else(|| (-32602, "Missing required argument 'path'".to_string()))?;
 
     let clean_path = normalize_path(raw_path)
@@ -50,14 +141,10 @@ pub fn handle_tool_read_file(state: &McpState, args: &Value) -> Result<Value, (i
 }
 
 pub fn handle_tool_write_file(state: &McpState, args: &Value) -> Result<Value, (i64, String)> {
-    let raw_path = args
-        .get("path")
-        .and_then(|p| p.as_str())
+    let raw_path = extract_path(args)
         .ok_or_else(|| (-32602, "Missing required argument 'path'".to_string()))?;
 
-    let content = args
-        .get("content")
-        .and_then(|c| c.as_str())
+    let content = extract_content(args)
         .ok_or_else(|| (-32602, "Missing required argument 'content'".to_string()))?;
 
     let clean_path = normalize_path(raw_path)
@@ -123,21 +210,13 @@ pub fn handle_tool_write_file(state: &McpState, args: &Value) -> Result<Value, (
 }
 
 pub fn handle_tool_edit_file(state: &McpState, args: &Value) -> Result<Value, (i64, String)> {
-    let raw_path = args
-        .get("path")
-        .and_then(|p| p.as_str())
+    let raw_path = extract_path(args)
         .ok_or_else(|| (-32602, "Missing required argument 'path'".to_string()))?;
 
-    let target = args
-        .get("target")
-        .or_else(|| args.get("search"))
-        .and_then(|t| t.as_str())
+    let target = extract_target(args)
         .ok_or_else(|| (-32602, "Missing required argument 'target'".to_string()))?;
 
-    let replacement = args
-        .get("replacement")
-        .or_else(|| args.get("replace"))
-        .and_then(|r| r.as_str())
+    let replacement = extract_replacement(args)
         .ok_or_else(|| (-32602, "Missing required argument 'replacement'".to_string()))?;
 
     if target.is_empty() {

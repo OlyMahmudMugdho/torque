@@ -342,15 +342,6 @@ describe('WelcomeHomeScreen', () => {
       expect(props.onSelectProject).toHaveBeenCalledWith('p2');
     });
 
-    it('clicking Open button on a project calls onSelectProject', () => {
-      const { props } = renderComponent();
-
-      const openButtons = screen.getAllByRole('button', { name: 'Open' });
-      fireEvent.click(openButtons[0]);
-
-      expect(props.onSelectProject).toHaveBeenCalledWith('p1');
-    });
-
     it('clicking Delete button prompts for confirmation and calls onDeleteProject', () => {
       const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
       const { props } = renderComponent();

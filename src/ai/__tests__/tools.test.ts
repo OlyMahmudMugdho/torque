@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   WORKSPACE_TOOLS_SCHEMA,
   validateToolPath,
+  extractToolPath,
+  extractToolContent,
+  extractToolEditTargets,
+  extractToolQuery,
 } from '../tools';
 
 describe('tools', () => {
@@ -114,6 +118,103 @@ describe('tools', () => {
       expect(() => validateToolPath('')).toThrow(/empty path|non-empty string/i);
       expect(() => validateToolPath('   ')).toThrow(/empty path|non-empty string/i);
       expect(() => validateToolPath(null as any)).toThrow(/non-empty string/i);
+    });
+  });
+
+  describe('extractToolPath', () => {
+    it('extracts path from path, filePath, filename, etc.', () => {
+      expect(extractToolPath({ path: 'main.tex' })).toBe('main.tex');
+      expect(extractToolPath({ filePath: 'chapter1.tex' })).toBe('chapter1.tex');
+      expect(extractToolPath({ filepath: 'intro.tex' })).toBe('intro.tex');
+      expect(extractToolPath({ filename: 'ref.bib' })).toBe('ref.bib');
+      expect(extractToolPath({ fileName: 'paper.tex' })).toBe('paper.tex');
+      expect(extractToolPath({ file: 'table.tex' })).toBe('table.tex');
+      expect(extractToolPath({ targetPath: 'sections/1.tex' })).toBe('sections/1.tex');
+      expect(extractToolPath({ relPath: 'figures/plot.tex' })).toBe('figures/plot.tex');
+      expect(extractToolPath({ relative_path: 'doc.tex' })).toBe('doc.tex');
+      expect(extractToolPath({ Path: 'overview.tex' })).toBe('overview.tex');
+      expect(extractToolPath({ FilePath: 'ack.tex' })).toBe('ack.tex');
+    });
+
+    it('unwraps nested parameters (params, arguments, input)', () => {
+      expect(extractToolPath({ params: { filePath: 'nested.tex' } })).toBe('nested.tex');
+      expect(extractToolPath({ arguments: { path: 'args.tex' } })).toBe('args.tex');
+      expect(extractToolPath({ input: { filename: 'input.tex' } })).toBe('input.tex');
+      expect(extractToolPath({ arguments: JSON.stringify({ path: 'json_str.tex' }) })).toBe('json_str.tex');
+    });
+
+    it('falls back to fallbackPath if candidate is missing or empty', () => {
+      expect(extractToolPath({}, 'fallback.tex')).toBe('fallback.tex');
+      expect(extractToolPath({ path: '' }, 'active.tex')).toBe('active.tex');
+      expect(extractToolPath({ filePath: '   ' }, 'main.tex')).toBe('main.tex');
+    });
+
+    it('throws when path is missing and no valid fallback is provided', () => {
+      expect(() => extractToolPath({})).toThrow(/non-empty string/i);
+      expect(() => extractToolPath({ path: '' })).toThrow(/non-empty string/i);
+      expect(() => extractToolPath(null)).toThrow(/non-empty string/i);
+    });
+  });
+
+  describe('extractToolContent', () => {
+    it('extracts content from content, code, text, etc.', () => {
+      expect(extractToolContent({ content: '\\documentclass{article}' })).toBe('\\documentclass{article}');
+      expect(extractToolContent({ code: 'let x = 1;' })).toBe('let x = 1;');
+      expect(extractToolContent({ text: 'Hello LaTeX' })).toBe('Hello LaTeX');
+      expect(extractToolContent({ contents: 'Some contents' })).toBe('Some contents');
+      expect(extractToolContent({ data: 'binary or string data' })).toBe('binary or string data');
+      expect(extractToolContent({ Content: 'Capitalized Content' })).toBe('Capitalized Content');
+      expect(extractToolContent({ Code: 'Capitalized Code' })).toBe('Capitalized Code');
+    });
+
+    it('unwraps nested objects for content', () => {
+      expect(extractToolContent({ params: { content: 'Nested content' } })).toBe('Nested content');
+    });
+
+    it('throws if content is missing', () => {
+      expect(() => extractToolContent({})).toThrow(/missing required parameter: content/i);
+      expect(() => extractToolContent(null)).toThrow(/missing required parameter: content/i);
+    });
+  });
+
+  describe('extractToolEditTargets', () => {
+    it('extracts target and replacement with alias keys', () => {
+      expect(
+        extractToolEditTargets({ target: 'foo', replacement: 'bar' })
+      ).toEqual({ target: 'foo', replacement: 'bar' });
+
+      expect(
+        extractToolEditTargets({ find: 'original text', replace: 'new text' })
+      ).toEqual({ target: 'original text', replacement: 'new text' });
+
+      expect(
+        extractToolEditTargets({ search: 'old', substitute: 'new' })
+      ).toEqual({ target: 'old', replacement: 'new' });
+
+      expect(
+        extractToolEditTargets({ old_text: 'first', new_text: 'second' })
+      ).toEqual({ target: 'first', replacement: 'second' });
+    });
+
+    it('throws when target or replacement are missing or empty', () => {
+      expect(() => extractToolEditTargets({ replacement: 'only' })).toThrow(/target/i);
+      expect(() => extractToolEditTargets({ target: '', replacement: 'b' })).toThrow(/empty/i);
+      expect(() => extractToolEditTargets({ target: 'a' })).toThrow(/replacement/i);
+    });
+  });
+
+  describe('extractToolQuery', () => {
+    it('extracts query from query, q, search, prompt, Query', () => {
+      expect(extractToolQuery({ query: 'quantum computing' })).toBe('quantum computing');
+      expect(extractToolQuery({ q: 'einstein' })).toBe('einstein');
+      expect(extractToolQuery({ search: 'deep learning' })).toBe('deep learning');
+      expect(extractToolQuery({ prompt: 'transformers' })).toBe('transformers');
+      expect(extractToolQuery({ Query: 'graph neural networks' })).toBe('graph neural networks');
+    });
+
+    it('throws when query is empty or missing', () => {
+      expect(() => extractToolQuery({})).toThrow(/search query is required/i);
+      expect(() => extractToolQuery({ query: '   ' })).toThrow(/search query is required/i);
     });
   });
 });

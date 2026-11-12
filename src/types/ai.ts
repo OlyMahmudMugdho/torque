@@ -65,3 +65,15 @@ export interface ChatSession {
   createdAt: number;
 }
 
+export interface AgentLoopOptions {
+  maxTurns?: number;
+  systemPrompt?: string;
+  onChunk?: (token: string) => void;
+  onMessagesChange?: (messages: ChatMessage[]) => void;
+  onStatusChange?: (status: { type: 'thinking' | 'executing_tool'; toolName?: string; detail?: string } | null) => void;
+  signal?: AbortSignal;
+  autoApply?: boolean;
+  autoEdit?: boolean;
+}
+
+

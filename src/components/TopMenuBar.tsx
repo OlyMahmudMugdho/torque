@@ -231,7 +231,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
                     setOpenMenu(menu.label);
                   }
                 }}
-                className={`px-2.5 py-1 rounded text-xs font-medium cursor-pointer transition-colors ${buttonClasses}`}
+                className={`px-2 py-0.5 sm:px-2.5 sm:py-1 rounded text-xs font-medium cursor-pointer transition-colors shrink-0 ${buttonClasses}`}
               >
                 {menu.label}
               </button>

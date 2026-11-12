@@ -348,6 +348,26 @@ fn test_torque_write_and_edit_file() {
     let re_updated_content = fs::read_to_string(&written_path).unwrap();
     assert!(re_updated_content.contains("This paper introduces Torque."));
 
+    // 3.5 Write file using filePath and code aliases
+    let alias_write_req = json!({
+        "jsonrpc": "2.0",
+        "id": 212,
+        "method": "tools/call",
+        "params": {
+            "name": "torque_write_file",
+            "arguments": {
+                "filePath": "sections/alias.tex",
+                "code": "% Alias write test"
+            }
+        }
+    });
+    let alias_write_str = dispatch_jsonrpc_request(&state, &alias_write_req.to_string()).unwrap();
+    let alias_write_resp: Value = serde_json::from_str(&alias_write_str).unwrap();
+    assert_eq!(alias_write_resp["result"]["isError"], false);
+    let alias_written_path = temp_dir.join("proj_write").join("files").join("sections").join("alias.tex");
+    assert!(alias_written_path.exists());
+    assert_eq!(fs::read_to_string(&alias_written_path).unwrap(), "% Alias write test");
+
     // 4. Edit failure: target not found returns clean error
     let bad_edit_req = json!({
         "jsonrpc": "2.0",

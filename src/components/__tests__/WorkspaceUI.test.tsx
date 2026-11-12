@@ -626,7 +626,7 @@ describe('Workspace UI Components', () => {
 
     // Open project
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+      fireEvent.click(screen.getByText('Relativity Paper'));
     });
     expect(window.location.search).toContain('project=p1');
 
@@ -652,7 +652,7 @@ describe('Workspace UI Components', () => {
 
     // Selecting a project in the Welcome screen returns to workspace
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+      fireEvent.click(screen.getByText('Relativity Paper'));
     });
     expect(mockWorkspaceState.selectProject).toHaveBeenCalledWith('p1');
     expect(screen.queryByText('Welcome to Torque', { selector: 'h1' })).not.toBeInTheDocument();

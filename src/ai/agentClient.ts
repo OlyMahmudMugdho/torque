@@ -1,10 +1,22 @@
 import type { AIProviderConfig, ChatMessage, ToolCallItem as ToolCallState } from '../types/ai';
 import { normalizeBaseUrl } from './aiConfig';
-import { WORKSPACE_TOOLS_SCHEMA, validateToolPath } from './tools';
+import {
+  WORKSPACE_TOOLS_SCHEMA,
+  extractToolPath,
+  extractToolContent,
+  extractToolEditTargets,
+  extractToolQuery,
+} from './tools';
 import { computeFileDiff, applyFilePatch } from './diffUtils';
 import { searchAcademic, searchWeb } from './searchService';
 
 export type { ToolCallState, ChatMessage };
+
+export interface AgentStatus {
+  type: 'thinking' | 'executing_tool';
+  toolName?: string;
+  detail?: string;
+}
 
 export interface WorkspaceToolContext {
   readFile: (path: string) => Promise<string | null> | (string | null);
@@ -13,6 +25,7 @@ export interface WorkspaceToolContext {
   getDiagnostics?: () => Promise<any> | any;
   searchAcademic?: (query: string, options?: { source?: 'all' | 'arxiv' | 'semanticscholar'; maxResults?: number }) => Promise<any> | any;
   searchWeb?: (query: string, maxResults?: number) => Promise<any> | any;
+  activeFilePath?: string | null;
 }
 
 export interface AgentLoopOptions {
@@ -20,7 +33,10 @@ export interface AgentLoopOptions {
   systemPrompt?: string;
   onChunk?: (token: string) => void;
   onMessagesChange?: (messages: ChatMessage[]) => void;
+  onStatusChange?: (status: AgentStatus | null) => void;
   signal?: AbortSignal;
+  autoApply?: boolean;
+  autoEdit?: boolean;
 }
 
 /**
@@ -55,7 +71,9 @@ CRITICAL INSTRUCTIONS:
 2. When asked to make changes, add sections, fix LaTeX syntax, or generate code, use torque_edit_file for specific replacements or torque_write_file for full files.
 3. When asked to find papers, review literature, or cite sources, use torque_search_academic to retrieve verified metadata and BibTeX entries.
 4. When adding citations to the document, append the generated BibTeX entry to the project's .bib file using torque_edit_file (or torque_write_file), and reference it in the .tex file with \\cite{citationKey}.
-5. Be concise, precise, and professional. Focus on LaTeX best practices.`;
+5. You operate in an iterative multi-turn loop. Continue using tools to read, edit, compile, and verify diagnostics across consecutive turns until the user request is completely fulfilled before finalizing your response.
+6. If a tool call fails, produces unexpected output, or compilation returns errors, do NOT stop prematurely: analyze the diagnostic log or error, adjust your parameters or file edits, and retry until the issue is solved.
+7. Be concise, precise, and professional. Focus on LaTeX best practices.`;
 }
 
 export class AgentClient {
@@ -66,6 +84,7 @@ export class AgentClient {
     context: WorkspaceToolContext,
     options?: {
       onChunk?: (token: string) => void;
+      onStatusChange?: (status: AgentStatus | null) => void;
       signal?: AbortSignal;
     }
   ): Promise<ChatMessage> {
@@ -118,6 +137,7 @@ export class AgentClient {
     };
 
     let res: Response;
+    options?.onStatusChange?.({ type: 'thinking', detail: 'Thinking...' });
     try {
       res = await fetch(url, {
         method: 'POST',
@@ -271,13 +291,15 @@ export class AgentClient {
       switch (raw.name) {
         case 'torque_edit_file': {
           try {
-            const normPath = validateToolPath(parsedArgs.path);
+            const normPath = extractToolPath(parsedArgs, context.activeFilePath ?? undefined);
+            options?.onStatusChange?.({ type: 'executing_tool', toolName: 'torque_edit_file', detail: `Editing ${normPath}...` });
+            const { target, replacement } = extractToolEditTargets(parsedArgs);
             const original = await context.readFile(normPath);
             if (original === null) {
               tcState.status = 'failed';
               tcState.error = `File not found: ${normPath}`;
             } else {
-              const patchResult = applyFilePatch(original, parsedArgs.target, parsedArgs.replacement);
+              const patchResult = applyFilePatch(original, target, replacement);
               if (!patchResult.success) {
                 tcState.status = 'failed';
                 tcState.error = patchResult.error || 'Failed to apply file patch';
@@ -296,9 +318,11 @@ export class AgentClient {
 
         case 'torque_write_file': {
           try {
-            const normPath = validateToolPath(parsedArgs.path);
+            const normPath = extractToolPath(parsedArgs, context.activeFilePath ?? undefined);
+            options?.onStatusChange?.({ type: 'executing_tool', toolName: 'torque_write_file', detail: `Writing to ${normPath}...` });
+            const fileContent = extractToolContent(parsedArgs);
             const original = (await context.readFile(normPath)) ?? '';
-            const diff = computeFileDiff(normPath, original, parsedArgs.content ?? '');
+            const diff = computeFileDiff(normPath, original, fileContent);
             tcState.diff = diff;
             tcState.status = 'pending_approval';
           } catch (err: any) {
@@ -310,18 +334,21 @@ export class AgentClient {
 
         case 'torque_read_file': {
           try {
-            const normPath = validateToolPath(parsedArgs.path);
+            const normPath = extractToolPath(parsedArgs, context.activeFilePath ?? undefined);
+            options?.onStatusChange?.({ type: 'executing_tool', toolName: 'torque_read_file', detail: `Reading ${normPath}...` });
             const original = await context.readFile(normPath);
             if (original === null) {
               tcState.status = 'failed';
               tcState.error = `File not found: ${normPath}`;
             } else {
               let result = original;
-              if (typeof parsedArgs.startLine === 'number' || typeof parsedArgs.endLine === 'number') {
+              const startLine = typeof parsedArgs.startLine === 'number' ? parsedArgs.startLine : (typeof parsedArgs.start === 'number' ? parsedArgs.start : undefined);
+              const endLine = typeof parsedArgs.endLine === 'number' ? parsedArgs.endLine : (typeof parsedArgs.end === 'number' ? parsedArgs.end : undefined);
+              if (typeof startLine === 'number' || typeof endLine === 'number') {
                 const lines = original.split('\n');
-                const start = Math.max(1, parsedArgs.startLine ?? 1) - 1;
+                const start = Math.max(1, startLine ?? 1) - 1;
                 const end =
-                  parsedArgs.endLine !== undefined ? Math.min(lines.length, parsedArgs.endLine) : lines.length;
+                  endLine !== undefined ? Math.min(lines.length, endLine) : lines.length;
                 result = lines.slice(start, end).join('\n');
               }
               tcState.status = 'done';
@@ -340,6 +367,7 @@ export class AgentClient {
             tcState.error = 'Compilation is not supported in this workspace context';
           } else {
             try {
+              options?.onStatusChange?.({ type: 'executing_tool', toolName: 'torque_compile', detail: 'Compiling LaTeX document...' });
               const res = await context.compile(parsedArgs.engine);
               tcState.status = 'done';
               tcState.result = res;
@@ -357,6 +385,7 @@ export class AgentClient {
             tcState.error = 'Diagnostics are not supported in this workspace context';
           } else {
             try {
+              options?.onStatusChange?.({ type: 'executing_tool', toolName: 'torque_get_diagnostics', detail: 'Retrieving diagnostics...' });
               const res = await context.getDiagnostics();
               tcState.status = 'done';
               tcState.result = res;
@@ -370,20 +399,17 @@ export class AgentClient {
 
         case 'torque_search_academic': {
           try {
-            if (!parsedArgs.query || typeof parsedArgs.query !== 'string' || !parsedArgs.query.trim()) {
-              tcState.status = 'failed';
-              tcState.error = 'Search query is required';
-            } else {
-              const options = {
-                source: parsedArgs.source,
-                maxResults: typeof parsedArgs.maxResults === 'number' ? parsedArgs.maxResults : undefined,
-              };
-              const results = context.searchAcademic
-                ? await context.searchAcademic(parsedArgs.query, options)
-                : await searchAcademic(parsedArgs.query, options);
-              tcState.status = 'done';
-              tcState.result = results;
-            }
+            const query = extractToolQuery(parsedArgs);
+            options?.onStatusChange?.({ type: 'executing_tool', toolName: 'torque_search_academic', detail: `Searching academic papers: "${query.slice(0, 28)}"...` });
+            const optionsArg = {
+              source: parsedArgs.source,
+              maxResults: typeof parsedArgs.maxResults === 'number' ? parsedArgs.maxResults : undefined,
+            };
+            const results = context.searchAcademic
+              ? await context.searchAcademic(query, optionsArg)
+              : await searchAcademic(query, optionsArg);
+            tcState.status = 'done';
+            tcState.result = results;
           } catch (err: any) {
             tcState.status = 'failed';
             tcState.error = err.message || 'Academic search failed';
@@ -393,17 +419,14 @@ export class AgentClient {
 
         case 'torque_search_web': {
           try {
-            if (!parsedArgs.query || typeof parsedArgs.query !== 'string' || !parsedArgs.query.trim()) {
-              tcState.status = 'failed';
-              tcState.error = 'Search query is required';
-            } else {
-              const maxResults = typeof parsedArgs.maxResults === 'number' ? parsedArgs.maxResults : undefined;
-              const results = context.searchWeb
-                ? await context.searchWeb(parsedArgs.query, maxResults)
-                : await searchWeb(parsedArgs.query, undefined, maxResults);
-              tcState.status = 'done';
-              tcState.result = results;
-            }
+            const query = extractToolQuery(parsedArgs);
+            options?.onStatusChange?.({ type: 'executing_tool', toolName: 'torque_search_web', detail: `Searching the web: "${query.slice(0, 28)}"...` });
+            const maxResults = typeof parsedArgs.maxResults === 'number' ? parsedArgs.maxResults : undefined;
+            const results = context.searchWeb
+              ? await context.searchWeb(query, maxResults)
+              : await searchWeb(query, undefined, maxResults);
+            tcState.status = 'done';
+            tcState.result = results;
           } catch (err: any) {
             tcState.status = 'failed';
             tcState.error = err.message || 'Web search failed';
@@ -447,92 +470,114 @@ export class AgentClient {
     context: WorkspaceToolContext,
     options?: AgentLoopOptions
   ): Promise<ChatMessage[]> {
-    const maxTurns = options?.maxTurns ?? 5;
+    const maxTurns = options?.maxTurns ?? 15;
     const workingMessages: ChatMessage[] = [...conversation];
 
-    for (let turn = 0; turn < maxTurns; turn++) {
-      let messagesForApi = [...workingMessages];
-      if (options?.systemPrompt && !messagesForApi.some((m) => m.role === 'system')) {
-        messagesForApi = [
-          {
-            id: 'sys-prompt',
-            role: 'system',
-            content: options.systemPrompt,
-            timestamp: Date.now(),
-          },
-          ...messagesForApi,
-        ];
-      }
+    try {
+      for (let turn = 0; turn < maxTurns; turn++) {
+        let messagesForApi = [...workingMessages];
+        if (options?.systemPrompt && !messagesForApi.some((m) => m.role === 'system')) {
+          messagesForApi = [
+            {
+              id: 'sys-prompt',
+              role: 'system',
+              content: options.systemPrompt,
+              timestamp: Date.now(),
+            },
+            ...messagesForApi,
+          ];
+        }
 
-      const assistantPlaceholderId = `asst-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-      let streamedContent = '';
+        const assistantPlaceholderId = `asst-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        let streamedContent = '';
 
-      const handleChunk = (chunk: string) => {
-        streamedContent += chunk;
-        options?.onChunk?.(chunk);
+        const handleChunk = (chunk: string) => {
+          streamedContent += chunk;
+          options?.onChunk?.(chunk);
 
+          const existingIdx = workingMessages.findIndex((m) => m.id === assistantPlaceholderId);
+          if (existingIdx >= 0) {
+            workingMessages[existingIdx] = {
+              ...workingMessages[existingIdx],
+              content: streamedContent,
+            };
+          } else {
+            workingMessages.push({
+              id: assistantPlaceholderId,
+              role: 'assistant',
+              content: streamedContent,
+              timestamp: Date.now(),
+            });
+          }
+          options?.onMessagesChange?.([...workingMessages]);
+        };
+
+        const assistantMsg = await this.sendMessage(messagesForApi, context, {
+          onChunk: options?.onChunk ? handleChunk : undefined,
+          onStatusChange: options?.onStatusChange,
+          signal: options?.signal,
+        });
+
+        // Update or insert the final assistant message
         const existingIdx = workingMessages.findIndex((m) => m.id === assistantPlaceholderId);
         if (existingIdx >= 0) {
           workingMessages[existingIdx] = {
-            ...workingMessages[existingIdx],
-            content: streamedContent,
+            ...assistantMsg,
+            id: assistantPlaceholderId,
           };
         } else {
-          workingMessages.push({
-            id: assistantPlaceholderId,
-            role: 'assistant',
-            content: streamedContent,
-            timestamp: Date.now(),
-          });
+          workingMessages.push(assistantMsg);
         }
         options?.onMessagesChange?.([...workingMessages]);
-      };
 
-      const assistantMsg = await this.sendMessage(messagesForApi, context, {
-        onChunk: options?.onChunk ? handleChunk : undefined,
-        signal: options?.signal,
-      });
+        // If no tool calls, response is complete
+        if (!assistantMsg.toolCalls || assistantMsg.toolCalls.length === 0) {
+          break;
+        }
 
-      // Update or insert the final assistant message
-      const existingIdx = workingMessages.findIndex((m) => m.id === assistantPlaceholderId);
-      if (existingIdx >= 0) {
-        workingMessages[existingIdx] = {
-          ...assistantMsg,
-          id: assistantPlaceholderId,
-        };
-      } else {
-        workingMessages.push(assistantMsg);
+        // Auto-apply mode: automatically write diff and mark tool as accepted without pausing
+        const isAutoApply = Boolean(options?.autoApply || options?.autoEdit);
+        if (isAutoApply) {
+          for (const tc of assistantMsg.toolCalls) {
+            if (
+              (tc.name === 'torque_edit_file' || tc.name === 'torque_write_file') &&
+              tc.status === 'pending_approval' &&
+              tc.diff
+            ) {
+              await context.writeFile(tc.diff.path, tc.diff.newContent);
+              tc.status = 'accepted';
+              tc.result = { status: 'success', message: 'Changes auto-applied to workspace.' };
+            }
+          }
+          options?.onMessagesChange?.([...workingMessages]);
+        }
+
+        // Check if any tool call requires user approval
+        const hasPendingApproval = assistantMsg.toolCalls.some(
+          (tc) => tc.status === 'pending_approval'
+        );
+        if (hasPendingApproval) {
+          break;
+        }
+
+        // Read-only tools finished: generate tool response messages and proceed to next turn
+        for (const tc of assistantMsg.toolCalls) {
+          const toolMsg: ChatMessage = {
+            id: `tool-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            role: 'tool',
+            toolCallId: tc.id,
+            content:
+              typeof tc.result === 'string'
+                ? tc.result
+                : JSON.stringify(tc.result ?? { error: tc.error ?? 'Tool execution failed' }),
+            timestamp: Date.now(),
+          };
+          workingMessages.push(toolMsg);
+        }
+        options?.onMessagesChange?.([...workingMessages]);
       }
-      options?.onMessagesChange?.([...workingMessages]);
-
-      // If no tool calls, response is complete
-      if (!assistantMsg.toolCalls || assistantMsg.toolCalls.length === 0) {
-        break;
-      }
-
-      // Check if any tool call requires user approval
-      const hasPendingApproval = assistantMsg.toolCalls.some(
-        (tc) => tc.status === 'pending_approval'
-      );
-      if (hasPendingApproval) {
-        break;
-      }
-
-      // Read-only tools finished: generate tool response messages and proceed to next turn
-      for (const tc of assistantMsg.toolCalls) {
-        const toolMsg: ChatMessage = {
-          id: `tool-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          role: 'tool',
-          toolCallId: tc.id,
-          content:
-            typeof tc.result === 'string'
-              ? tc.result
-              : JSON.stringify(tc.result ?? { error: tc.error ?? 'Tool execution failed' }),
-          timestamp: Date.now(),
-        };
-        workingMessages.push(toolMsg);
-      }
-      options?.onMessagesChange?.([...workingMessages]);
+    } finally {
+      options?.onStatusChange?.(null);
     }
 
     return workingMessages;

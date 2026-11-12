@@ -23,10 +23,11 @@ import {
   BookOpen,
   Globe,
   Copy,
+  Zap,
 } from 'lucide-react';
 import { useThemeSafe } from '../context/ThemeContext';
 import { AiDiffCard } from './AiDiffCard';
-import { AgentClient, buildWorkspaceSystemPrompt, type WorkspaceToolContext } from '../ai/agentClient';
+import { AgentClient, buildWorkspaceSystemPrompt, type WorkspaceToolContext, type AgentStatus } from '../ai/agentClient';
 import { loadAISettings } from '../ai/aiConfig';
 import { isTauri } from '../storage/tauriStorage';
 import { searchAcademic, searchWeb } from '../ai/searchService';
@@ -438,8 +439,39 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
 
   const [inputValue, setInputValue] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [messageQueue, setMessageQueue] = useState<string[]>([]);
+  const messageQueueRef = useRef<string[]>([]);
+  const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const activeSessionIdRef = useRef(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
+
+  const [autoEdit, setAutoEdit] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('torque_ai_auto_edit') === 'true';
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
+
+  const handleToggleAutoEdit = () => {
+    setAutoEdit((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('torque_ai_auto_edit', String(next));
+        } catch {}
+      }
+      return next;
+    });
+  };
 
   // Synchronize active session if sessions list changes
   useEffect(() => {
@@ -552,14 +584,30 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
     });
   };
 
-  const handleSend = async () => {
-    const text = inputValue.trim();
-    if (!text || isGenerating) return;
+  const handleClearQueue = () => {
+    messageQueueRef.current = [];
+    setMessageQueue([]);
+  };
 
-    setInputValue('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+  const handleRemoveQueuedMessage = (index: number) => {
+    messageQueueRef.current.splice(index, 1);
+    setMessageQueue([...messageQueueRef.current]);
+  };
+
+  const handleStopGenerating = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
+    setIsGenerating(false);
+    setAgentStatus(null);
+  };
+
+  const executeSendMessage = async (text: string) => {
+    const currentSessions = sessionsRef.current;
+    const targetSession =
+      currentSessions.find((s) => s.id === activeSessionIdRef.current) || currentSessions[0];
+    if (!targetSession) return;
 
     const userMessage: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -568,7 +616,6 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
       timestamp: Date.now(),
     };
 
-    const targetSession = activeSession;
     const updatedMessages = [...(targetSession?.messages || []), userMessage];
 
     setSessions((prev) =>
@@ -582,15 +629,27 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
       })
     );
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    setIsGenerating(true);
+    setAgentStatus({ type: 'thinking', detail: 'Thinking...' });
+
     if (onSendMessage) {
-      setIsGenerating(true);
       try {
         await onSendMessage(text, { ...targetSession, messages: updatedMessages });
       } finally {
         setIsGenerating(false);
+        setAgentStatus(null);
+        abortControllerRef.current = null;
+        if (messageQueueRef.current.length > 0) {
+          const nextMessage = messageQueueRef.current.shift()!;
+          setMessageQueue([...messageQueueRef.current]);
+          setTimeout(() => {
+            executeSendMessage(nextMessage);
+          }, 50);
+        }
       }
     } else if (effectiveProvider) {
-      setIsGenerating(true);
       const systemPrompt = buildWorkspaceSystemPrompt({
         files: workspace?.files,
         activeFilePath: workspace?.activeFilePath,
@@ -599,6 +658,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
       try {
         const agent = new AgentClient(effectiveProvider);
         const toolContext: WorkspaceToolContext = {
+          activeFilePath: workspace?.activeFilePath,
           readFile: async (path: string) => {
             const raw = workspace?.files?.[path] ?? workspace?.files?.[path.replace(/^\.\//, '')];
             if (raw === undefined || raw === null) return null;
@@ -665,6 +725,11 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
           toolContext,
           {
             systemPrompt,
+            signal: abortController.signal,
+            autoApply: autoEdit,
+            onStatusChange: (status) => {
+              setAgentStatus(status);
+            },
             onMessagesChange: (msgs) => {
               setSessions((prev) =>
                 prev.map((s) => {
@@ -683,25 +748,55 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
           })
         );
       } catch (err: any) {
-        setSessions((prev) =>
-          prev.map((s) => {
-            if (s.id !== targetSession.id) return s;
-            const errMsg: ChatMessage = {
-              id: `err-${Date.now()}`,
-              role: 'assistant',
-              content: `⚠️ Failed to get AI response: ${err?.message || String(err)}`,
-              timestamp: Date.now(),
-            };
-            return {
-              ...s,
-              messages: [...s.messages, errMsg],
-            };
-          })
-        );
+        if (!abortController.signal.aborted) {
+          setSessions((prev) =>
+            prev.map((s) => {
+              if (s.id !== targetSession.id) return s;
+              const errMsg: ChatMessage = {
+                id: `err-${Date.now()}`,
+                role: 'assistant',
+                content: `⚠️ Failed to get AI response: ${err?.message || String(err)}`,
+                timestamp: Date.now(),
+              };
+              return {
+                ...s,
+                messages: [...s.messages, errMsg],
+              };
+            })
+          );
+        }
       } finally {
         setIsGenerating(false);
+        setAgentStatus(null);
+        abortControllerRef.current = null;
+
+        if (messageQueueRef.current.length > 0) {
+          const nextMessage = messageQueueRef.current.shift()!;
+          setMessageQueue([...messageQueueRef.current]);
+          setTimeout(() => {
+            executeSendMessage(nextMessage);
+          }, 50);
+        }
       }
     }
+  };
+
+  const handleSend = () => {
+    const text = inputValue.trim();
+    if (!text) return;
+
+    setInputValue('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+
+    if (isGenerating) {
+      messageQueueRef.current.push(text);
+      setMessageQueue([...messageQueueRef.current]);
+      return;
+    }
+
+    executeSendMessage(text);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -801,7 +896,31 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-0.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Auto Edit Toggle Button */}
+          <button
+            type="button"
+            data-testid="auto-edit-toggle"
+            onClick={handleToggleAutoEdit}
+            title={
+              autoEdit
+                ? 'Auto Edit enabled: proposed edits and writes are automatically applied'
+                : 'Auto Edit disabled: proposed edits require review and approval'
+            }
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition border cursor-pointer ${
+              autoEdit
+                ? isDark
+                  ? 'bg-[#3574f0]/25 border-[#3574f0]/60 text-[#70a5ff]'
+                  : 'bg-[#3574f0]/15 border-[#3574f0]/50 text-[#1750eb]'
+                : isDark
+                ? 'bg-transparent border-transparent text-[#868a91] hover:bg-[#393b40] hover:text-[#dfe1e5]'
+                : 'bg-transparent border-transparent text-[#6c707e] hover:bg-[#dfe1e5] hover:text-[#1f2328]'
+            }`}
+          >
+            <Zap size={11} className={autoEdit ? 'fill-current' : ''} />
+            <span>Auto Edit</span>
+          </button>
+
           {/* History Button */}
           <button
             ref={historyButtonRef}
@@ -1106,7 +1225,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                   ) : isGenerating && (!message.toolCalls || message.toolCalls.length === 0) ? (
                     <div className="flex items-center gap-1.5 text-xs opacity-60 py-0.5">
                       <Loader2 size={12} className="animate-spin text-[#3574f0]" />
-                      <span>Thinking...</span>
+                      <span>{agentStatus?.detail || 'Thinking...'}</span>
                     </div>
                   ) : null}
 
@@ -1124,6 +1243,11 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                                   ? tc.status
                                   : 'pending_approval'
                               }
+                              autoApplied={Boolean(
+                                tc.status === 'accepted' &&
+                                  (tc.result?.message?.includes('auto-applied') ||
+                                    tc.result?.status === 'success')
+                              )}
                               onAccept={() => handleAcceptToolCall(message.id, tc.id, tc.diff!)}
                               onReject={() => handleRejectToolCall(message.id, tc.id)}
                             />
@@ -1303,8 +1427,84 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
             );
           })
         )}
+        {/* Animated Status Indicator Pill */}
+        {(isGenerating || agentStatus) && (
+          <div
+            data-testid="agent-status-indicator"
+            className="flex items-center gap-2 py-1.5 px-3 text-xs"
+          >
+            <div
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-xs ${
+                isDark
+                  ? 'bg-[#2b2d30] border-[#3e4247] text-[#dfe1e5]'
+                  : 'bg-white border-[#d1d5db] text-[#1f2328]'
+              }`}
+            >
+              <Loader2 size={13} className="animate-spin text-[#3574f0] shrink-0" />
+              <span className="font-medium text-[11px]">
+                {agentStatus?.detail || (agentStatus?.type === 'executing_tool' ? `Running ${agentStatus.toolName}...` : 'Thinking...')}
+              </span>
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Queued Messages Section */}
+      {messageQueue.length > 0 && (
+        <div
+          data-testid="queued-messages-container"
+          className={`px-3 py-2 border-t text-xs flex flex-col gap-1.5 shrink-0 ${
+            isDark ? 'bg-[#26282b] border-[#393b40] text-[#dfe1e5]' : 'bg-[#f4f5f7] border-[#d1d5db] text-[#1f2328]'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 font-medium text-[11px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#3574f0] animate-pulse" />
+              <span>Queued Messages ({messageQueue.length})</span>
+            </div>
+            <button
+              type="button"
+              data-testid="clear-queue-button"
+              onClick={handleClearQueue}
+              className={`text-[10px] px-1.5 py-0.5 rounded transition ${
+                isDark
+                  ? 'text-[#868a91] hover:text-[#dfe1e5] hover:bg-[#393b40]'
+                  : 'text-[#6c707e] hover:text-[#1f2328] hover:bg-[#e5e7eb]'
+              }`}
+            >
+              Clear All
+            </button>
+          </div>
+          <div className="flex flex-col gap-1 max-h-24 overflow-y-auto pr-1">
+            {messageQueue.map((msg, idx) => (
+              <div
+                key={`queue-${idx}`}
+                data-testid="queued-message-item"
+                className={`flex items-center justify-between gap-2 px-2.5 py-1 rounded text-[11px] border ${
+                  isDark ? 'bg-[#1e1f22] border-[#323232]' : 'bg-white border-[#e5e7eb]'
+                }`}
+              >
+                <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                  <span className="text-[10px] font-mono opacity-50 shrink-0">#{idx + 1}</span>
+                  <span className="truncate">{msg}</span>
+                </div>
+                <button
+                  type="button"
+                  data-testid={`remove-queued-${idx}`}
+                  onClick={() => handleRemoveQueuedMessage(idx)}
+                  className={`p-0.5 rounded shrink-0 transition ${
+                    isDark ? 'text-[#868a91] hover:text-white hover:bg-[#323232]' : 'text-[#6c707e] hover:text-black hover:bg-[#e5e7eb]'
+                  }`}
+                  title="Remove from queue"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Input Bar */}
       <div
@@ -1336,17 +1536,18 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
               ↵ send • ⇧↵ newline
             </span>
 
-            {isGenerating ? (
-              <button
-                type="button"
-                data-testid="stop-generate-button"
-                onClick={() => setIsGenerating(false)}
-                className="p-1 rounded text-white bg-[#c75450] hover:bg-[#b0433f] transition-colors shrink-0"
-                title="Stop Generation"
-              >
-                <Square size={12} fill="currentColor" />
-              </button>
-            ) : (
+            <div className="flex items-center gap-1 shrink-0">
+              {isGenerating && (
+                <button
+                  type="button"
+                  data-testid="stop-generate-button"
+                  onClick={handleStopGenerating}
+                  className="p-1 rounded text-white bg-[#c75450] hover:bg-[#b0433f] transition-colors shrink-0"
+                  title="Stop Generation"
+                >
+                  <Square size={12} fill="currentColor" />
+                </button>
+              )}
               <button
                 type="button"
                 data-testid="send-message-button"
@@ -1354,11 +1555,11 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({
                 disabled={!inputValue.trim()}
                 className="p-1 rounded-full text-white transition-opacity disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
                 style={{ backgroundColor: '#3574f0' }}
-                title="Send Message (Enter)"
+                title={isGenerating ? 'Queue Message (Enter)' : 'Send Message (Enter)'}
               >
                 <ArrowUp size={12} className="stroke-[2.5]" />
               </button>
-            )}
+            </div>
           </div>
         </div>
       </div>
